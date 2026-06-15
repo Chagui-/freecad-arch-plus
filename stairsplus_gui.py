@@ -58,7 +58,6 @@ def applySettings(obj, width, height, length, numberOfSteps, treadDepth,
         obj.Landings = "None"
     if n >= 2:
         obj.WinderSteps = n             # winders (triggered on a half-turn)
-    obj.WinderHoleSize = 0              # winder well not exposed (see TODO)
 
     obj.Structure = structure
     obj.StructureThickness = structureThickness
@@ -144,7 +143,10 @@ class StairsPlusTaskPanel:
         # --- Dimensions ----------------------------------------------------
         dimBox = QtGui.QGroupBox("Dimensions")
         dimV = QtGui.QVBoxLayout(dimBox)
-        dimV.addWidget(self._refImage("dimensions_ref", QtCore.QSize(220, 130)))
+        # Shape-specific dimension diagram; swapped by _syncShapeRows().
+        self._dimRefSize = QtCore.QSize(220, 130)
+        self.dimRef = self._refImage("dimensions_ref_straight", self._dimRefSize)
+        dimV.addWidget(self.dimRef)
         dimForm = QtGui.QFormLayout()
         self.width = self._len(1000)
         self.height = self._len(3000)
@@ -298,10 +300,16 @@ class StairsPlusTaskPanel:
         """A centered QLabel holding a reference SVG (or empty if missing)."""
         lbl = QtGui.QLabel()
         lbl.setAlignment(QtCore.Qt.AlignCenter)
+        self._setRefImage(lbl, name, size)
+        return lbl
+
+    def _setRefImage(self, lbl, name, size):
+        """Set (or clear) a reference SVG on an existing label."""
         path = os.path.join(_DIR, "Resources", "icons", name + ".svg")
         if os.path.exists(path):
             lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
-        return lbl
+        else:
+            lbl.clear()
 
     def _setRow(self, label, field, visible):
         """Show/hide a form row (label + field). Uses Qt's setRowVisible when
@@ -323,6 +331,9 @@ class StairsPlusTaskPanel:
         self._setRow(self.lblTurnSteps, self.turnSteps, isHalfTurn)
         hasBreak = isHalfTurn or self.landingChk.isChecked()
         self._setRow(self.lblAtStep, self.atStep, hasBreak)
+        # Dimension diagram tracks the selected shape (straight vs half-turn).
+        ref = "dimensions_ref_halfturn" if isHalfTurn else "dimensions_ref_straight"
+        self._setRefImage(self.dimRef, ref, self._dimRefSize)
 
     def _syncLandingStepRange(self, *args):
         """Cap the break position to [1, steps-1] so it leaves a step per side."""

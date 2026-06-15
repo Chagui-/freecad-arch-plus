@@ -17,8 +17,8 @@ stringers, IFC export) is preserved while new behaviour is added on top.
 - **Configurable landing position** — `LandingStep` places the landing/turn on
   any step (0 = auto, centered) instead of always at the middle.
 - **Half-turn winders** — a half-turn with no landing is built from winder
-  (wedge) steps that sweep 180° while climbing, filling a square footprint with
-  an optional square well/hole, instead of a flat landing.
+  (wedge) steps that sweep 180° while climbing, filling a square footprint
+  instead of a flat landing.
 
 ## Installation
 
@@ -42,7 +42,7 @@ Double-click a stairs object in the tree to edit it.
 
 - [ ] Implement quarter-turn stairs.
 - [x] Rename the add-on to **ArchPlus** (doors and windows will be added later).
-- [ ] Resolve the winder well issue.
+- [x] Resolve the winder well issue (removed — winders meet at the pivot).
 - [ ] Support railings, balusters, etc.
 - [ ] For half-turns, support spacing between the two stairways.
 - [ ] UI: landing and winder steps are too similar — probably merge them into a

@@ -242,19 +242,6 @@ class _StairsPlus(ArchComponent.Component):
                 locked=True,
             )
 
-        if not hasattr(obj, "WinderHoleSize"):
-            obj.addProperty(
-                "App::PropertyLength",
-                "WinderHoleSize",
-                "Steps",
-                QT_TRANSLATE_NOOP(
-                    "App::Property",
-                    "Half-size of the square hole (well) left in the middle of "
-                    "the winder turn. 0 = winders meet at a point (no hole).",
-                ),
-                locked=True,
-            )
-
         if not hasattr(obj, "TreadDepthEnforce"):
             obj.addProperty(
                 "App::PropertyLength",
@@ -2138,7 +2125,7 @@ class _StairsPlus(ArchComponent.Component):
             self.structures.append(struct)
 
     def makeWinderStairs(self, obj, pivot, uDir, tDir, sideSign, numWinders,
-                         outerHalf, innerHalf, baseHeight, hstep,
+                         outerHalf, baseHeight, hstep,
                          treadThickness, riserThickness, totalAngle=math.pi):
         """Build winder (wedge) steps sweeping `totalAngle` around `pivot`.
 
@@ -2147,8 +2134,8 @@ class _StairsPlus(ArchComponent.Component):
         (+uDir) at the midpoint. `sideSign` (+1 / -1) mirrors the fan for a
         left / right turn. Tread corners are projected onto a SQUARE boundary
         of half-size `outerHalf` (so the footprint fills a square, not a disc),
-        and a square hole of half-size `innerHalf` is left in the middle.
-        Returns the height at the top of the last winder.
+        and the winders meet at a point at the pivot. Returns the height at the
+        top of the last winder.
         """
 
         def radialDir(theta):
@@ -2179,7 +2166,6 @@ class _StairsPlus(ArchComponent.Component):
             pts.append(squarePt(z, radialDir(thB), half))
             return pts
 
-        hasHole = innerHalf > 1e-6
         for i in range(numWinders):
             th0 = totalAngle * i / numWinders
             th1 = totalAngle * (i + 1) / numWinders
@@ -2188,12 +2174,8 @@ class _StairsPlus(ArchComponent.Component):
             ztop = baseHeight + i * hstep
 
             outer = boundary(ztop, th0, th1, outerHalf)
-            if hasHole:
-                inner = boundary(ztop, th0, th1, innerHalf)
-                treadPts = outer + inner[::-1] + [outer[0]]
-            else:
-                apex = Vector(pivot.x, pivot.y, ztop)
-                treadPts = [apex] + outer + [apex]
+            apex = Vector(pivot.x, pivot.y, ztop)
+            treadPts = [apex] + outer + [apex]
 
             tread = Part.Face(Part.makePolygon(treadPts))
             if treadThickness:
@@ -2207,14 +2189,9 @@ class _StairsPlus(ArchComponent.Component):
             zlo = ztop - hstep
             out0 = squarePt(ztop, d0, outerHalf)
             outLo = squarePt(zlo, d0, outerHalf)
-            if hasHole:
-                inLo = squarePt(zlo, d0, innerHalf)
-                inHi = squarePt(ztop, d0, innerHalf)
-                riserPts = [inLo, outLo, out0, inHi, inLo]
-            else:
-                apexLo = Vector(pivot.x, pivot.y, zlo)
-                apexHi = Vector(pivot.x, pivot.y, ztop)
-                riserPts = [apexLo, outLo, out0, apexHi, apexLo]
+            apexLo = Vector(pivot.x, pivot.y, zlo)
+            apexHi = Vector(pivot.x, pivot.y, ztop)
+            riserPts = [apexLo, outLo, out0, apexHi, apexLo]
             riser = Part.Face(Part.makePolygon(riserPts))
             tang = d1.sub(d0)  # walking direction (theta-increasing)
             if riserThickness and tang.Length > 1e-9:
@@ -2261,7 +2238,6 @@ class _StairsPlus(ArchComponent.Component):
         uDir = DraftVecUtils.scaleTo(vLength, 1.0)
         tDir = DraftVecUtils.scaleTo(vWidth, 1.0)
         outerHalf = vWidth.Length                       # reach the far rail
-        innerHalf = float(getattr(obj, "WinderHoleSize", 0.0) or 0.0)
         baseHeight = landingStep * hstep
 
         # flight 1 (straight, up to the turn)
@@ -2273,7 +2249,7 @@ class _StairsPlus(ArchComponent.Component):
 
         # winders sweeping the 180 deg turn, pivoting at the shared rail
         topHeight = self.makeWinderStairs(
-            obj, pivot, uDir, tDir, sideSign, w, outerHalf, innerHalf,
+            obj, pivot, uDir, tDir, sideSign, w, outerHalf,
             baseHeight, hstep, obj.TreadThickness.Value,
             obj.RiserThickness.Value,
         )
