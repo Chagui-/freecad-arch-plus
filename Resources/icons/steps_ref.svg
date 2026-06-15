@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210" height="150" viewBox="0 0 210 150">
+  <!-- treads (horizontal slabs); front edge overhangs the riser = nosing -->
+  <g fill="#cfe3ff" stroke="#1a5fb4" stroke-width="2">
+    <rect x="24" y="104" width="70" height="9"/>
+    <rect x="64" y="72" width="70" height="9"/>
+    <rect x="104" y="40" width="70" height="9"/>
+  </g>
+  <!-- risers (vertical slabs) -->
+  <g fill="#eaf2ff" stroke="#1a5fb4" stroke-width="2">
+    <rect x="74" y="72" width="7" height="32"/>
+    <rect x="114" y="40" width="7" height="32"/>
+  </g>
+  <!-- dimension lines -->
+  <g stroke="#666666" stroke-width="1">
+    <!-- R : riser height (tread top to tread top) -->
+    <line x1="16" y1="72" x2="16" y2="104"/>
+    <line x1="12" y1="72" x2="20" y2="72"/>
+    <line x1="12" y1="104" x2="20" y2="104"/>
+    <!-- T : tread depth / going, riser face to riser face (excludes nose) -->
+    <line x1="74" y1="62" x2="114" y2="62"/>
+    <line x1="74" y1="58" x2="74" y2="66"/>
+    <line x1="114" y1="58" x2="114" y2="66"/>
+    <!-- Tt : tread thickness -->
+    <line x1="182" y1="40" x2="182" y2="49"/>
+    <line x1="178" y1="40" x2="186" y2="40"/>
+    <line x1="178" y1="49" x2="186" y2="49"/>
+    <!-- Rt : riser thickness -->
+    <line x1="114" y1="32" x2="121" y2="32"/>
+    <line x1="114" y1="29" x2="114" y2="35"/>
+    <line x1="121" y1="29" x2="121" y2="35"/>
+  </g>
+  <!-- n : nosing overhang (tread front beyond the riser face) -->
+  <g stroke="#c01c28" stroke-width="1.2" fill="none">
+    <line x1="64" y1="81" x2="64" y2="92"/>
+    <line x1="74" y1="81" x2="74" y2="92"/>
+    <line x1="64" y1="92" x2="74" y2="92"/>
+  </g>
+  <!-- letters -->
+  <g font-family="sans-serif" font-size="13" font-weight="bold" fill="#c01c28">
+    <text x="4" y="92">R</text>
+    <text x="90" y="56">T</text>
+    <text x="62" y="103">n</text>
+    <text x="188" y="48">Tt</text>
+    <text x="124" y="28">Rt</text>
+  </g>
+</svg>

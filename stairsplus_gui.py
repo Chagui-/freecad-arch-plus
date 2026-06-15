@@ -120,28 +120,40 @@ class StairsPlusTaskPanel:
             "turn. 0 = winders meet at a point.")
         self.align = QtGui.QComboBox()
         self.align.addItems(["Left", "Right", "Center"])
+
+        # Rows for options that only apply to some shapes keep explicit label
+        # widgets so they can be hidden together with their field.
+        self._shapeForm = shapeForm
         shapeForm.addRow("Flight / turn", self.flight)
         shapeForm.addRow("Landings (0 or 1)", self.landings)
-        shapeForm.addRow("Landing/turn at step (0=auto)", self.landingStep)
-        shapeForm.addRow("Winder steps (half-turn, no landing)", self.winderSteps)
-        shapeForm.addRow("Winder hole half-size", self.winderHole)
+        self.lblLandingStep = QtGui.QLabel("Landing / turn at step (0 = auto)")
+        shapeForm.addRow(self.lblLandingStep, self.landingStep)
+        self.lblWinderSteps = QtGui.QLabel("Winder steps (min 2)")
+        shapeForm.addRow(self.lblWinderSteps, self.winderSteps)
+        self.lblWinderHole = QtGui.QLabel("Winder well half-size")
+        shapeForm.addRow(self.lblWinderHole, self.winderHole)
         shapeForm.addRow("Alignment", self.align)
         outer.addWidget(shapeBox)
 
         # --- Dimensions ----------------------------------------------------
         dimBox = QtGui.QGroupBox("Dimensions")
-        dimForm = QtGui.QFormLayout(dimBox)
+        dimV = QtGui.QVBoxLayout(dimBox)
+        dimV.addWidget(self._refImage("dimensions_ref", QtCore.QSize(220, 130)))
+        dimForm = QtGui.QFormLayout()
         self.width = self._len(1000)
         self.height = self._len(3000)
         self.length = self._len(4000)
-        dimForm.addRow("Width", self.width)
-        dimForm.addRow("Total height (rise)", self.height)
-        dimForm.addRow("Run length", self.length)
+        dimForm.addRow("W · Width (per flight)", self.width)
+        dimForm.addRow("H · Total height (rise)", self.height)
+        dimForm.addRow("L · Run length", self.length)
+        dimV.addLayout(dimForm)
         outer.addWidget(dimBox)
 
         # --- Steps ---------------------------------------------------------
         stepBox = QtGui.QGroupBox("Steps")
-        stepForm = QtGui.QFormLayout(stepBox)
+        stepV = QtGui.QVBoxLayout(stepBox)
+        stepV.addWidget(self._refImage("steps_ref", QtCore.QSize(210, 150)))
+        stepForm = QtGui.QFormLayout()
         self.steps = QtGui.QSpinBox()
         self.steps.setRange(1, 200)
         self.steps.setValue(17)
@@ -152,10 +164,15 @@ class StairsPlusTaskPanel:
         self.treadTh = self._len(50)
         self.riserTh = self._len(50)
         stepForm.addRow("Number of steps", self.steps)
-        stepForm.addRow("Tread depth (0 = auto)", self.tread)
-        stepForm.addRow("Nosing", self.nosing)
-        stepForm.addRow("Tread thickness", self.treadTh)
-        stepForm.addRow("Riser thickness", self.riserTh)
+        stepForm.addRow("T · Tread depth / going (0 = auto)", self.tread)
+        stepForm.addRow("n · Nosing", self.nosing)
+        stepForm.addRow("Tt · Tread thickness", self.treadTh)
+        stepForm.addRow("Rt · Riser thickness", self.riserTh)
+        stepV.addLayout(stepForm)
+        # a (riser height, computed) + Blondel comfort note
+        self.comfort = QtGui.QLabel()
+        self.comfort.setWordWrap(True)
+        stepV.addWidget(self.comfort)
         outer.addWidget(stepBox)
 
         # --- Structure -----------------------------------------------------
@@ -170,11 +187,6 @@ class StairsPlusTaskPanel:
         structForm.addRow("Structure thickness", self.structTh)
         structForm.addRow("Stringer width", self.stringerW)
         outer.addWidget(structBox)
-
-        # --- Comfort note (Blondel) ---------------------------------------
-        self.comfort = QtGui.QLabel()
-        self.comfort.setWordWrap(True)
-        outer.addWidget(self.comfort)
 
         # Debounce timer: coalesce rapid edits into one recompute.
         self._timer = QtCore.QTimer()
@@ -193,10 +205,10 @@ class StairsPlusTaskPanel:
             c.currentIndexChanged.connect(self._schedule)
         # Landing-step input matters when a landing OR a half-turn exists, and
         # its max must track the step count (split must leave >=1 step/flight).
-        self.landings.valueChanged.connect(self._syncLandingEnabled)
-        self.flight.currentIndexChanged.connect(self._syncLandingEnabled)
+        self.landings.valueChanged.connect(self._syncShapeRows)
+        self.flight.currentIndexChanged.connect(self._syncShapeRows)
         self.steps.valueChanged.connect(self._syncLandingStepRange)
-        self._syncLandingEnabled()
+        self._syncShapeRows()
         self._syncLandingStepRange()
 
         if self.editing:
@@ -213,46 +225,88 @@ class StairsPlusTaskPanel:
 
     # --- widget helpers ----------------------------------------------------
     def _len(self, default):
-        w = QtGui.QDoubleSpinBox()
-        w.setRange(0, 1_000_000)
-        w.setDecimals(1)
-        w.setSuffix(" mm")
-        w.setValue(default)
-        return w
+        """A unit-aware length input. Gui::QuantitySpinBox shows/parses values
+        in the user's configured unit schema (mm, cm, inch, ...) while storing
+        the value internally in mm. Falls back to a plain mm spinbox if the
+        FreeCAD widget can't be created (e.g. no GUI)."""
+        try:
+            w = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
+            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(default)))
+            return w
+        except Exception:
+            w = QtGui.QDoubleSpinBox()
+            w.setRange(0, 1_000_000)
+            w.setDecimals(1)
+            w.setSuffix(" mm")
+            w.setValue(default)
+            return w
+
+    @staticmethod
+    def _mm(w):
+        """Read a length widget's value in millimetres (FreeCAD's base unit)."""
+        try:
+            return float(w.property("value").Value)   # Gui::QuantitySpinBox
+        except Exception:
+            return float(w.value())                    # plain QDoubleSpinBox
+
+    @staticmethod
+    def _setmm(w, mm):
+        """Set a length widget from a value in millimetres."""
+        try:
+            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(mm)))
+        except Exception:
+            w.setValue(float(mm))
 
     def _collect(self):
         return dict(
-            width=self.width.value(),
-            height=self.height.value(),
-            length=self.length.value(),
+            width=self._mm(self.width),
+            height=self._mm(self.height),
+            length=self._mm(self.length),
             numberOfSteps=self.steps.value(),
-            treadDepth=self.tread.value(),
-            nosing=self.nosing.value(),
-            treadThickness=self.treadTh.value(),
-            riserThickness=self.riserTh.value(),
+            treadDepth=self._mm(self.tread),
+            nosing=self._mm(self.nosing),
+            treadThickness=self._mm(self.treadTh),
+            riserThickness=self._mm(self.riserTh),
             flight=self.flight.currentText(),
             landings=self.landings.value(),          # 0 or 1
             landingStep=self.landingStep.value(),    # 0 = auto (centered)
             winderSteps=self.winderSteps.value(),    # half-turn, no landing
-            winderHole=self.winderHole.value(),      # square well half-size
+            winderHole=self._mm(self.winderHole),    # square well half-size
             align=self.align.currentText(),
             structure=self.structure.currentText(),
-            structureThickness=self.structTh.value(),
-            stringerWidth=self.stringerW.value(),
+            structureThickness=self._mm(self.structTh),
+            stringerWidth=self._mm(self.stringerW),
         )
 
-    def _syncLandingEnabled(self, *args):
-        """Enable the landing-step input when there is a landing OR a half-turn.
+    def _refImage(self, name, size):
+        """A centered QLabel holding a reference SVG (or empty if missing)."""
+        lbl = QtGui.QLabel()
+        lbl.setAlignment(QtCore.Qt.AlignCenter)
+        path = os.path.join(_DIR, "Resources", "icons", name + ".svg")
+        if os.path.exists(path):
+            lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
+        return lbl
 
-        A half-turn splits the flight at the landing step (the turn point) even
-        when no landing platform is drawn, so the step still matters there.
-        Winder steps only apply to a half-turn that has no landing platform."""
+    def _setRow(self, label, field, visible):
+        """Show/hide a form row (label + field). Uses Qt's setRowVisible when
+        available (Qt 6.4+), otherwise hides both widgets so the row collapses."""
+        if hasattr(self._shapeForm, "setRowVisible"):
+            self._shapeForm.setRowVisible(field, visible)
+        else:
+            label.setVisible(visible)
+            field.setVisible(visible)
+
+    def _syncShapeRows(self, *args):
+        """Show only the shape options that apply to the current selection.
+
+        - Landing/turn step: a landing OR a half-turn (the turn point).
+        - Winder steps + well: only a half-turn with no landing platform."""
         isHalfTurn = self.flight.currentText() in ("HalfTurnLeft", "HalfTurnRight")
         hasLanding = self.landings.value() > 0
         winders = isHalfTurn and not hasLanding
-        self.landingStep.setEnabled(hasLanding or isHalfTurn)
-        self.winderSteps.setEnabled(winders)
-        self.winderHole.setEnabled(winders)
+        self._setRow(self.lblLandingStep, self.landingStep, hasLanding or isHalfTurn)
+        self._setRow(self.lblWinderSteps, self.winderSteps, winders)
+        self._setRow(self.lblWinderHole, self.winderHole, winders)
 
     def _syncLandingStepRange(self, *args):
         """Cap the landing step to [0, steps-1] so it can't exceed the flight.
@@ -265,24 +319,24 @@ class StairsPlusTaskPanel:
 
         Runs while self._building is True so it doesn't trigger rebuilds."""
         o = self.obj
-        self.width.setValue(o.Width.Value)
-        self.height.setValue(o.Height.Value)
-        self.length.setValue(o.Length.Value)
+        self._setmm(self.width, o.Width.Value)
+        self._setmm(self.height, o.Height.Value)
+        self._setmm(self.length, o.Length.Value)
         self.steps.setValue(int(o.NumberOfSteps))
-        self.tread.setValue(o.TreadDepthEnforce.Value)
-        self.nosing.setValue(o.Nosing.Value)
-        self.treadTh.setValue(o.TreadThickness.Value)
-        self.riserTh.setValue(o.RiserThickness.Value)
+        self._setmm(self.tread, o.TreadDepthEnforce.Value)
+        self._setmm(self.nosing, o.Nosing.Value)
+        self._setmm(self.treadTh, o.TreadThickness.Value)
+        self._setmm(self.riserTh, o.RiserThickness.Value)
         self.flight.setCurrentText(o.Flight)
         self.landings.setValue(1 if o.Landings == "At center" else 0)
         self.landingStep.setValue(int(getattr(o, "LandingStep", 0)))
         self.winderSteps.setValue(max(2, int(getattr(o, "WinderSteps", 0))))
-        self.winderHole.setValue(getattr(o, "WinderHoleSize", 0).Value
-                                 if hasattr(o, "WinderHoleSize") else 0)
+        self._setmm(self.winderHole, getattr(o, "WinderHoleSize", 0).Value
+                    if hasattr(o, "WinderHoleSize") else 0)
         self.align.setCurrentText(o.Align)
         self.structure.setCurrentText(o.Structure)
-        self.structTh.setValue(o.StructureThickness.Value)
-        self.stringerW.setValue(o.StringerWidth.Value)
+        self._setmm(self.structTh, o.StructureThickness.Value)
+        self._setmm(self.stringerW, o.StringerWidth.Value)
 
     # --- live preview ------------------------------------------------------
     def _startPreview(self):
@@ -316,19 +370,37 @@ class StairsPlusTaskPanel:
 
     def _updateComfort(self):
         n = max(self.steps.value(), 1)
-        riser = self.height.value() / n
-        tread = self.tread.value()
-        if not tread:  # auto: approx run / (steps - 1)
-            tread = self.length.value() / max(n - 1, 1)
+        riser = self._mm(self.height) / n
+        tread = self._mm(self.tread)
+        if not tread:  # auto: mirror the engine's tread-depth calculation
+            length = self._mm(self.length)
+            isHalfTurn = self.flight.currentText() in (
+                "HalfTurnLeft", "HalfTurnRight")
+            # A landing or a half-turn splits the run and reserves ~one stair
+            # width for the turn region, so treads share (length - width) over
+            # (steps - 2). A plain straight flight shares length over steps - 1.
+            hasSplit = (self.landings.value() > 0 or isHalfTurn) and n > 3
+            if hasSplit:
+                tread = (length - self._mm(self.width)) / max(n - 2, 1)
+            else:
+                tread = length / max(n - 1, 1)
         blondel = 2 * riser + tread
-        ok = 600 <= blondel <= 640        # comfortable range, mm
+        ok = 600 <= blondel <= 640        # comfortable range, mm (internal)
         colour = "#2ec27e" if ok else "#e01b24"
-        verdict = "comfortable" if ok else "outside 600-640 mm comfort range"
+        verdict = "comfortable" if ok else "outside comfort range"
+
+        def q(v):  # format a mm value in the user's display unit
+            try:
+                return FreeCAD.Units.Quantity("%.6f mm" % v).UserString
+            except Exception:
+                return "%.0f mm" % v
+
         self.comfort.setText(
-            "<b>Riser:</b> {:.0f} mm &nbsp; <b>Tread:</b> {:.0f} mm<br>"
+            "<b>R · Riser height:</b> {} &nbsp; "
+            "<b>T · Tread depth:</b> {}<br>"
             "<b>Blondel (2R + T):</b> "
-            "<span style='color:{}'>{:.0f} mm - {}</span>".format(
-                riser, tread, colour, blondel, verdict))
+            "<span style='color:{}'>{} – {}</span>".format(
+                q(riser), q(tread), colour, q(blondel), verdict))
 
     # --- task panel callbacks ---------------------------------------------
     def accept(self):

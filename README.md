@@ -38,6 +38,16 @@ Python console). Restart FreeCAD, switch to the **BIM** workbench, and use the
 BIM workbench → **StairsPlus** toolbar → configure → **OK**. Double-click a
 StairsPlus object in the tree to edit it.
 
+## TODO
+
+- [ ] Implement quarter-turn stairs.
+- [ ] Rename the add-on to **ArchPlus** (doors and windows will be added later).
+- [ ] Resolve the winder well issue.
+- [ ] Support railings, balusters, etc.
+- [ ] For half-turns, support spacing between the two stairways.
+- [ ] UI: landing and winder steps are too similar — probably merge them into a
+      single setting.
+
 ## Requirements
 
 - FreeCAD 1.1 (the BIM/Arch modules must be available).
