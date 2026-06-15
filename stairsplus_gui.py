@@ -26,16 +26,14 @@ ICON = os.path.join(_DIR, "Resources", "icons", "StairsPlus.svg")
 # Apply a settings dict to an existing _StairsPlus object.
 # ---------------------------------------------------------------------------
 def applySettings(obj, width, height, length, numberOfSteps, treadDepth,
-                  nosing, treadThickness, riserThickness, flight, landings,
-                  landingStep, winderSteps, winderHole, align, structure,
-                  structureThickness, stringerWidth):
+                  nosing, treadThickness, riserThickness, flight, breakSteps,
+                  breakAtStep, align, structure, structureThickness,
+                  stringerWidth):
     """Write the panel's exposed values onto a _StairsPlus object.
 
-    `landings` is a count (0 or 1); `landingStep` is the step the landing/turn
-    sits on (0 = auto, centered); `winderSteps` is the number of wedge steps for
-    a half-turn without a landing; `winderHole` is the square well half-size.
-    All length values are in millimetres. Properties not exposed by the panel
-    keep the defaults set at creation."""
+    `breakSteps` is the unified turn/break setting: 0 = none (continuous),
+    1 = landing (flat platform), >=2 = winder (wedge) steps. `breakAtStep` is
+    the step the break sits on. All length values are in millimetres."""
     obj.Width = width
     obj.Height = height
     obj.Length = length
@@ -46,12 +44,22 @@ def applySettings(obj, width, height, length, numberOfSteps, treadDepth,
     # TreadDepth is computed/read-only; TreadDepthEnforce overrides it (0 = auto).
     obj.TreadDepthEnforce = treadDepth
     obj.Flight = flight
-    # The engine's Landings enum drives geometry; map the 0/1 count onto it.
-    obj.Landings = "At center" if landings else "None"
-    obj.LandingStep = int(landingStep)
-    obj.WinderSteps = max(2, int(winderSteps))
-    obj.WinderHoleSize = winderHole
     obj.Align = align
+
+    # Map the unified break setting onto the engine's existing properties:
+    #   0      -> no break (continuous flight)
+    #   1      -> flat landing
+    #   >= 2   -> winder steps (half-turn only; ignored for a straight flight)
+    n = int(breakSteps)
+    obj.LandingStep = int(breakAtStep)
+    if n == 1:
+        obj.Landings = "At center"      # flat landing
+    else:
+        obj.Landings = "None"
+    if n >= 2:
+        obj.WinderSteps = n             # winders (triggered on a half-turn)
+    obj.WinderHoleSize = 0              # winder well not exposed (see TODO)
+
     obj.Structure = structure
     obj.StructureThickness = structureThickness
     obj.StringerWidth = stringerWidth
@@ -60,8 +68,8 @@ def applySettings(obj, width, height, length, numberOfSteps, treadDepth,
 def makeStairsPlus(width=1000.0, height=3000.0, length=4000.0,
                    numberOfSteps=17, treadDepth=0.0, nosing=25.0,
                    treadThickness=50.0, riserThickness=50.0,
-                   flight="Straight", landings=0, landingStep=0, winderSteps=3,
-                   winderHole=0.0, align="Left", structure="Massive",
+                   flight="Straight", breakSteps=0, breakAtStep=8,
+                   align="Left", structure="Massive",
                    structureThickness=150.0, stringerWidth=120.0):
     """Create a _StairsPlus object configured with the given values."""
     import stairsplus_object
@@ -70,9 +78,9 @@ def makeStairsPlus(width=1000.0, height=3000.0, length=4000.0,
         FreeCAD.newDocument()
     obj = stairsplus_object.makeStairsPlus()
     applySettings(obj, width, height, length, numberOfSteps, treadDepth,
-                  nosing, treadThickness, riserThickness, flight, landings,
-                  landingStep, winderSteps, winderHole, align, structure,
-                  structureThickness, stringerWidth)
+                  nosing, treadThickness, riserThickness, flight, breakSteps,
+                  breakAtStep, align, structure, structureThickness,
+                  stringerWidth)
     FreeCAD.ActiveDocument.recompute()
     return obj
 
@@ -90,7 +98,7 @@ class StairsPlusTaskPanel:
         self._building = True          # suppress live updates during widget setup
 
         self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Edit StairsPlus" if self.editing else "StairsPlus")
+        self.form.setWindowTitle("Edit Stairs" if self.editing else "Stairs")
         if os.path.exists(ICON):
             self.form.setWindowIcon(QtGui.QIcon(ICON))
 
@@ -101,37 +109,35 @@ class StairsPlusTaskPanel:
         shapeForm = QtGui.QFormLayout(shapeBox)
         self.flight = QtGui.QComboBox()
         self.flight.addItems(["Straight", "HalfTurnLeft", "HalfTurnRight"])
-        self.landings = QtGui.QSpinBox()
-        self.landings.setRange(0, 1)
-        self.landings.setToolTip("Number of landings (0 or 1)")
-        self.landingStep = QtGui.QSpinBox()
-        self.landingStep.setRange(0, 200)
-        self.landingStep.setToolTip(
-            "Step the landing/turn sits on (0 = auto, centered)")
-        self.winderSteps = QtGui.QSpinBox()
-        self.winderSteps.setRange(2, 50)      # winders are never fewer than 2
-        self.winderSteps.setValue(3)
-        self.winderSteps.setToolTip(
-            "Winder (wedge) steps that sweep a half-turn when there is no "
-            "landing (minimum 2).")
-        self.winderHole = self._len(0)
-        self.winderHole.setToolTip(
-            "Half-size of the square hole (well) in the middle of the winder "
-            "turn. 0 = winders meet at a point.")
+
+        # Unified break/turn setting (see _breakSteps / applySettings):
+        #   straight  -> a Landing checkbox  (off = 0, on = 1)
+        #   half-turn -> a Turn-steps spinbox (1 = landing, >=2 = winders)
+        self.landingChk = QtGui.QCheckBox()
+        self.landingChk.setToolTip("Add a flat landing partway up the flight")
+        self.turnSteps = QtGui.QSpinBox()
+        self.turnSteps.setRange(1, 50)
+        self.turnSteps.setValue(3)
+        self.turnSteps.setToolTip(
+            "Steps that make up the turn. 1 = a flat landing; 2 or more = "
+            "winder (wedge) steps that climb through the turn.")
+        self.atStep = QtGui.QSpinBox()
+        self.atStep.setRange(1, 200)
+        self.atStep.setValue(8)               # centered for the default 17 steps
+        self.atStep.setToolTip("The step the landing/turn sits on")
         self.align = QtGui.QComboBox()
         self.align.addItems(["Left", "Right", "Center"])
 
         # Rows for options that only apply to some shapes keep explicit label
         # widgets so they can be hidden together with their field.
         self._shapeForm = shapeForm
-        shapeForm.addRow("Flight / turn", self.flight)
-        shapeForm.addRow("Landings (0 or 1)", self.landings)
-        self.lblLandingStep = QtGui.QLabel("Landing / turn at step (0 = auto)")
-        shapeForm.addRow(self.lblLandingStep, self.landingStep)
-        self.lblWinderSteps = QtGui.QLabel("Winder steps (min 2)")
-        shapeForm.addRow(self.lblWinderSteps, self.winderSteps)
-        self.lblWinderHole = QtGui.QLabel("Winder well half-size")
-        shapeForm.addRow(self.lblWinderHole, self.winderHole)
+        shapeForm.addRow("Shape", self.flight)
+        self.lblLanding = QtGui.QLabel("Landing")
+        shapeForm.addRow(self.lblLanding, self.landingChk)
+        self.lblTurnSteps = QtGui.QLabel("Turn steps (1 = landing)")
+        shapeForm.addRow(self.lblTurnSteps, self.turnSteps)
+        self.lblAtStep = QtGui.QLabel("At step")
+        shapeForm.addRow(self.lblAtStep, self.atStep)
         shapeForm.addRow("Alignment", self.align)
         outer.addWidget(shapeBox)
 
@@ -197,16 +203,16 @@ class StairsPlusTaskPanel:
         # Connect every input to the live-update scheduler.
         for w in (self.width, self.height, self.length, self.tread,
                   self.nosing, self.treadTh, self.riserTh, self.structTh,
-                  self.stringerW, self.landings, self.landingStep,
-                  self.winderSteps, self.winderHole):
+                  self.stringerW, self.turnSteps, self.atStep):
             w.valueChanged.connect(self._schedule)
         self.steps.valueChanged.connect(self._schedule)
+        self.landingChk.toggled.connect(self._schedule)
         for c in (self.flight, self.align, self.structure):
             c.currentIndexChanged.connect(self._schedule)
-        # Landing-step input matters when a landing OR a half-turn exists, and
-        # its max must track the step count (split must leave >=1 step/flight).
-        self.landings.valueChanged.connect(self._syncShapeRows)
+        # Which break controls are shown depends on the shape and the landing
+        # checkbox; the "at step" max must track the step count.
         self.flight.currentIndexChanged.connect(self._syncShapeRows)
+        self.landingChk.toggled.connect(self._syncShapeRows)
         self.steps.valueChanged.connect(self._syncLandingStepRange)
         self._syncShapeRows()
         self._syncLandingStepRange()
@@ -216,7 +222,7 @@ class StairsPlusTaskPanel:
             # abortable transaction so Cancel reverts the edits.
             self._loadFromObject()
             self._building = False
-            FreeCAD.ActiveDocument.openTransaction("Edit StairsPlus")
+            FreeCAD.ActiveDocument.openTransaction("Edit Stairs")
             self._updateComfort()
         else:
             # Create mode: build a live-preview object now.
@@ -257,6 +263,18 @@ class StairsPlusTaskPanel:
         except Exception:
             w.setValue(float(mm))
 
+    def _isHalfTurn(self):
+        return self.flight.currentText() in ("HalfTurnLeft", "HalfTurnRight")
+
+    def _breakSteps(self):
+        """Unified break setting: 0 = none, 1 = landing, >=2 = winders.
+
+        For a half-turn it is the Turn-steps spinbox (min 1); for a straight
+        flight it is the Landing checkbox (1 if checked, else 0)."""
+        if self._isHalfTurn():
+            return self.turnSteps.value()
+        return 1 if self.landingChk.isChecked() else 0
+
     def _collect(self):
         return dict(
             width=self._mm(self.width),
@@ -268,10 +286,8 @@ class StairsPlusTaskPanel:
             treadThickness=self._mm(self.treadTh),
             riserThickness=self._mm(self.riserTh),
             flight=self.flight.currentText(),
-            landings=self.landings.value(),          # 0 or 1
-            landingStep=self.landingStep.value(),    # 0 = auto (centered)
-            winderSteps=self.winderSteps.value(),    # half-turn, no landing
-            winderHole=self._mm(self.winderHole),    # square well half-size
+            breakSteps=self._breakSteps(),
+            breakAtStep=self.atStep.value(),
             align=self.align.currentText(),
             structure=self.structure.currentText(),
             structureThickness=self._mm(self.structTh),
@@ -297,22 +313,20 @@ class StairsPlusTaskPanel:
             field.setVisible(visible)
 
     def _syncShapeRows(self, *args):
-        """Show only the shape options that apply to the current selection.
+        """Show only the break controls that apply to the current shape.
 
-        - Landing/turn step: a landing OR a half-turn (the turn point).
-        - Winder steps + well: only a half-turn with no landing platform."""
-        isHalfTurn = self.flight.currentText() in ("HalfTurnLeft", "HalfTurnRight")
-        hasLanding = self.landings.value() > 0
-        winders = isHalfTurn and not hasLanding
-        self._setRow(self.lblLandingStep, self.landingStep, hasLanding or isHalfTurn)
-        self._setRow(self.lblWinderSteps, self.winderSteps, winders)
-        self._setRow(self.lblWinderHole, self.winderHole, winders)
+        - Straight: the Landing checkbox (a half-turn hides it).
+        - Half-turn: the Turn-steps spinbox.
+        - At step: whenever there is a break (half-turn, or landing checked)."""
+        isHalfTurn = self._isHalfTurn()
+        self._setRow(self.lblLanding, self.landingChk, not isHalfTurn)
+        self._setRow(self.lblTurnSteps, self.turnSteps, isHalfTurn)
+        hasBreak = isHalfTurn or self.landingChk.isChecked()
+        self._setRow(self.lblAtStep, self.atStep, hasBreak)
 
     def _syncLandingStepRange(self, *args):
-        """Cap the landing step to [0, steps-1] so it can't exceed the flight.
-
-        0 = auto (centered); 1..steps-1 places the landing after that step."""
-        self.landingStep.setMaximum(max(1, self.steps.value() - 1))
+        """Cap the break position to [1, steps-1] so it leaves a step per side."""
+        self.atStep.setMaximum(max(1, self.steps.value() - 1))
 
     def _loadFromObject(self):
         """Populate the widgets from an existing object's properties.
@@ -328,11 +342,20 @@ class StairsPlusTaskPanel:
         self._setmm(self.treadTh, o.TreadThickness.Value)
         self._setmm(self.riserTh, o.RiserThickness.Value)
         self.flight.setCurrentText(o.Flight)
-        self.landings.setValue(1 if o.Landings == "At center" else 0)
-        self.landingStep.setValue(int(getattr(o, "LandingStep", 0)))
-        self.winderSteps.setValue(max(2, int(getattr(o, "WinderSteps", 0))))
-        self._setmm(self.winderHole, getattr(o, "WinderHoleSize", 0).Value
-                    if hasattr(o, "WinderHoleSize") else 0)
+        # Reconstruct the unified break setting from the engine properties.
+        nsteps = int(o.NumberOfSteps)
+        isHalfTurn = o.Flight in ("HalfTurnLeft", "HalfTurnRight")
+        if o.Landings == "At center":
+            n = 1                                  # flat landing
+        elif isHalfTurn:
+            n = max(2, int(getattr(o, "WinderSteps", 2)))   # winders
+        else:
+            n = 0                                  # continuous straight flight
+        self.landingChk.setChecked(n >= 1)
+        self.turnSteps.setValue(max(1, n))
+        # Break position: use the stored step, else the centered default.
+        ls = int(getattr(o, "LandingStep", 0))
+        self.atStep.setValue(ls if 1 <= ls <= nsteps - 1 else max(1, nsteps // 2))
         self.align.setCurrentText(o.Align)
         self.structure.setCurrentText(o.Structure)
         self._setmm(self.structTh, o.StructureThickness.Value)
@@ -344,7 +367,7 @@ class StairsPlusTaskPanel:
         if FreeCAD.ActiveDocument is None:
             FreeCAD.newDocument()
         doc = FreeCAD.ActiveDocument
-        doc.openTransaction("Create StairsPlus")
+        doc.openTransaction("Create Stairs")
         self.obj = stairsplus_object.makeStairsPlus()
         self._apply()
         try:
@@ -366,7 +389,7 @@ class StairsPlusTaskPanel:
             applySettings(self.obj, **self._collect())
             FreeCAD.ActiveDocument.recompute()
         except Exception as exc:
-            FreeCAD.Console.PrintError("StairsPlus: %s\n" % exc)
+            FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
     def _updateComfort(self):
         n = max(self.steps.value(), 1)
@@ -374,12 +397,10 @@ class StairsPlusTaskPanel:
         tread = self._mm(self.tread)
         if not tread:  # auto: mirror the engine's tread-depth calculation
             length = self._mm(self.length)
-            isHalfTurn = self.flight.currentText() in (
-                "HalfTurnLeft", "HalfTurnRight")
-            # A landing or a half-turn splits the run and reserves ~one stair
-            # width for the turn region, so treads share (length - width) over
-            # (steps - 2). A plain straight flight shares length over steps - 1.
-            hasSplit = (self.landings.value() > 0 or isHalfTurn) and n > 3
+            # A break (landing or winders) splits the run and reserves ~one
+            # stair width for the turn region, so treads share (length - width)
+            # over (steps - 2). A plain straight flight shares length / steps-1.
+            hasSplit = self._breakSteps() >= 1 and n > 3
             if hasSplit:
                 tread = (length - self._mm(self.width)) / max(n - 2, 1)
             else:
@@ -429,7 +450,7 @@ class StairsPlusTaskPanel:
 class StairsPlusCommand:
     def GetResources(self):
         return {"Pixmap": ICON,
-                "MenuText": "Create StairsPlus",
+                "MenuText": "Stairs",
                 "ToolTip": "Create a parametric stair via a configuration dialog"}
 
     def Activated(self):
@@ -441,4 +462,4 @@ class StairsPlusCommand:
         return True
 
 
-FreeCADGui.addCommand("StairsPlus_Create", StairsPlusCommand())
+FreeCADGui.addCommand("ArchPlus_Stairs", StairsPlusCommand())

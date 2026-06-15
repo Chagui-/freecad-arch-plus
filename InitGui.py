@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# StairsPlus startup (GUI). Instead of registering its own workbench, this
-# add-on injects a "StairsPlus" toolbar and menu into the existing BIM
+# ArchPlus startup (GUI). Instead of registering its own workbench, this
+# add-on injects an "ArchPlus" toolbar and menu into the existing BIM
 # workbench by wrapping BIMWorkbench.Initialize().
 #
 # IMPORTANT: FreeCAD exec()s InitGui.py with SEPARATE globals and locals dicts.
@@ -16,24 +16,24 @@ import FreeCADGui as Gui
 
 
 def _injectIntoBIM():
-    """Wrap BIMWorkbench.Initialize so StairsPlus tools appear inside BIM."""
+    """Wrap BIMWorkbench.Initialize so ArchPlus tools appear inside BIM."""
 
-    toolbar = "StairsPlus"
-    commands = ["StairsPlus_Create"]
+    toolbar = "ArchPlus"
+    commands = ["ArchPlus_Stairs"]
 
     wb = Gui.getWorkbench("BIMWorkbench")
     if wb is None:
         FreeCAD.Console.PrintWarning(
-            "StairsPlus: BIM workbench not found; tools not added.\n")
+            "ArchPlus: BIM workbench not found; tools not added.\n")
         return
 
     # Avoid double-wrapping if InitGui is re-executed.
-    if getattr(wb, "_stairsPlusInjected", False):
+    if getattr(wb, "_archPlusInjected", False):
         return
-    wb._stairsPlusInjected = True
+    wb._archPlusInjected = True
 
     def add_ui(workbench):
-        # Importing the module registers the StairsPlus_Create command.
+        # Importing the module registers the ArchPlus_Stairs command.
         # FreeCAD has already put this add-on folder on sys.path.
         import stairsplus_gui  # noqa: F401
         workbench.appendToolbar(toolbar, commands)
@@ -46,7 +46,7 @@ def _injectIntoBIM():
         try:
             add_ui(wb)
         except Exception as exc:  # never break BIM startup
-            FreeCAD.Console.PrintError("StairsPlus: %s\n" % exc)
+            FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
     wb.Initialize = _wrappedInitialize
 
