@@ -107,11 +107,12 @@ class StairsPlusTaskPanel:
         shapeBox = QtGui.QGroupBox("Shape && layout")
         shapeForm = QtGui.QFormLayout(shapeBox)
         self.flight = QtGui.QComboBox()
-        self.flight.addItems(["Straight", "HalfTurnLeft", "HalfTurnRight"])
+        self.flight.addItems(["Straight", "HalfTurnLeft", "HalfTurnRight",
+                              "QuarterTurnLeft", "QuarterTurnRight"])
 
         # Unified break/turn setting (see _breakSteps / applySettings):
         #   straight  -> a Landing checkbox  (off = 0, on = 1)
-        #   half-turn -> a Turn-steps spinbox (1 = landing, >=2 = winders)
+        #   turn      -> a Turn-steps spinbox (1 = landing, >=2 = winders)
         self.landingChk = QtGui.QCheckBox()
         self.landingChk.setToolTip("Add a flat landing partway up the flight")
         self.turnSteps = QtGui.QSpinBox()
@@ -265,15 +266,21 @@ class StairsPlusTaskPanel:
         except Exception:
             w.setValue(float(mm))
 
-    def _isHalfTurn(self):
-        return self.flight.currentText() in ("HalfTurnLeft", "HalfTurnRight")
+    def _isTurn(self):
+        return self.flight.currentText() in (
+            "HalfTurnLeft", "HalfTurnRight",
+            "QuarterTurnLeft", "QuarterTurnRight")
+
+    def _isQuarterTurn(self):
+        return self.flight.currentText() in (
+            "QuarterTurnLeft", "QuarterTurnRight")
 
     def _breakSteps(self):
         """Unified break setting: 0 = none, 1 = landing, >=2 = winders.
 
-        For a half-turn it is the Turn-steps spinbox (min 1); for a straight
+        For a turn it is the Turn-steps spinbox (min 1); for a straight
         flight it is the Landing checkbox (1 if checked, else 0)."""
-        if self._isHalfTurn():
+        if self._isTurn():
             return self.turnSteps.value()
         return 1 if self.landingChk.isChecked() else 0
 
@@ -323,16 +330,21 @@ class StairsPlusTaskPanel:
     def _syncShapeRows(self, *args):
         """Show only the break controls that apply to the current shape.
 
-        - Straight: the Landing checkbox (a half-turn hides it).
-        - Half-turn: the Turn-steps spinbox.
-        - At step: whenever there is a break (half-turn, or landing checked)."""
-        isHalfTurn = self._isHalfTurn()
-        self._setRow(self.lblLanding, self.landingChk, not isHalfTurn)
-        self._setRow(self.lblTurnSteps, self.turnSteps, isHalfTurn)
-        hasBreak = isHalfTurn or self.landingChk.isChecked()
+        - Straight: the Landing checkbox (a turn hides it).
+        - Turn (half/quarter): the Turn-steps spinbox.
+        - At step: whenever there is a break (a turn, or landing checked)."""
+        isTurn = self._isTurn()
+        self._setRow(self.lblLanding, self.landingChk, not isTurn)
+        self._setRow(self.lblTurnSteps, self.turnSteps, isTurn)
+        hasBreak = isTurn or self.landingChk.isChecked()
         self._setRow(self.lblAtStep, self.atStep, hasBreak)
-        # Dimension diagram tracks the selected shape (straight vs half-turn).
-        ref = "dimensions_ref_halfturn" if isHalfTurn else "dimensions_ref_straight"
+        # Dimension diagram tracks the selected shape.
+        if self._isQuarterTurn():
+            ref = "dimensions_ref_quarterturn"
+        elif isTurn:
+            ref = "dimensions_ref_halfturn"
+        else:
+            ref = "dimensions_ref_straight"
         self._setRefImage(self.dimRef, ref, self._dimRefSize)
 
     def _syncLandingStepRange(self, *args):
@@ -355,10 +367,11 @@ class StairsPlusTaskPanel:
         self.flight.setCurrentText(o.Flight)
         # Reconstruct the unified break setting from the engine properties.
         nsteps = int(o.NumberOfSteps)
-        isHalfTurn = o.Flight in ("HalfTurnLeft", "HalfTurnRight")
+        isTurn = o.Flight in ("HalfTurnLeft", "HalfTurnRight",
+                              "QuarterTurnLeft", "QuarterTurnRight")
         if o.Landings == "At center":
             n = 1                                  # flat landing
-        elif isHalfTurn:
+        elif isTurn:
             n = max(2, int(getattr(o, "WinderSteps", 2)))   # winders
         else:
             n = 0                                  # continuous straight flight

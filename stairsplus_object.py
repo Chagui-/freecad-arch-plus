@@ -273,7 +273,8 @@ class _StairsPlus(ArchComponent.Component):
                 QT_TRANSLATE_NOOP("App::Property", "The direction of flight after landing"),
                 locked=True,
             )
-            obj.Flight = ["Straight", "HalfTurnLeft", "HalfTurnRight"]
+            obj.Flight = ["Straight", "HalfTurnLeft", "HalfTurnRight",
+                          "QuarterTurnLeft", "QuarterTurnRight"]
 
         # Segment and Parts properties
         if not hasattr(obj, "LastSegment"):
@@ -2166,6 +2167,8 @@ class _StairsPlus(ArchComponent.Component):
             pts.append(squarePt(z, radialDir(thB), half))
             return pts
 
+        nosing = abs(obj.Nosing.Value)
+
         for i in range(numWinders):
             th0 = totalAngle * i / numWinders
             th1 = totalAngle * (i + 1) / numWinders
@@ -2175,7 +2178,17 @@ class _StairsPlus(ArchComponent.Component):
 
             outer = boundary(ztop, th0, th1, outerHalf)
             apex = Vector(pivot.x, pivot.y, ztop)
-            treadPts = [apex] + outer + [apex]
+            d0 = radialDir(th0)
+            d1 = radialDir(th1)
+            # Nosing: overhang the leading (th0) edge backward (-walking dir)
+            # over the riser below, matching the straight flights' nose.
+            tang = d1.sub(d0)  # walking direction (theta-increasing)
+            if nosing > 1e-9 and tang.Length > 1e-9:
+                noseVec = DraftVecUtils.scaleTo(tang, -nosing)
+                treadPts = [apex.add(noseVec), outer[0].add(noseVec)] \
+                    + outer + [apex, apex.add(noseVec)]
+            else:
+                treadPts = [apex] + outer + [apex]
 
             tread = Part.Face(Part.makePolygon(treadPts))
             if treadThickness:
@@ -2183,17 +2196,19 @@ class _StairsPlus(ArchComponent.Component):
             else:
                 self.pseudosteps.append(tread)
 
-            # Riser: vertical face at the leading (th0) radial edge.
-            d0 = radialDir(th0)
-            d1 = radialDir(th1)
-            zlo = ztop - hstep
-            out0 = squarePt(ztop, d0, outerHalf)
-            outLo = squarePt(zlo, d0, outerHalf)
-            apexLo = Vector(pivot.x, pivot.y, zlo)
-            apexHi = Vector(pivot.x, pivot.y, ztop)
+            # Riser: vertical face at the leading (th0) radial edge. Its top
+            # sits at this winder's tread UNDERSIDE (ztop - treadThickness), not
+            # the tread surface, so the riser slab tucks under the tread instead
+            # of intersecting it; it spans one riser height down to the step
+            # below (matching the straight flights' risers).
+            zHi = ztop - abs(treadThickness)
+            zLo = zHi - hstep
+            out0 = squarePt(zHi, d0, outerHalf)
+            outLo = squarePt(zLo, d0, outerHalf)
+            apexLo = Vector(pivot.x, pivot.y, zLo)
+            apexHi = Vector(pivot.x, pivot.y, zHi)
             riserPts = [apexLo, outLo, out0, apexHi, apexLo]
             riser = Part.Face(Part.makePolygon(riserPts))
-            tang = d1.sub(d0)  # walking direction (theta-increasing)
             if riserThickness and tang.Length > 1e-9:
                 ext = DraftVecUtils.scaleTo(tang, abs(riserThickness))
                 self.steps.append(riser.extrude(ext))
@@ -2203,42 +2218,66 @@ class _StairsPlus(ArchComponent.Component):
         # flight 2 launches from the last winder (its shared top step)
         return baseHeight + (numWinders - 1) * hstep
 
-    def makeWinderHalfTurn(self, obj, edgeP1p2, p1, p2, vLength, vWidth,
-                           vHeight, hstep, landingStep, numOfSteps, align,
-                           flight):
-        """Half-turn made of: straight flight -> winder steps -> straight flight.
+    def makeTurnLanding(self, obj, pivot, uDir, tDir, sideSign, half,
+                        baseHeight, hstep):
+        """Build one flat square landing platform filling the turn quadrant.
 
-        flight 1 = `landingStep` steps; winders = obj.WinderSteps; flight 2 =
-        the rest. v1 - tune turnSign / pivot / align by eye."""
+        The square spans `half` along +uDir and `half*sideSign` along tDir from
+        the pivot (the quadrant the winders would otherwise sweep), lying flat
+        at `baseHeight`. Used for a quarter-turn with a landing (turn-steps = 1)
+        instead of climbing winder wedges. Returns `baseHeight` (flat: no rise
+        across the landing)."""
+
+        base = Vector(pivot.x, pivot.y, baseHeight)
+        a = base                                          # incoming (flight 1) edge, near pivot
+        b = base.add(DraftVecUtils.scaleTo(tDir, sideSign * half))  # ... far rail
+        c = b.add(DraftVecUtils.scaleTo(uDir, half))
+        d = base.add(DraftVecUtils.scaleTo(uDir, half))
+        face = Part.Face(Part.makePolygon([a, b, c, d, a]))
+        th = abs(obj.TreadThickness.Value) or 50.0
+        self.steps.append(face.extrude(Vector(0, 0, -th)))
+
+        # Entry riser: a vertical face along the a->b edge (where flight 1 meets
+        # the landing), climbing one riser up to the landing surface so the step
+        # up onto the platform is closed (mirrors the first winder's riser).
+        aLo = a.add(Vector(0, 0, -hstep))
+        bLo = b.add(Vector(0, 0, -hstep))
+        riser = Part.Face(Part.makePolygon([aLo, bLo, b, a, aLo]))
+        riserThickness = obj.RiserThickness.Value
+        if riserThickness:
+            self.steps.append(
+                riser.extrude(DraftVecUtils.scaleTo(uDir, abs(riserThickness))))
+        else:
+            self.pseudosteps.append(riser)
+        return baseHeight
+
+    def makeWinderTurn(self, obj, edgeP1p2, p1, p2, vLength, vWidth,
+                       vHeight, hstep, landingStep, numOfSteps, align,
+                       flight, totalAngle):
+        """Turn (quarter = pi/2, half = pi) made of:
+        straight flight -> turn -> straight flight.
+
+        With a landing (obj.Landings == "At center") the turn is a single flat
+        square platform; otherwise it is obj.WinderSteps winder (wedge) steps
+        that climb through the turn. flight 1 = `landingStep` steps; flight 2 =
+        the rest. v1 - tune pivot / align by eye."""
 
         # Left and right turns are mirror images: both bulge forward, but the
-        # pivot sits on the opposite rail and the fan is mirrored. Align is
-        # forced to "Left" here so the flights' near rail matches the pivot.
-        if (flight == "HalfTurnRight") or (
-            flight is None and obj.Flight == "HalfTurnRight"
-        ):
+        # pivot sits on the opposite rail and the fan is mirrored.
+        fl = flight if flight is not None else obj.Flight
+        if fl in ("HalfTurnRight", "QuarterTurnRight"):
             sideSign = -1.0
             pivot = p2.add(vWidth)        # far rail
-            vWidth2 = Vector(vWidth)      # flight 2 width extends +vWidth
-        else:  # HalfTurnLeft (default)
+        else:  # left turn (default)
             sideSign = 1.0
             pivot = Vector(p2)            # near rail
-            vWidth2 = vWidth.negative()   # flight 2 width extends -vWidth
-
-        w = int(getattr(obj, "WinderSteps", 0) or 0)
-        # Winders are never fewer than 2, and can take at most the steps left
-        # above flight 1 (when w == numOfSteps - landingStep the winders reach
-        # the top and there is no flight 2).
-        w = max(2, min(w, numOfSteps - landingStep))
-        # flight 1 draws landingStep-1 treads, winders draw w, flight 2 draws
-        # flight2Steps-1. Total must equal numOfSteps-1 (same as the landing
-        # case), so flight2Steps = numOfSteps - landingStep - w + 1.
-        flight2Steps = numOfSteps - landingStep - w + 1
 
         uDir = DraftVecUtils.scaleTo(vLength, 1.0)
         tDir = DraftVecUtils.scaleTo(vWidth, 1.0)
-        outerHalf = vWidth.Length                       # reach the far rail
+        width = vWidth.Length
+        outerHalf = width                               # reach the far rail
         baseHeight = landingStep * hstep
+        hasLanding = (obj.Landings == "At center")
 
         # flight 1 (straight, up to the turn)
         self.makeStraightStairs(
@@ -2247,20 +2286,51 @@ class _StairsPlus(ArchComponent.Component):
             vWidth=vWidth, align="Left", vLength=vLength, vHeight=vHeight,
         )
 
-        # winders sweeping the 180 deg turn, pivoting at the shared rail
-        topHeight = self.makeWinderStairs(
-            obj, pivot, uDir, tDir, sideSign, w, outerHalf,
-            baseHeight, hstep, obj.TreadThickness.Value,
-            obj.RiserThickness.Value,
-        )
+        if hasLanding:
+            # One flat platform; the landing adds no riser, so flight 2 climbs
+            # all the remaining steps from the same (flat) top height.
+            topHeight = self.makeTurnLanding(
+                obj, pivot, uDir, tDir, sideSign, outerHalf, baseHeight, hstep,
+            )
+            flight2Steps = numOfSteps - landingStep
+        else:
+            w = int(getattr(obj, "WinderSteps", 0) or 0)
+            # Winders are never fewer than 2, and can take at most the steps
+            # left above flight 1 (when w == numOfSteps - landingStep the
+            # winders reach the top and there is no flight 2).
+            w = max(2, min(w, numOfSteps - landingStep))
+            # flight 1 draws landingStep treads, winders draw w (sharing their
+            # top tread with flight 2's first), so flight2Steps = numOfSteps -
+            # landingStep - w + 1.
+            flight2Steps = numOfSteps - landingStep - w + 1
+            topHeight = self.makeWinderStairs(
+                obj, pivot, uDir, tDir, sideSign, w, outerHalf,
+                baseHeight, hstep, obj.TreadThickness.Value,
+                obj.RiserThickness.Value, totalAngle,
+            )
 
-        # flight 2 (straight, reversed direction) continuing from the winder
-        # top. flight2Steps == 1 means the winders already reached the top, so
-        # there is no straight upper flight to draw.
+        # flight 2 (straight) continues from the turn top in the walking
+        # direction at the end of the sweep:
+        #     T(Φ) = cosΦ·uDir − sideSign·sinΦ·tDir
+        # (half turn: -uDir; quarter turn: -sideSign·tDir, i.e. perpendicular).
+        # Its width vector is T(Φ) rotated by −sideSign·90° about Z.
+        cosF = math.cos(totalAngle)
+        sinF = math.sin(totalAngle)
+        uDir2 = Vector(uDir).multiply(cosF).add(
+            Vector(tDir).multiply(-sideSign * sinF))
+        rot = -sideSign * math.pi / 2.0
+        cr, sr = math.cos(rot), math.sin(rot)
+        wDir = Vector(uDir2.x * cr - uDir2.y * sr,
+                      uDir2.x * sr + uDir2.y * cr, 0.0)
+        vLength2 = DraftVecUtils.scaleTo(uDir2, vLength.Length)
+        vWidth2 = DraftVecUtils.scaleTo(wDir, width)
+
+        # flight2Steps < 2 means the turn already reached the top, so there is
+        # no straight upper flight to draw.
         if flight2Steps >= 2:
             cTop2 = Vector(pivot.x, pivot.y, topHeight)
             p4 = cTop2.add(
-                DraftVecUtils.scale(-vLength, flight2Steps - 1).add(
+                DraftVecUtils.scale(vLength2, flight2Steps - 1).add(
                     Vector(0, 0, flight2Steps * hstep)
                 )
             )
@@ -2268,7 +2338,7 @@ class _StairsPlus(ArchComponent.Component):
                 obj, Part.LineSegment(cTop2, p4).toShape(), hstep,
                 obj.UpSlabThickness.Value, flight2Steps,
                 "HorizontalVerticalCut", None,
-                vWidth=vWidth2, align="Left", vLength=-vLength, vHeight=vHeight,
+                vWidth=vWidth2, align="Left", vLength=vLength2, vHeight=vHeight,
             )
 
     def makeStraightStairsWithLanding(
@@ -2329,11 +2399,16 @@ class _StairsPlus(ArchComponent.Component):
         # flat landing platform between them. So a half-turn without a landing
         # is a split with zero landing depth and no platform.
         halfTurn = ["HalfTurnLeft", "HalfTurnRight"]
-        isHalfTurn = (flight in halfTurn) or (flight is None and obj.Flight in halfTurn)
+        quarterTurn = ["QuarterTurnLeft", "QuarterTurnRight"]
+        fl = flight if flight is not None else obj.Flight
+        isHalfTurn = fl in halfTurn
+        isQuarterTurn = fl in quarterTurn
+        isTurn = isHalfTurn or isQuarterTurn
+        totalAngle = (math.pi / 2.0) if isQuarterTurn else math.pi
 
         # setup landingStep - the step number where the stair splits/turns
         wantLanding = (landings == "At center") or (obj.Landings == "At center")
-        wantSplit = wantLanding or isHalfTurn
+        wantSplit = wantLanding or isTurn
         if wantSplit and numOfSteps > 3:
             # LandingStep: the step the split (landing/turn) sits on.
             # 0 = auto (centered). A valid explicit value must leave at least
@@ -2375,12 +2450,12 @@ class _StairsPlus(ArchComponent.Component):
             # check split (landing/turn)
             if hasSplit:
                 if not hasLanding:
-                    # Half-turn without a landing platform. The winder turn
-                    # still occupies ~one stair width of run, so reserve that
-                    # (like a landing of depth = width). This keeps the tread
-                    # depth identical to the default ("Auto") landing case.
+                    # A turn without a landing platform. The winder turn still
+                    # occupies ~one stair width of run, so reserve that (like a
+                    # landing of depth = width). This keeps the tread depth
+                    # identical to the default ("Auto") landing case.
                     # landingDepth stays 0: there is no flat platform, and the
-                    # winder path (makeWinderHalfTurn) does not use it.
+                    # winder path (makeWinderTurn) does not use it.
                     landingDepth = 0
                     reslength = v_proj.Length - width
                 # check landingDepth
@@ -2440,14 +2515,17 @@ class _StairsPlus(ArchComponent.Component):
         p2 = p1.add(DraftVecUtils.scale(vLength, landingStep - 1).add(Vector(0, 0, p2h)))
         edgeP1p2 = Part.LineSegment(p1, p2).toShape()
 
-        # Half-turn without a landing => winder (wedge) steps sweep the turn,
-        # provided WinderSteps > 0. Otherwise fall through to the plain split.
-        useWinders = hasSplit and isHalfTurn and not hasLanding
+        # Turns are built by makeWinderTurn: any quarter turn (landing or
+        # winders), and a half-turn without a landing (winders). A half-turn
+        # WITH a landing still uses the legacy split path below.
+        useTurn = hasSplit and (
+            isQuarterTurn or (isHalfTurn and not hasLanding)
+        )
 
-        if useWinders:
-            self.makeWinderHalfTurn(
+        if useTurn:
+            self.makeWinderTurn(
                 obj, edgeP1p2, p1, p2, vLength, vWidth, vHeight, hstep,
-                landingStep, numOfSteps, align, flight,
+                landingStep, numOfSteps, align, flight, totalAngle,
             )
         elif hasSplit:
             # landingDepth is 0 for a half-turn without a landing, so p3 == p2.
