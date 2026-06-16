@@ -16,9 +16,9 @@ stringers, IFC export) is preserved while new behaviour is added on top.
 - **Comfort note** — live riser/tread readout and Blondel ratio (2R + T) check.
 - **Configurable landing position** — `LandingStep` places the landing/turn on
   any step (0 = auto, centered) instead of always at the middle.
-- **Half-turn winders** — a half-turn with no landing is built from winder
-  (wedge) steps that sweep 180° while climbing, filling a square footprint
-  instead of a flat landing.
+- **Half- and quarter-turn winders** — a turn is built from winder (wedge)
+  steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
+  square footprint. Set the turn to a single step for a flat landing instead.
 
 ## Installation
 
@@ -40,22 +40,17 @@ Double-click a stairs object in the tree to edit it.
 
 ## TODO
 
-- [ ] Implement quarter-turn stairs.
-- [x] Rename the add-on to **ArchPlus** (doors and windows will be added later).
-- [x] Resolve the winder well issue (removed — winders meet at the pivot).
+Stairs:
 - [ ] Support railings, balusters, etc.
 - [ ] For half-turns, support spacing between the two stairways.
-- [ ] UI: landing and winder steps are too similar — probably merge them into a
-      single setting. *(done — unified into one break/turn setting.)*
-- [ ] Publish to the FreeCAD Addon Manager. Needs a `package.xml`, but note:
-      on FreeCAD 1.1 a manifest only loads the add-on if it declares a
-      `<content><workbench>` (with `<subdirectory>.</subdirectory>`); a
-      manifest with no workbench, or pointing `<classname>` at `BIMWorkbench`,
-      misbehaves (nothing loads / BIM's icon gets replaced). Since this add-on
-      injects into BIM rather than shipping its own workbench, publishing will
-      likely require either a real `ArchPlusWorkbench` or targeting newer
-      FreeCAD (which always runs the root `InitGui.py`). For now we ship no
-      `package.xml` and rely on classic root-`InitGui.py` loading.
+
+Doors:
+- [ ] Better positioning
+- [ ] Better UI
+
+Windows:
+- [ ] Better positioning
+- [ ] Better UI
 
 ## Requirements
 
