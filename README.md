@@ -40,22 +40,8 @@ Double-click a stairs object in the tree to edit it.
 
 ## TODO
 
-- [x] Implement quarter-turn stairs.
-- [x] Rename the add-on to **ArchPlus** (doors and windows will be added later).
-- [x] Resolve the winder well issue (removed — winders meet at the pivot).
 - [ ] Support railings, balusters, etc.
 - [ ] For half-turns, support spacing between the two stairways.
-- [ ] UI: landing and winder steps are too similar — probably merge them into a
-      single setting. *(done — unified into one break/turn setting.)*
-- [ ] Publish to the FreeCAD Addon Manager. Needs a `package.xml`, but note:
-      on FreeCAD 1.1 a manifest only loads the add-on if it declares a
-      `<content><workbench>` (with `<subdirectory>.</subdirectory>`); a
-      manifest with no workbench, or pointing `<classname>` at `BIMWorkbench`,
-      misbehaves (nothing loads / BIM's icon gets replaced). Since this add-on
-      injects into BIM rather than shipping its own workbench, publishing will
-      likely require either a real `ArchPlusWorkbench` or targeting newer
-      FreeCAD (which always runs the root `InitGui.py`). For now we ship no
-      `package.xml` and rely on classic root-`InitGui.py` loading.
 
 ## Requirements
 

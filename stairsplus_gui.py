@@ -7,6 +7,7 @@
 # stair renders in the 3D view while you interact. OK keeps it; Cancel aborts
 # the transaction, which removes the preview.
 
+import math
 import os
 import sys
 
@@ -96,6 +97,13 @@ class StairsPlusTaskPanel:
         self.editing = obj is not None
         self._building = True          # suppress live updates during widget setup
 
+        # Turn flights, sourced from the engine so there's one list to maintain.
+        import stairsplus_object
+        self._turnFlights = tuple(stairsplus_object.TURN_INFO)
+        self._quarterFlights = tuple(
+            f for f, (ang, _s) in stairsplus_object.TURN_INFO.items()
+            if ang < math.pi)
+
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Edit Stairs" if self.editing else "Stairs")
         if os.path.exists(ICON):
@@ -107,8 +115,7 @@ class StairsPlusTaskPanel:
         shapeBox = QtGui.QGroupBox("Shape && layout")
         shapeForm = QtGui.QFormLayout(shapeBox)
         self.flight = QtGui.QComboBox()
-        self.flight.addItems(["Straight", "HalfTurnLeft", "HalfTurnRight",
-                              "QuarterTurnLeft", "QuarterTurnRight"])
+        self.flight.addItems(["Straight"] + list(self._turnFlights))
 
         # Unified break/turn setting (see _breakSteps / applySettings):
         #   straight  -> a Landing checkbox  (off = 0, on = 1)
@@ -267,13 +274,10 @@ class StairsPlusTaskPanel:
             w.setValue(float(mm))
 
     def _isTurn(self):
-        return self.flight.currentText() in (
-            "HalfTurnLeft", "HalfTurnRight",
-            "QuarterTurnLeft", "QuarterTurnRight")
+        return self.flight.currentText() in self._turnFlights
 
     def _isQuarterTurn(self):
-        return self.flight.currentText() in (
-            "QuarterTurnLeft", "QuarterTurnRight")
+        return self.flight.currentText() in self._quarterFlights
 
     def _breakSteps(self):
         """Unified break setting: 0 = none, 1 = landing, >=2 = winders.
@@ -367,8 +371,7 @@ class StairsPlusTaskPanel:
         self.flight.setCurrentText(o.Flight)
         # Reconstruct the unified break setting from the engine properties.
         nsteps = int(o.NumberOfSteps)
-        isTurn = o.Flight in ("HalfTurnLeft", "HalfTurnRight",
-                              "QuarterTurnLeft", "QuarterTurnRight")
+        isTurn = o.Flight in self._turnFlights
         if o.Landings == "At center":
             n = 1                                  # flat landing
         elif isTurn:
