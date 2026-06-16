@@ -17,8 +17,9 @@
     <line x1="70" y1="22" x2="70" y2="52"/>
     <line x1="80" y1="22" x2="80" y2="52"/>
   </g>
-  <!-- ascent arrow: up the first flight, then left along the second -->
-  <g stroke="#e66100" stroke-width="2" fill="none">
+  <!-- ascent path: up the first flight, around, along the second. Its TOTAL
+       length is L (the whole run, not one flight). -->
+  <g stroke="#e66100" stroke-width="2.5" fill="none">
     <polyline points="107,104 107,37 42,37"/>
   </g>
   <polygon points="34,37 46,32 46,42" fill="#e66100"/>
@@ -28,16 +29,11 @@
     <line x1="92" y1="112" x2="92" y2="118"/>
     <line x1="122" y1="112" x2="122" y2="118"/>
   </g>
-  <!-- L = run length of one flight -->
-  <g stroke="#666666" stroke-width="1">
-    <line x1="132" y1="52" x2="132" y2="108"/>
-    <line x1="129" y1="52" x2="135" y2="52"/>
-    <line x1="129" y1="108" x2="135" y2="108"/>
-  </g>
-  <g font-family="sans-serif" font-size="13" font-weight="bold" fill="#c01c28">
-    <text x="124" y="120">W</text>
-    <text x="138" y="84">L</text>
+  <g font-family="sans-serif" font-size="13" font-weight="bold">
+    <text x="124" y="120" fill="#c01c28">W</text>
+    <!-- single L on the arrow = the whole ascent path (both flights) -->
+    <text x="112" y="74" fill="#e66100">L</text>
   </g>
   <!-- legend -->
-  <text x="10" y="126" font-family="sans-serif" font-size="10" fill="#333333">W width (per flight) · L run length · H total rise</text>
+  <text x="10" y="126" font-family="sans-serif" font-size="10" fill="#333333">L total run (along the arrow) · W width (per flight) · H total rise</text>
 </svg>
