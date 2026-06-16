@@ -40,8 +40,17 @@ Double-click a stairs object in the tree to edit it.
 
 ## TODO
 
+Stairs:
 - [ ] Support railings, balusters, etc.
 - [ ] For half-turns, support spacing between the two stairways.
+
+Doors:
+- [ ] Better positioning
+- [ ] Better UI
+
+Windows:
+- [ ] Better positioning
+- [ ] Better UI
 
 ## Requirements
 
