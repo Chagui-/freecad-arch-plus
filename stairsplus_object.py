@@ -2476,6 +2476,7 @@ class _StairsPlus(ArchComponent.Component):
         # setup landingStep - the step number where the stair splits/turns
         wantLanding = (landings == "At center") or (obj.Landings == "At center")
         wantSplit = wantLanding or isTurn
+        autoStep = int(numOfSteps / 2)  # auto/centered split step (>= 1)
         if wantSplit and numOfSteps > 3:
             # LandingStep: the step the split (landing/turn) sits on.
             # 0 = auto (centered). A valid explicit value must leave at least
@@ -2484,7 +2485,7 @@ class _StairsPlus(ArchComponent.Component):
             if 0 < ls < numOfSteps:
                 landingStep = ls
             else:
-                landingStep = int(numOfSteps / 2)  # so, split >= 1
+                landingStep = autoStep
             hasSplit = True
             hasLanding = wantLanding
         else:
@@ -2577,6 +2578,17 @@ class _StairsPlus(ArchComponent.Component):
         if obj.LastSegment:
             lastSegmentAbsTop = obj.LastSegment.AbsTop
             p1 = Vector(p1.x, p1.y, lastSegmentAbsTop.z)  # use Last Segment top's z-coordinate
+
+        # Keep the TURN anchored when LandingStep changes. Geometry is built from
+        # p1 (the first step) with the turn pivot at p1 + vLength*(landingStep-1),
+        # so moving the split slides the turn outward and the user has to re-flush
+        # the stair against its wall. Instead, shift p1 (the first step) backward
+        # so the turn stays where the auto-centered turn would sit; the first step
+        # moves and the turn end stays put. Straight-flight landings keep a fixed
+        # footprint already, so only turns need re-anchoring.
+        if isTurn and hasSplit:
+            p1 = p1.add(DraftVecUtils.scale(vLength, autoStep - landingStep))
+
         obj.AbsTop = p1.add(Vector(0, 0, h))
         p2h = landingStep * hstep
         p2 = p1.add(DraftVecUtils.scale(vLength, landingStep - 1).add(Vector(0, 0, p2h)))
