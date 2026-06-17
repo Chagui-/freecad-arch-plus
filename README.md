@@ -9,6 +9,8 @@ for stairs and `ArchWindow` for doors — so every native feature (IFC export,
 hosting/opening cuts, presets, …) is preserved while new behaviour is added on
 top, without affecting the built-in tools.
 
+![The ArchPlus toolbar in the BIM workbench](Resources/images/toolbar.jpg)
+
 ## Features (Stairs)
 
 - **Configuration dialog** (Task panel) with **live preview** — the stair
@@ -20,6 +22,12 @@ top, without affecting the built-in tools.
 - **Half- and quarter-turn winders** — a turn is built from winder (wedge)
   steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
   square footprint. Set the turn to a single step for a flat landing instead.
+
+| Configuration dialog | Comfort note & options |
+| --- | --- |
+| ![Stairs configuration dialog](Resources/images/stairs_dialog_1.jpg) | ![Stairs configuration dialog with comfort note](Resources/images/stairs_dialog_2.jpg) |
+
+![Quarter-turn stairs](Resources/images/stairs_quarter_turn.jpg)
 
 ## Features (Doors)
 
@@ -43,6 +51,12 @@ top, without affecting the built-in tools.
 - **Reposition with the mouse** — from the panel button or right-click →
   **Reposition**: pick a new spot; the door re-orients to the wall face you
   point at, re-snaps to the floor, and re-cuts the host wall.
+
+| Configuration dialog | Opening & panel options |
+| --- | --- |
+| ![Doors configuration dialog](Resources/images/doors_dialog_1.jpg) | ![Doors configuration dialog with opening options](Resources/images/doors_dialog_2.jpg) |
+
+![Double-swing door hosted in a wall](Resources/images/doors_double_swing.jpg)
 
 ## Installation
 
