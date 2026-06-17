@@ -74,9 +74,9 @@ def _openingModeFor(op, leafIndex):
     (Arc 90 / Arc 90 inv) or Mode 9/10 (Sliding / Sliding inv).
     """
     if _operationIsSliding(op):
-        if leafIndex == 0:
-            return 9    # Sliding
-        return 10       # Sliding inv (opposite direction for second leaf)
+        return 9        # Both leaves use the same base mode; the inward/outward
+                        # toggle and the geometry of each leaf's hinge edge cause
+                        # them to slide in opposite (outward) world directions.
     # Swing
     if leafIndex == 0:
         return 1        # Arc 90
