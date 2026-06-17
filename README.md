@@ -9,7 +9,7 @@ for stairs and `ArchWindow` for doors — so every native feature (IFC export,
 hosting/opening cuts, presets, …) is preserved while new behaviour is added on
 top, without affecting the built-in tools.
 
-![The ArchPlus toolbar in the BIM workbench](Resources/images/toolbar.jpg)
+<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
 
 ## Features (Stairs)
 
@@ -25,9 +25,9 @@ top, without affecting the built-in tools.
 
 | Configuration dialog | Comfort note & options |
 | --- | --- |
-| ![Stairs configuration dialog](Resources/images/stairs_dialog_1.jpg) | ![Stairs configuration dialog with comfort note](Resources/images/stairs_dialog_2.jpg) |
+| <img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="280"> | <img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="280"> |
 
-![Quarter-turn stairs](Resources/images/stairs_quarter_turn.jpg)
+<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="360">
 
 ## Features (Doors)
 
@@ -54,9 +54,9 @@ top, without affecting the built-in tools.
 
 | Configuration dialog | Opening & panel options |
 | --- | --- |
-| ![Doors configuration dialog](Resources/images/doors_dialog_1.jpg) | ![Doors configuration dialog with opening options](Resources/images/doors_dialog_2.jpg) |
+| <img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="280"> | <img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="280"> |
 
-![Double-swing door hosted in a wall](Resources/images/doors_double_swing.jpg)
+<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="360">
 
 ## Installation
 
