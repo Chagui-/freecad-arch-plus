@@ -496,11 +496,20 @@ class DoorsPlusTaskPanel:
         outer.addWidget(dimBox)
 
         # ---- Position -----------------------------------------------------
-        # No parametric positioning: a door is placed and moved with the mouse
-        # (see DoorsPlusCommand / repositionDoor). This button re-enters the
-        # mouse placement to move an existing door.
+        # A door is placed and moved with the mouse (see DoorsPlusCommand /
+        # repositionDoor), sitting on the wall base by default. The sill field
+        # raises it above that base (e.g. a raised threshold or a window-like
+        # door over a low wall); the button re-enters mouse placement.
         posBox = QtGui.QGroupBox("Position")
         posV = QtGui.QVBoxLayout(posBox)
+        posForm = QtGui.QFormLayout()
+        self.sill = self._len(0)
+        self.sill.setToolTip(
+            "Height of the door's base above the wall base (the floor). "
+            "0 sits it on the floor; increase to raise it (e.g. a threshold, or "
+            "a door set partway up the wall with steps below).")
+        posForm.addRow("Height above wall base", self.sill)
+        posV.addLayout(posForm)
         self.repositionBtn = QtGui.QPushButton("Reposition with mouse…")
         self.repositionBtn.setToolTip(
             "Pick a new location for this door in the 3D view. It re-orients to "
@@ -556,6 +565,8 @@ class DoorsPlusTaskPanel:
         for w in (self.width, self.height, self.frameWidth, self.panelThk,
                   self.frameDepth):
             w.valueChanged.connect(self._schedule)
+        # Sill only moves the door vertically; handle it directly (no rebuild).
+        self.sill.valueChanged.connect(self._onSillChanged)
         self.opening.valueChanged.connect(self._onOpeningChanged)
         for c in (self.operation, self.panelStyle, self.panelPos, self.swingSide,
                   self.swingDir, self.fireRating):
@@ -574,8 +585,16 @@ class DoorsPlusTaskPanel:
             FreeCAD.ActiveDocument.openTransaction("Edit Door")
         elif self.placed:
             # Door was just created by the command; transaction already open.
-            self._building = False
             self._sketch = self.obj.Base
+            # Reflect the actually-placed size (width can be changed in the
+            # placement step) so the panel matches what was built and a later
+            # edit doesn't silently resize it. Done while _building is True so
+            # it doesn't trigger a rebuild.
+            self._setmm(self.width, self.obj.Width.Value)
+            self._setmm(self.height, self.obj.Height.Value)
+            self._setmm(self.panelThk, self.obj.Frame.Value)
+            self._loadSill()
+            self._building = False
             # Sync initial symbol state to the placed door.
             self._onSymbolToggled()
         else:
@@ -655,6 +674,43 @@ class DoorsPlusTaskPanel:
                 FreeCAD.ActiveDocument.recompute()
             except Exception:
                 pass
+
+    def _loadSill(self):
+        """Set the sill widget from the door's current height above its host."""
+        if self._sketch is None:
+            return
+        baseZ = self._hostBaseZ()
+        if baseZ is None:
+            baseZ = 0.0
+        self._setmm(self.sill, max(0.0, self._sketch.Placement.Base.z - baseZ))
+
+    def _hostBaseZ(self):
+        """Lowest base level of the door's host wall(s), or None if unhosted."""
+        zs = []
+        for h in (getattr(self.obj, "Hosts", None) or []):
+            try:
+                zs.append(h.Shape.BoundBox.ZMin)
+            except Exception:
+                pass
+        return min(zs) if zs else None
+
+    def _onSillChanged(self, *args):
+        """Raise/lower the door so its base sits `sill` above the wall base.
+
+        Only the vertical (Z) coordinate of the base sketch is moved; doors live
+        in vertical walls, so this keeps the door in the wall plane. Measured
+        from the host wall base, or from the global origin if unhosted."""
+        if self._building or self.obj is None or self._sketch is None:
+            return
+        baseZ = self._hostBaseZ()
+        if baseZ is None:
+            baseZ = 0.0
+        pl = self._sketch.Placement
+        newPl = FreeCAD.Placement(pl)
+        newPl.Base = FreeCAD.Vector(pl.Base.x, pl.Base.y,
+                                    baseZ + self._mm(self.sill))
+        self._sketch.Placement = newPl
+        _recomputeWithHosts(self.obj)
 
     # ---- repositioning ----------------------------------------------------
     def _reposition(self):
@@ -765,6 +821,7 @@ class DoorsPlusTaskPanel:
         self._setmm(self.panelThk, o.Frame.Value)
         self._setmm(self.frameDepth, 100)    # not stored separately
         self.opening.setValue(int(getattr(o, "Opening", 0)))
+        self._loadSill()
         if hasattr(o, "SymbolPlan"):
             self.symbolPlan.setChecked(o.SymbolPlan)
         if hasattr(o, "SymbolElevation"):
@@ -1034,6 +1091,13 @@ class DoorsPlusCommand:
             self.tracker.finalize()
             return
 
+        # The frame part's thickness is "(frameDepth - panelThk) + Frame", so
+        # the geometry only matches frameDepth when Frame == panelThk. makeWindow
+        # doesn't set these, so do it here (mirrors the panel's _apply), else the
+        # freshly placed door renders with the wrong frame depth until re-edited.
+        door.Frame = self.PANEL_T
+        door.Offset = 0
+
         if door and hasattr(door, "Base") and door.Base:
             try:
                 door.Base.ViewObject.DisplayMode = "Wireframe"
@@ -1130,7 +1194,7 @@ class DoorsPlusCommand:
         return w
 
 
-# Unregister any old command, then register ours.
-if "ArchPlus_Doors" in FreeCADGui.listCommands():
-    FreeCADGui.removeCommand("ArchPlus_Doors")
-FreeCADGui.addCommand("ArchPlus_Doors", DoorsPlusCommand())
+# Register the command (FreeCAD 1.1 has no removeCommand; addCommand is a no-op
+# if it's already registered, so guard to stay reload-safe).
+if "ArchPlus_Doors" not in FreeCADGui.listCommands():
+    FreeCADGui.addCommand("ArchPlus_Doors", DoorsPlusCommand())
