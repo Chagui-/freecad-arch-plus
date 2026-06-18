@@ -9,6 +9,8 @@ tools. Each geometry engine is a modifiable copy of a native FreeCAD module —
 feature (IFC export, hosting/opening cuts, presets, …) is preserved while new
 behaviour is added on top, without affecting the built-in tools.
 
+<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
+
 ## Features (Stairs)
 
 - **Configuration dialog** (Task panel) with **live preview** — the stair
@@ -20,6 +22,12 @@ behaviour is added on top, without affecting the built-in tools.
 - **Half- and quarter-turn winders** — a turn is built from winder (wedge)
   steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
   square footprint. Set the turn to a single step for a flat landing instead.
+
+| Configuration dialog | Comfort note & options |
+| --- | --- |
+| <img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="280"> | <img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="280"> |
+
+<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="360">
 
 ## Features (Doors)
 
@@ -43,6 +51,12 @@ behaviour is added on top, without affecting the built-in tools.
 - **Reposition with the mouse** — from the panel button or right-click →
   **Reposition**: pick a new spot; the door re-orients to the wall face you
   point at, re-snaps to the floor, and re-cuts the host wall.
+
+| Configuration dialog | Opening & panel options |
+| --- | --- |
+| <img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="280"> | <img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="280"> |
+
+<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="360">
 
 ## Features (Windows)
 
