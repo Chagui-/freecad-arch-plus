@@ -3,11 +3,11 @@
 A FreeCAD add-on that extends the built-in **BIM** workbench with enhanced
 Arch tools. It adds an **ArchPlus** toolbar and menu inside the BIM workbench.
 
-It currently provides enhanced parametric **Stairs** and **Doors** tools. Each
-geometry engine is a modifiable copy of a native FreeCAD module — `ArchStairs`
-for stairs and `ArchWindow` for doors — so every native feature (IFC export,
-hosting/opening cuts, presets, …) is preserved while new behaviour is added on
-top, without affecting the built-in tools.
+It currently provides enhanced parametric **Stairs**, **Doors**, and **Windows**
+tools. Each geometry engine is a modifiable copy of a native FreeCAD module —
+`ArchStairs` for stairs and `ArchWindow` for doors and windows — so every native
+feature (IFC export, hosting/opening cuts, presets, …) is preserved while new
+behaviour is added on top, without affecting the built-in tools.
 
 <img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
 
@@ -58,6 +58,36 @@ top, without affecting the built-in tools.
 
 <img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="360">
 
+## Features (Windows)
+
+- **Configuration dialog** (Task panel) with **live preview** — the window
+  renders as you edit, and the host wall's opening re-cuts immediately.
+- **Double-click** (or right-click → **Edit**) to reopen the panel on an
+  existing window.
+- **Shapes** — Rectangular or **Round** (a circular oculus). A round window is
+  fixed glass; its diameter follows the width.
+- **Operations** — Fixed (no opening), Single casement, Single sliding, and
+  Double casement (rectangular only).
+- **Swing controls** — hinge side and opening direction for casement windows.
+- **Opening animation** — a 0–100 % slider: casement sashes rotate about the
+  hinge, sliding sashes slide aside.
+- **Sash position** — set the sash flush to the Front/interior (default) or
+  Back/exterior face within the frame depth (only matters when the sash is
+  shallower than the frame).
+- **Full 4-sided frame** — unlike doors (which sit on the floor and use a
+  3-sided frame), windows get a frame on all four sides including the bottom
+  sill jamb, since they sit in a wall opening.
+- **Single undivided glass pane** per sash.
+- **Opening symbols** — plan (swing arc) and elevation symbols, each
+  toggleable (elevation off by default).
+- **Mouse placement** — click a wall face and the window drops to a sill height
+  (default 900 mm) above the wall base automatically and centres on the cursor,
+  so you only aim *along* the wall. The sill height is adjustable during
+  placement.
+- **Reposition with the mouse** — from the panel button or right-click →
+  **Reposition**: pick a new spot; the window re-orients to the wall face you
+  point at, re-sets to the sill height, and re-cuts the host wall.
+
 ## Installation
 
 Clone (or copy) this repository into your FreeCAD user `Mod` folder:
@@ -79,6 +109,10 @@ BIM workbench → **ArchPlus** toolbar:
 - **Doors** → click a wall face to place → configure in the panel. Double-click
   (or right-click → Edit) a door to reopen the panel; right-click →
   **Reposition** to move it with the mouse.
+- **Windows** → click a wall face to place (drops to a 900 mm sill height by
+  default) → configure in the panel. Double-click (or right-click → Edit) a
+  window to reopen the panel; right-click → **Reposition** to move it with the
+  mouse.
 
 ## TODO
 
@@ -87,8 +121,10 @@ Stairs:
 - [ ] For half-turns, support spacing between the two stairways.
 
 Windows:
-- [ ] Better positioning
-- [ ] Better UI
+- [ ] Muntins/grille (divided lite grids, e.g. 2×2, 3×3)
+- [ ] Awning/hopper (top/bottom-hung) and tilt-and-turn operations
+- [ ] Triple-pane and double-casement-plus-fixed configurations
+- [ ] Real projecting sill geometry (currently the bottom jamb is flush)
 
 ## Requirements
 
@@ -98,4 +134,5 @@ Windows:
 
 LGPL-2.1-or-later. This add-on includes modified copies of FreeCAD's
 `ArchStairs.py` and `ArchWindow.py` (© Yorik van Havre), so as a derivative
-work it is licensed under the same terms. See [LICENSE](LICENSE).
+work it is licensed under the same terms. `ArchWindow.py` is shared by both the
+Doors and Windows tools (each keeps its own copy). See [LICENSE](LICENSE).

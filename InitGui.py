@@ -19,7 +19,7 @@ def _injectIntoBIM():
     """Wrap BIMWorkbench.Initialize so ArchPlus tools appear inside BIM."""
 
     toolbar = "ArchPlus"
-    commands = ["ArchPlus_Stairs", "ArchPlus_Doors"]
+    commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows"]
 
     wb = Gui.getWorkbench("BIMWorkbench")
     if wb is None:
@@ -35,8 +35,9 @@ def _injectIntoBIM():
     def add_ui(workbench):
         # Importing the modules registers the ArchPlus_* commands.
         # FreeCAD has already put this add-on folder on sys.path.
-        import stairsplus_gui  # noqa: F401
-        import doorsplus_gui   # noqa: F401
+        import stairsplus_gui   # noqa: F401
+        import doorsplus_gui    # noqa: F401
+        import windowsplus_gui  # noqa: F401
         workbench.appendToolbar(toolbar, commands)
         workbench.appendMenu(toolbar, commands)
 
