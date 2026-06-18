@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- outer frame, 4-sided -->
   <g fill="none" stroke="#1a5fb4" stroke-width="3" stroke-linejoin="round">
-    <!-- outer frame, 4-sided -->
-    <rect x="14" y="10" width="36" height="44" rx="1" fill="#cfe3ff"/>
+    <rect x="14" y="8" width="36" height="48" rx="1" fill="#cfe3ff"/>
   </g>
-  <g fill="none" stroke="#2ec27e" stroke-width="2.5" stroke-linejoin="round">
-    <!-- two casement sashes meeting in the middle -->
-    <rect x="19" y="15" width="12" height="34"/>
-    <rect x="33" y="15" width="12" height="34"/>
+  <!-- glazed opening -->
+  <rect x="19" y="13" width="26" height="38" fill="#e8f4ff" stroke="#1a5fb4" stroke-width="1.5"/>
+  <!-- four panes: cross mullion (|+|) -->
+  <g stroke="#2ec27e" stroke-width="3" stroke-linecap="round">
+    <line x1="32" y1="13" x2="32" y2="51"/>
+    <line x1="19" y1="32" x2="45" y2="32"/>
   </g>
-  <!-- glass fill -->
-  <rect x="21" y="17" width="8" height="30" fill="#e8f4ff" stroke="none"/>
-  <rect x="35" y="17" width="8" height="30" fill="#e8f4ff" stroke="none"/>
-  <!-- centre mullion accent -->
-  <line x1="32" y1="10" x2="32" y2="54" stroke="#1a5fb4" stroke-width="1.5"/>
 </svg>
