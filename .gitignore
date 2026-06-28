@@ -1,6 +1,21 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+
+# FreeCAD backups
 *.FCStd1
 *.FCBak
+
+# Local tool config (not shared)
+.claude/
+.mcp.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
