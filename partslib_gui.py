@@ -265,18 +265,33 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._applyTheme()
 
     def _buildCategoriesScreen(self):
-        """Screen one: a scrollable stack of room cards."""
-        self.categoriesScreen = QtGui.QScrollArea()
-        self.categoriesScreen.setWidgetResizable(True)
-        self.categoriesScreen.setFrameShape(QtGui.QFrame.NoFrame)
+        """Screen one: a scrollable stack of room cards, or - JOB2, empty
+        library - a centred empty-state message in its place.
+
+        self.categoriesScreen (the page added to the top-level self.stack)
+        holds its own nested QStackedLayout switching between
+        self.categoriesScroll (the card grid) and self.categoriesEmptyState,
+        so a resize event never needs to know which mode is active (see the
+        early-return guard at the top of _reflowCategories)."""
+        self.categoriesScreen = QtGui.QWidget()
+        self._categoriesStack = QtGui.QStackedLayout(self.categoriesScreen)
+
+        self.categoriesScroll = QtGui.QScrollArea()
+        self.categoriesScroll.setWidgetResizable(True)
+        self.categoriesScroll.setFrameShape(QtGui.QFrame.NoFrame)
 
         container = QtGui.QWidget()
         container.setObjectName("CategoriesContainer")
         self.categoriesLayout = QtGui.QGridLayout(container)
         self.categoriesLayout.setSpacing(16)
         self.categoriesLayout.setContentsMargins(4, 4, 4, 4)
-        self.categoriesScreen.setWidget(container)
-        self.categoriesScreen.viewport().installEventFilter(self)
+        self.categoriesScroll.setWidget(container)
+        self.categoriesScroll.viewport().installEventFilter(self)
+
+        self.categoriesEmptyState = QtGui.QWidget()
+
+        self._categoriesStack.addWidget(self.categoriesScroll)     # index 0
+        self._categoriesStack.addWidget(self.categoriesEmptyState)  # index 1
 
     def _buildResultsScreen(self):
         """Screen two: breadcrumb, search, card grid and detail sidebar."""
@@ -304,7 +319,16 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.grid.setSpacing(10)
         self.grid.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         self.grid.currentItemChanged.connect(self._onSelect)
-        splitter.addWidget(self.grid)
+
+        # JOB2: the grid and its empty-state message ("no parts match this
+        # search") occupy the same splitter slot, switched by _repopulateGrid
+        # - the card grid area must never render as a blank void when a
+        # search matches nothing.
+        self.gridStack = QtGui.QStackedWidget()
+        self.gridStack.addWidget(self.grid)          # index 0
+        self.resultsEmptyState = QtGui.QWidget()
+        self.gridStack.addWidget(self.resultsEmptyState)  # index 1
+        splitter.addWidget(self.gridStack)
 
         sidebar = QtGui.QWidget()
         sidebar.setMinimumWidth(240)
@@ -432,10 +456,53 @@ class PartsLibraryPanel(QtGui.QWidget):
         _clearLayout(self.categoriesLayout)
         self._categories = partslib_index.category_tree(
             self._entries, self._facets, primary="room", secondary="element")
+        if not self._categories:
+            # JOB2: zero rooms (an empty library) - show the empty-state
+            # message in place of the card grid instead of a blank void.
+            self._categoryCards = []
+            self._categoryColumns = 0
+            self._fillCategoriesEmptyState()
+            self._categoriesStack.setCurrentWidget(self.categoriesEmptyState)
+            return
+        self._categoriesStack.setCurrentWidget(self.categoriesScroll)
         self._categoryCards = [self._makeRoomCard(room)
                                 for room in self._categories]
         self._categoryColumns = 0  # force _reflowCategories to (re)place them
         self._reflowCategories()
+
+    def _fillCategoriesEmptyState(self):
+        """(Re)build the categories screen's empty-state message - JOB2: a
+        quiet centred line plus, smaller beneath it, the absolute path of
+        the library folder so the user knows where to add content.
+
+        partslib_object is imported lazily, here, for its LIBRARY_DIR
+        constant only - never at module scope. See the note above refresh()/
+        _onPlace(): importing it at module scope pulls in ArchComponent
+        during the BIM workbench's Initialize() and previously took out the
+        whole toolbar."""
+        import partslib_object
+
+        layout = self.categoriesEmptyState.layout()
+        if layout is None:
+            layout = QtGui.QVBoxLayout(self.categoriesEmptyState)
+            layout.setAlignment(QtCore.Qt.AlignCenter)
+        else:
+            _clearLayout(layout)
+
+        message = QtGui.QLabel("No parts in the library yet")
+        message.setAlignment(QtCore.Qt.AlignCenter)
+        message.setWordWrap(True)
+        message.setStyleSheet("color: %s;" % self._tokens["text"])
+        layout.addWidget(message)
+
+        path = QtGui.QLabel(os.path.abspath(partslib_object.LIBRARY_DIR))
+        path.setAlignment(QtCore.Qt.AlignCenter)
+        path.setWordWrap(True)
+        pathFont = path.font()
+        pathFont.setPointSize(max(7, pathFont.pointSize() - 1))
+        path.setFont(pathFont)
+        path.setStyleSheet("color: %s;" % self._tokens["text_dim"])
+        layout.addWidget(path)
 
     def _columnCountFor(self, width):
         """How many ~_CARD_TARGET_WIDTH-wide columns fit in `width`, never
@@ -453,8 +520,18 @@ class PartsLibraryPanel(QtGui.QWidget):
         or leaking them - when the computed column count has actually
         CHANGED (or on the initial call, where _categoryColumns is reset to
         0 by _populateCategories). This is what keeps a resize drag from
-        thrashing the layout on every pixel."""
-        columns = self._columnCountFor(self.categoriesScreen.viewport().width())
+        thrashing the layout on every pixel.
+
+        Guarded at the top for the empty-library case (JOB2): with zero
+        categories, _populateCategories has already switched
+        self._categoriesStack to the empty-state page and returned without
+        calling this method, but a resize event can still reach it through
+        eventFilter - the detach/re-add loop below must not run against an
+        empty self._categoryCards, or it would strip the (unrelated)
+        empty-state widget out of the grid layout it does not belong to."""
+        if not self._categories:
+            return
+        columns = self._columnCountFor(self.categoriesScroll.viewport().width())
         if columns == self._categoryColumns:
             return
         self._categoryColumns = columns
@@ -484,7 +561,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             self.categoriesLayout.setRowStretch(r, 1 if r == rowCount else 0)
 
     def eventFilter(self, watched, event):
-        if (watched is self.categoriesScreen.viewport()
+        if (watched is self.categoriesScroll.viewport()
                 and event.type() == QtCore.QEvent.Resize):
             self._reflowCategories()
         return super(PartsLibraryPanel, self).eventFilter(watched, event)
@@ -605,7 +682,13 @@ class PartsLibraryPanel(QtGui.QWidget):
         """Rebuild the card grid from the current search text + breadcrumb
         filter. Each card is always created and added - FIX 3 of the
         bug-fix round: a thumbnail failure must never hide a card, only its
-        icon is conditional."""
+        icon is conditional.
+
+        JOB2: when nothing matches (an empty library, or a search that
+        matches nothing) self.gridStack switches to the empty-state message
+        in place of the card grid, and switches back the moment a match
+        reappears - covering both "clear the search" and "the library
+        gained its first part"."""
         self.grid.clear()
         for entry in sorted(self._filteredEntries(), key=lambda e: e["name"]):
             item = QtGui.QListWidgetItem()
@@ -615,9 +698,29 @@ class PartsLibraryPanel(QtGui.QWidget):
             self.grid.addItem(item)
             self.grid.setItemWidget(item, card)
         if self.grid.count():
+            self.gridStack.setCurrentWidget(self.grid)
             self.grid.setCurrentRow(0)
         else:
+            self._fillResultsEmptyState()
+            self.gridStack.setCurrentWidget(self.resultsEmptyState)
             self._onSelect()
+
+    def _fillResultsEmptyState(self):
+        """(Re)build the results screen's empty-state message - JOB2: a
+        quiet centred line where the card grid would otherwise render a
+        blank void."""
+        layout = self.resultsEmptyState.layout()
+        if layout is None:
+            layout = QtGui.QVBoxLayout(self.resultsEmptyState)
+            layout.setAlignment(QtCore.Qt.AlignCenter)
+        else:
+            _clearLayout(layout)
+
+        message = QtGui.QLabel("No parts match this search")
+        message.setAlignment(QtCore.Qt.AlignCenter)
+        message.setWordWrap(True)
+        message.setStyleSheet("color: %s;" % self._tokens["text"])
+        layout.addWidget(message)
 
     def _makePartCard(self, entry):
         """Square thumbnail on top, name beneath, a small monospaced line of

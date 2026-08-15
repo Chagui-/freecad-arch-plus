@@ -10,6 +10,22 @@ passed at the time this doc was written, including `tests/test_partslib_theme.py
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
+## The library ships EMPTY
+
+`library/` now contains only `facets.json` (the faceted vocabulary) — no
+parts. The two placeholder parts this checklist was originally written
+against (`base-cabinet`, `wc-demo`) proved the pipeline during development
+and have since been removed now that real content is authored on a separate
+branch. **Every step below that involves placing, previewing, selecting
+variants, or reading parameters off a part (all of Parts B7 onward, C, D, E,
+F, G, I9/B10's thumbnail checks, J, K) cannot run until you have added at
+least one real part under `library/`.** Steps that only exercise the empty
+library itself — A (startup/toolbar), B1/B2 (the categories screen's new
+empty-state message and its library-path hint), B6-as-a-search-with-nothing
+(the results screen's empty-state message) — remain valid as written today.
+The rest of the checklist is not wrong, only dormant: it becomes runnable
+again, unchanged, the moment a part exists.
+
 ## The panel is now an MDI tab, not a dock
 
 `partslib_gui.py` no longer opens a `QDockWidget`. `PartsLibraryPanel` is a

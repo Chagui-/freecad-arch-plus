@@ -94,6 +94,13 @@ inserting single lightweight objects built from bundled part definitions.
 
 ## Features (Parts Library)
 
+ArchPlus ships the Parts Library's faceted vocabulary
+(`library/facets.json`) and its browser/placement machinery, but **no
+parts** — `library/` is otherwise empty out of the box. Add part folders
+under it (each with its own `part.json` manifest, validated against that
+vocabulary) to populate the catalogue; until then the panel shows a plain
+"no parts in the library yet" message instead of a blank void.
+
 - **Dockable browser** — click **Parts Library** to open a dock ("ArchPlus
   Library") that stays open across placements, so you can insert several
   parts in a row without reopening anything.

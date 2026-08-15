@@ -7,7 +7,20 @@
 #
 # Deliberately does NOT import partslib_object - it imports FreeCAD at module
 # scope and would fail under plain pytest.
+#
+# The library ships EMPTY (the two placeholder parts that once proved the
+# pipeline - "base-cabinet", "wc-demo" - have been removed; real content is
+# authored on a separate branch). Every test below except
+# test_facets_json_is_valid therefore currently passes VACUOUSLY - scanning
+# zero entries reports zero errors, and a for-loop over zero entries never
+# fails. That is intentional, not a sign these are dead tests to delete:
+# they are guards that arm themselves the moment a real part lands under
+# library/, at which point they start actually checking that part's facet
+# values, geometry builder and variant labels. Do not read "passes with zero
+# parts" as "does nothing" - keep them.
 
+
+import json
 import os
 
 import partslib_geometry
@@ -17,8 +30,6 @@ import partslib_manifest
 LIBRARY_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library")
 
-EXPECTED_PART_IDS = {"base-cabinet", "wc-demo"}
-
 
 def _scan():
     return partslib_index.scan(LIBRARY_DIR)
@@ -27,12 +38,6 @@ def _scan():
 def test_scan_reports_zero_errors_for_the_shipped_library():
     index = _scan()
     assert index["errors"] == []
-
-
-def test_both_seed_part_ids_are_present():
-    index = _scan()
-    ids = {entry["id"] for entry in index["entries"]}
-    assert EXPECTED_PART_IDS <= ids
 
 
 def test_every_entry_facet_value_exists_in_the_shipped_vocabulary():
@@ -75,3 +80,13 @@ def test_every_part_variant_labels_are_non_empty_and_unique():
             assert label, "entry %r has an empty variant label" % (entry["id"],)
         assert len(labels) == len(set(labels)), (
             "entry %r has duplicate variant labels: %r" % (entry["id"], labels))
+
+
+def test_facets_json_is_valid():
+    # The one thing the shipped library still asserts positively even with
+    # zero parts: the vocabulary itself (library/facets.json) is well-formed.
+    # Real parts are authored against this file, so it must stay valid on
+    # its own, independent of whether any part currently references it.
+    with open(os.path.join(LIBRARY_DIR, "facets.json")) as handle:
+        doc = json.load(handle)
+    assert partslib_manifest.validate_facets(doc) == []
