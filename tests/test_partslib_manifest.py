@@ -41,6 +41,63 @@ def test_facet_values_are_listed_sorted():
     assert pm.facet_values(FACETS, "room") == ["Bathroom", "Kitchen"]
 
 
+# -- facet_label / facet_icon -----------------------------------------------
+
+def test_facet_label_returns_the_declared_label():
+    facets = {"element": {"values": {"WC": {"label": "Toilets"}}}}
+    assert pm.facet_label(facets, "element", "WC") == "Toilets"
+
+
+def test_facet_label_falls_back_to_the_value():
+    facets = {"element": {"values": {"WC": {}}}}
+    assert pm.facet_label(facets, "element", "WC") == "WC"
+
+
+def test_facet_icon_returns_the_declared_filename():
+    facets = {"element": {"values": {"WC": {"icon": "wc.svg"}}}}
+    assert pm.facet_icon(facets, "element", "WC") == "wc.svg"
+
+
+def test_facet_icon_absent_returns_none():
+    facets = {"element": {"values": {"WC": {}}}}
+    assert pm.facet_icon(facets, "element", "WC") is None
+
+
+def test_valid_label_and_icon_have_no_validation_errors():
+    doc = {"element": {"values": {"WC": {"label": "Toilets", "icon": "wc.svg"}}}}
+    assert pm.validate_facets(doc) == []
+
+
+def test_non_string_label_is_a_validation_error():
+    doc = {"element": {"values": {"WC": {"label": 5}}}}
+    errors = pm.validate_facets(doc)
+    assert any("label" in e for e in errors)
+
+
+def test_icon_with_a_forward_slash_is_a_validation_error():
+    doc = {"element": {"values": {"WC": {"icon": "icons/wc.svg"}}}}
+    errors = pm.validate_facets(doc)
+    assert any("icon" in e for e in errors)
+
+
+def test_icon_with_a_backslash_is_a_validation_error():
+    doc = {"element": {"values": {"WC": {"icon": "icons\\wc.svg"}}}}
+    errors = pm.validate_facets(doc)
+    assert any("icon" in e for e in errors)
+
+
+def test_icon_with_dotdot_is_a_validation_error():
+    doc = {"element": {"values": {"WC": {"icon": "../wc.svg"}}}}
+    errors = pm.validate_facets(doc)
+    assert any("icon" in e for e in errors)
+
+
+def test_absolute_icon_path_is_a_validation_error():
+    doc = {"element": {"values": {"WC": {"icon": "/etc/wc.svg"}}}}
+    errors = pm.validate_facets(doc)
+    assert any("icon" in e for e in errors)
+
+
 import json
 
 import pytest

@@ -37,7 +37,7 @@ import partslib_thumbs
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 
 GROUP_FACETS = ("function", "element", "room")
-DEFAULT_GROUP_FACET = "function"
+DEFAULT_GROUP_FACET = "room"
 _PREF_PATH = "User parameter:BaseApp/Preferences/Mod/ArchPlus"
 _PREF_GROUP_KEY = "PartsLibraryGroupBy"
 

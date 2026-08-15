@@ -13,10 +13,10 @@
     "label": "Element",
     "multi": false,
     "values": {
-      "WC": { "ifcType": "Sanitary Terminal" },
-      "Basin": { "ifcType": "Sanitary Terminal" },
-      "Cabinet": { "ifcType": "Furniture" },
-      "Chair": { "ifcType": "Furniture" }
+      "WC": { "ifcType": "Sanitary Terminal", "label": "Toilets", "icon": "wc.svg" },
+      "Basin": { "ifcType": "Sanitary Terminal", "label": "Basins", "icon": "basin.svg" },
+      "Cabinet": { "ifcType": "Furniture", "label": "Cabinets", "icon": "cabinet.svg" },
+      "Chair": { "ifcType": "Furniture", "label": "Chairs", "icon": "chair.svg" }
     }
   },
   "room": {

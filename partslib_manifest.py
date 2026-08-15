@@ -8,6 +8,7 @@
 
 import copy
 import json
+import os
 import re
 
 SCHEMA_VERSION = 1
@@ -27,6 +28,21 @@ KNOWN_FIELDS = REQUIRED_FIELDS + (
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
+def _is_bare_icon_filename(icon):
+    """True when `icon` is a plain filename with no path component.
+
+    facets.json is data, not code, so an icon reference must not be able to
+    escape the icons folder the UI resolves it under: no separators, no
+    parent-directory segments and no absolute paths."""
+    if not isinstance(icon, str) or not icon:
+        return False
+    if "/" in icon or "\\" in icon or ".." in icon:
+        return False
+    if os.path.isabs(icon):
+        return False
+    return True
+
+
 def validate_facets(doc):
     """Validate a facets.json document. Returns a list of error strings."""
     errors = []
@@ -41,6 +57,20 @@ def validate_facets(doc):
             errors.append("facet %r has no 'values'" % name)
         elif not isinstance(values, dict):
             errors.append("facet %r 'values' must be an object" % name)
+        else:
+            for value, spec in values.items():
+                if not isinstance(spec, dict):
+                    continue
+                label = spec.get("label")
+                if label is not None and not isinstance(label, str):
+                    errors.append(
+                        "facet %r value %r 'label' must be a string"
+                        % (name, value))
+                icon = spec.get("icon")
+                if icon is not None and not _is_bare_icon_filename(icon):
+                    errors.append(
+                        "facet %r value %r 'icon' must be a bare filename "
+                        "with no path" % (name, value))
         multi = facet.get("multi", False)
         if not isinstance(multi, bool):
             errors.append("facet %r 'multi' must be a boolean" % name)
@@ -55,6 +85,24 @@ def facet_is_multi(doc, facet):
 def facet_values(doc, facet):
     """Sorted list of allowed values for a facet."""
     return sorted(doc.get(facet, {}).get("values", {}))
+
+
+def facet_label(facets, facet, value):
+    """Display label for a facet value; the value itself when none is set.
+
+    The value is the stable id manifests reference and must never be
+    renamed; `label` is a purely cosmetic overlay for the UI, same split as
+    a part's `id` vs `name`."""
+    spec = facets.get(facet, {}).get("values", {}).get(value, {})
+    label = spec.get("label")
+    return label if label else value
+
+
+def facet_icon(facets, facet, value):
+    """Bare icon filename declared for a facet value, or None."""
+    spec = facets.get(facet, {}).get("values", {}).get(value, {})
+    icon = spec.get("icon")
+    return icon if icon else None
 
 
 def load_manifest(path):
