@@ -6,6 +6,7 @@
 # parsing, facet resolution and variant merging can be unit-tested headlessly
 # under plain pytest. Do not add FreeCAD, Part or PySide dependencies here.
 
+import copy
 import json
 import re
 
@@ -130,3 +131,66 @@ def _validate_part_facets(declared, facets):
             if item not in allowed:
                 errors.append("facet %r has unknown value %r" % (name, item))
     return errors
+
+
+DEFAULT_VARIANT_LABEL = "Default"
+
+
+def derived_metric_names():
+    """Measurements computed from the built shape, never authored."""
+    return ("Width", "Depth", "Height")
+
+
+def variant_labels(manifest):
+    """Ordered variant labels. A part with none gets one implicit default."""
+    variants = manifest.get("variants") or []
+    if not variants:
+        return [DEFAULT_VARIANT_LABEL]
+    return [v.get("label", "Variant %d" % i) for i, v in enumerate(variants)]
+
+
+def resolve_variant(manifest, label):
+    """Return a manifest-shaped dict with one variant's overrides applied.
+
+    Merges variant-over-part for `geometry.assets`, `params` and
+    `ifcProperties`. The input manifest is never mutated."""
+    resolved = copy.deepcopy(manifest)
+    variants = resolved.pop("variants", None) or []
+
+    if not variants:
+        if label != DEFAULT_VARIANT_LABEL:
+            raise KeyError("unknown variant %r" % (label,))
+        return resolved
+
+    labels = variant_labels(manifest)
+    if label not in labels:
+        raise KeyError("unknown variant %r" % (label,))
+    variant = copy.deepcopy(variants[labels.index(label)])
+
+    if "assets" in variant:
+        resolved.setdefault("geometry", {}).setdefault("assets", {}).update(
+            variant["assets"])
+    for key in ("params", "ifcProperties"):
+        if key in variant:
+            resolved.setdefault(key, {}).update(variant[key])
+    resolved["variantLabel"] = label
+    return resolved
+
+
+def resolve_ifc_type(manifest, facets):
+    """Explicit ifcType, else a facet mapping, else the default."""
+    explicit = manifest.get("ifcType")
+    if explicit:
+        return explicit
+
+    declared = manifest.get("facets") or {}
+    for facet in IFC_TYPE_FACET_ORDER:
+        value = declared.get(facet)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if value is None:
+            continue
+        mapped = facets.get(facet, {}).get("values", {}).get(value, {})
+        if mapped.get("ifcType"):
+            return mapped["ifcType"]
+    return DEFAULT_IFC_TYPE

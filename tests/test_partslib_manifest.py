@@ -130,3 +130,79 @@ def test_load_manifest_raises_on_bad_json(tmp_path):
     path.write_text("{not json", encoding="utf8")
     with pytest.raises(ValueError):
         pm.load_manifest(str(path))
+
+
+def _part_with_variants():
+    return _part(
+        params={"Width": {"type": "Length", "default": 360}},
+        ifcProperties={"Manufacturer": "Pset_X;;IfcLabel;;Geberit"},
+        variants=[
+            {"label": "360 mm",
+             "assets": {"body": "wc-360.brep"},
+             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204060"}},
+            {"label": "490 mm",
+             "assets": {"body": "wc-490.brep"},
+             "params": {"Width": {"type": "Length", "default": 490}},
+             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204070"}},
+        ])
+
+
+def test_part_without_variants_has_one_default():
+    assert pm.variant_labels(_part()) == ["Default"]
+
+
+def test_variant_labels_are_listed_in_declared_order():
+    assert pm.variant_labels(_part_with_variants()) == ["360 mm", "490 mm"]
+
+
+def test_resolving_default_variant_returns_the_part_unchanged():
+    resolved = pm.resolve_variant(_part(), "Default")
+    assert resolved["geometry"]["assets"] == {"body": "wc-360.brep"}
+
+
+def test_variant_assets_override_part_assets():
+    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
+    assert resolved["geometry"]["assets"] == {"body": "wc-490.brep"}
+
+
+def test_variant_ifc_properties_merge_over_part_level():
+    resolved = pm.resolve_variant(_part_with_variants(), "360 mm")
+    assert resolved["ifcProperties"]["Manufacturer"] == "Pset_X;;IfcLabel;;Geberit"
+    assert resolved["ifcProperties"]["ModelReference"] == "Pset_X;;IfcLabel;;204060"
+
+
+def test_variant_params_override_part_params():
+    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
+    assert resolved["params"]["Width"]["default"] == 490
+
+
+def test_resolving_leaves_the_original_manifest_untouched():
+    data = _part_with_variants()
+    pm.resolve_variant(data, "490 mm")
+    assert data["geometry"]["assets"] == {"body": "wc-360.brep"}
+
+
+def test_unknown_variant_label_raises():
+    with pytest.raises(KeyError):
+        pm.resolve_variant(_part_with_variants(), "999 mm")
+
+
+def test_explicit_ifc_type_wins():
+    data = _part(ifcType="Furniture")
+    assert pm.resolve_ifc_type(data, FACETS) == "Furniture"
+
+
+def test_ifc_type_comes_from_element_facet():
+    assert pm.resolve_ifc_type(_part(), FACETS) == "Sanitary Terminal"
+
+
+def test_ifc_type_falls_back_to_function_facet():
+    facets = {"function": {"values": {"Seating": {"ifcType": "Furniture"}}}}
+    data = _part(facets={"function": "Seating"})
+    assert pm.resolve_ifc_type(data, facets) == "Furniture"
+
+
+def test_ifc_type_falls_back_to_the_default():
+    facets = {"function": {"values": {"Seating": {}}}}
+    data = _part(facets={"function": "Seating"})
+    assert pm.resolve_ifc_type(data, facets) == pm.DEFAULT_IFC_TYPE
