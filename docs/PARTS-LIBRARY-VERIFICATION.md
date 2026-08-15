@@ -183,18 +183,23 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
 
 ## Part I — Offscreen thumbnail rendering (deferred, Task 9)
 
-Run in the FreeCAD Python console:
+Run in the FreeCAD Python console. The add-on directory and the output path
+are both derived at run time — this is the same `getUserAppDataDir() +
+"Mod"` location README.md's Installation section already points to, so
+nothing here is specific to any one machine or username:
 
 ```python
-import sys
-sys.path.append(r"C:\Users\apeci\AppData\Roaming\FreeCAD\v1-1\Mod\ArchPlus")
+import os, sys, tempfile
+addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
+sys.path.append(addon_dir)
 import Part, partslib_thumbs as pt
-print(pt.render_shape(Part.makeBox(360, 540, 400),
-                      r"C:\Users\apeci\thumb_test.png"))
+thumb_path = os.path.join(tempfile.gettempdir(), "archplus_thumb_test.png")
+print(pt.render_shape(Part.makeBox(360, 540, 400), thumb_path))
+print(thumb_path)
 ```
 
-- [ ] **I1.** Prints `True`, and `thumb_test.png` shows a shaded box on
-      white.
+- [ ] **I1.** Prints `True`, and the printed `thumb_path` file shows a
+      shaded box on white.
 - [ ] **I2.** If it instead prints `False`: `SoOffscreenRenderer` failed on
       this machine's GL/driver setup. This is not a bug to chase down here —
       note it, because it means committed `thumbnail.png` files become
@@ -204,11 +209,13 @@ print(pt.render_shape(Part.makeBox(360, 540, 400),
 
 ## Part J — `demo.box` shape building sanity check (deferred, Task 8)
 
-Run in the FreeCAD Python console:
+Run in the FreeCAD Python console. As in Part I, the add-on directory is
+derived at run time rather than hard-coded:
 
 ```python
-import sys
-sys.path.append(r"C:\Users\apeci\AppData\Roaming\FreeCAD\v1-1\Mod\ArchPlus")
+import os, sys
+addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
+sys.path.append(addon_dir)
 import partslib_geometry as pg
 
 resolved = {"geometry": {"builder": "demo.box"},

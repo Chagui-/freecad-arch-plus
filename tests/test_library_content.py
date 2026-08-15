@@ -36,6 +36,13 @@ def test_both_seed_part_ids_are_present():
 
 
 def test_every_entry_facet_value_exists_in_the_shipped_vocabulary():
+    # Safety net, not an independent check today: validate_manifest() already
+    # gates entry inclusion in scan(), so a part with a facet value outside
+    # the vocabulary never reaches index["entries"] at all - it is excluded
+    # and reported as a scan error first, which
+    # test_scan_reports_zero_errors_for_the_shipped_library already catches.
+    # This test only earns its keep if entry-inclusion and error-reporting
+    # are ever decoupled from each other in a future refactor.
     index = _scan()
     facets = index["facets"]
     for entry in index["entries"]:
