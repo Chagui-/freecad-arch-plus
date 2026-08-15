@@ -25,6 +25,17 @@ def thumbnail_path(part_dir):
     return os.path.join(part_dir, THUMBNAIL_FILENAME)
 
 
+def _warn(message):
+    """Best-effort console warning. A missing FreeCAD must not turn a
+    warning into a crash - the failure paths that call this must stay as
+    silent-but-harmless as the rendering failure they are reporting."""
+    try:
+        import FreeCAD
+        FreeCAD.Console.PrintWarning(message)
+    except Exception:
+        pass
+
+
 def scene_from_shape(shape):
     """Build a Coin scene graph from a bare Part.Shape - no document needed."""
     from pivy import coin
@@ -68,9 +79,7 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
         renderer.writeToFile(out_path, "PNG")
         return os.path.exists(out_path)
     except Exception as exc:
-        import FreeCAD
-        FreeCAD.Console.PrintWarning(
-            "ArchPlus: thumbnail render failed: %s\n" % (exc,))
+        _warn("ArchPlus: thumbnail render failed: %s\n" % (exc,))
         return False
 
 
@@ -84,9 +93,7 @@ def ensure_thumbnail(entry, resolved):
     try:
         shape = partslib_geometry.build_shape(resolved, entry["dir"])
     except Exception as exc:
-        import FreeCAD
-        FreeCAD.Console.PrintWarning(
-            "ArchPlus: cannot build %s for a thumbnail: %s\n"
-            % (entry["id"], exc))
+        _warn("ArchPlus: cannot build %s for a thumbnail: %s\n"
+              % (entry["id"], exc))
         return None
     return path if render_shape(shape, path) else None

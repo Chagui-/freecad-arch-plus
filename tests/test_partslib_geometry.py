@@ -32,3 +32,39 @@ def test_stock_asset_builder_resolves():
 
 def test_demo_builder_resolves():
     assert callable(pg.resolve_builder("demo.box"))
+
+
+def test_dunder_attribute_is_not_resolved_as_a_builder():
+    with pytest.raises(ValueError):
+        pg.resolve_builder("asset.__class__")
+
+
+def test_dunder_init_is_not_resolved_as_a_builder():
+    with pytest.raises(ValueError):
+        pg.resolve_builder("asset.__init__")
+
+
+def test_forward_slash_traversal_asset_name_is_rejected():
+    loader = pg.AssetLoader("/some/part/dir", {"body": "../evil.brep"})
+    with pytest.raises(ValueError):
+        loader.shape("body")
+
+
+def test_backslash_traversal_asset_name_is_rejected():
+    loader = pg.AssetLoader("/some/part/dir", {"body": "..\\evil.brep"})
+    with pytest.raises(ValueError):
+        loader.shape("body")
+
+
+def test_absolute_asset_path_is_rejected():
+    loader = pg.AssetLoader("/some/part/dir", {"body": "/abs/path.step"})
+    with pytest.raises(ValueError):
+        loader.shape("body")
+
+
+def test_contained_asset_name_is_not_rejected_by_containment_check(
+        tmp_path, monkeypatch):
+    (tmp_path / "body.brep").write_bytes(b"")
+    loader = pg.AssetLoader(str(tmp_path), {"body": "body.brep"})
+    monkeypatch.setattr(loader, "_read", lambda source: "stub-shape")
+    assert loader.shape("body") == "stub-shape"
