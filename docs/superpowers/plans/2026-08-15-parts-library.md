@@ -213,7 +213,7 @@ Create `partslib_manifest.py`:
 #
 # This module is deliberately FREE OF FreeCAD IMPORTS so that manifest
 # parsing, facet resolution and variant merging can be unit-tested headlessly
-# under plain pytest. Do not import FreeCAD, Part or PySide here.
+# under plain pytest. Do not add FreeCAD, Part or PySide dependencies here.
 
 SCHEMA_VERSION = 1
 DEFAULT_IFC_TYPE = "Building Element Proxy"
@@ -837,7 +837,7 @@ Create `partslib_index.py`:
 #
 # Like partslib_manifest, this module is deliberately FREE OF FreeCAD IMPORTS
 # so the index, its cache invalidation and its search can be unit-tested
-# headlessly. Do not import FreeCAD, Part or PySide here.
+# headlessly. Do not add FreeCAD, Part or PySide dependencies here.
 
 import json
 import os
@@ -1257,7 +1257,9 @@ def resolve_builder(symbol):
         raise ValueError("unknown builder module %r: %s" % (module_name, exc))
 
     builder = getattr(module, function_name, None)
-    if not callable(builder):
+    if (function_name.startswith("_")
+            or function_name not in vars(module)
+            or not callable(builder)):
         raise ValueError("builder %r has no callable %r"
                          % (module_name, function_name))
     return builder
@@ -1283,11 +1285,22 @@ class AssetLoader:
         filename = self._assets.get(name)
         if not filename:
             raise ValueError("part declares no asset %r" % (name,))
-        if os.path.isabs(filename) or ".." in filename.split(os.sep):
+        # Separator choice must never decide the outcome: a manifest authored
+        # on one OS can name a traversal using the other OS's separator, and
+        # this loader still has to reject it, so check both explicitly before
+        # trusting os.path (whose own separator handling is native-OS-only).
+        segments = filename.replace("\\", "/").split("/")
+
+        base = os.path.abspath(self._dir)
+        source = os.path.abspath(os.path.join(base, filename))
+        try:
+            contained = os.path.commonpath([base, source]) == base
+        except ValueError:
+            contained = False  # different drive on Windows: cannot be inside
+        if os.path.isabs(filename) or ".." in segments or not contained:
             raise ValueError("asset %r must be a name inside the part folder"
                              % (filename,))
 
-        source = os.path.join(self._dir, filename)
         if not os.path.exists(source):
             raise ValueError("missing asset file %s" % source)
 
@@ -1566,6 +1579,17 @@ _BACKGROUND = (1.0, 1.0, 1.0)
 _TESSELLATION = (2, 0.01)
 
 
+def _warn(message):
+    """Best-effort console warning. A missing FreeCAD must not turn a
+    warning into a crash - the failure paths that call this must stay as
+    silent-but-harmless as the rendering failure they are reporting."""
+    try:
+        import FreeCAD
+        FreeCAD.Console.PrintWarning(message)
+    except Exception:
+        pass
+
+
 def thumbnail_path(part_dir):
     """Where a part's committed thumbnail lives."""
     return os.path.join(part_dir, THUMBNAIL_FILENAME)
@@ -1614,9 +1638,7 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
         renderer.writeToFile(out_path, "PNG")
         return os.path.exists(out_path)
     except Exception as exc:
-        import FreeCAD
-        FreeCAD.Console.PrintWarning(
-            "ArchPlus: thumbnail render failed: %s\n" % (exc,))
+        _warn("ArchPlus: thumbnail render failed: %s\n" % (exc,))
         return False
 
 
@@ -1630,10 +1652,8 @@ def ensure_thumbnail(entry, resolved):
     try:
         shape = partslib_geometry.build_shape(resolved, entry["dir"])
     except Exception as exc:
-        import FreeCAD
-        FreeCAD.Console.PrintWarning(
-            "ArchPlus: cannot build %s for a thumbnail: %s\n"
-            % (entry["id"], exc))
+        _warn("ArchPlus: cannot build %s for a thumbnail: %s\n"
+              % (entry["id"], exc))
         return None
     return path if render_shape(shape, path) else None
 ```
