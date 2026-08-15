@@ -23,11 +23,11 @@
     "label": "Room",
     "multi": true,
     "values": {
-      "Bathroom": {},
-      "Cloakroom": {},
-      "Kitchen": {},
-      "Bedroom": {},
-      "Office": {}
+      "Bathroom": { "icon": "bathroom.svg" },
+      "Cloakroom": { "icon": "cloakroom.svg" },
+      "Kitchen": { "icon": "kitchen.svg" },
+      "Bedroom": { "icon": "bedroom.svg" },
+      "Office": { "icon": "office.svg" }
     }
   }
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Bedroom - line-art bed, single stroke colour (currentColor). See
+     bathroom.svg for the shared style notes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6"/>
+  <line x1="3" y1="18" x2="3" y2="20"/>
+  <line x1="21" y1="18" x2="21" y2="20"/>
+  <path d="M3 14h18"/>
+  <path d="M6 12V8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4"/>
+</svg>

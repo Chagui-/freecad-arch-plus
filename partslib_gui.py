@@ -1,10 +1,19 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# PartsLibrary - a dockable browser for the bundled BIM parts library.
+# PartsLibrary - a full-window MDI tab browsing the bundled BIM parts library.
 #
-# Unlike the other ArchPlus tools this is NOT a Task panel: it is a QDockWidget
-# that stays open across insertions, so the pick -> place -> pick loop a
-# library exists for does not require reopening the tool between parts.
+# The panel is a two-screen catalogue browser:
+#   - "categories": a card per ROOM (icon, label, hairline rule, then that
+#     room's elements as clickable rows with counts). Clicking an element (or
+#     a room header) drills into screen two.
+#   - "results": a clickable breadcrumb ("All > Bathroom > Toilets"), a
+#     search field, a card grid of parts, and a detail sidebar (preview,
+#     name, variant chips, W/D/H, description, Place in 3D view).
+#
+# PartsLibraryPanel itself is a plain QWidget that knows nothing about docks
+# or MDI sub-windows - showPanel() below is the one place that hosts it, and
+# it stays open across insertions so the pick -> place -> pick loop a library
+# exists for does not require reopening the tool between parts.
 #
 # Browsing never loads geometry. The grid is built from the cached index and
 # committed PNG thumbnails; a shape is only built when a part is previewed or
@@ -35,11 +44,7 @@ import partslib_thumbs
 # Matches windowsplus_gui.py's lazy `import windowsplus_object`.
 
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
-
-GROUP_FACETS = ("function", "element", "room")
-DEFAULT_GROUP_FACET = "room"
-_PREF_PATH = "User parameter:BaseApp/Preferences/Mod/ArchPlus"
-_PREF_GROUP_KEY = "PartsLibraryGroupBy"
+_FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
 
 _THUMB_SIZE = 96
 
@@ -95,85 +100,136 @@ def _sanitizeVariantLabel(label):
     return safe or "variant"
 
 
-def _prefs():
-    return FreeCAD.ParamGet(_PREF_PATH)
+def _clearLayout(layout):
+    """Remove and delete every item/widget a layout holds, so it can be
+    rebuilt from scratch (breadcrumb, category cards)."""
+    while layout.count():
+        item = layout.takeAt(0)
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+        sublayout = item.layout()
+        if sublayout is not None:
+            _clearLayout(sublayout)
 
 
-class PartsLibraryPanel(QtGui.QDockWidget):
-    """The library browser dock."""
+class PartsLibraryPanel(QtGui.QWidget):
+    """The library browser widget: a two-screen catalogue.
+
+    This is a plain QWidget - it knows nothing about docks or the MDI area.
+    showPanel() below is the only thing that hosts it."""
 
     def __init__(self, parent=None):
-        super(PartsLibraryPanel, self).__init__("ArchPlus Library", parent)
+        super(PartsLibraryPanel, self).__init__(parent)
         self.setObjectName("ArchPlusPartsLibrary")
         self._entries = []
+        self._facets = {}
+        self._categories = []
+        self._filterRoom = None
+        self._filterElement = None
         self._buildUi()
         self.refresh()
 
     # -- construction ----------------------------------------------------
     def _buildUi(self):
-        body = QtGui.QWidget()
-        layout = QtGui.QVBoxLayout(body)
+        outer = QtGui.QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+
+        self.stack = QtGui.QStackedWidget()
+        outer.addWidget(self.stack)
+
+        self._buildCategoriesScreen()
+        self._buildResultsScreen()
+        self.stack.addWidget(self.categoriesScreen)
+        self.stack.addWidget(self.resultsScreen)
+        self.stack.setCurrentIndex(0)
+
+        self._applyPalette()
+
+    def _buildCategoriesScreen(self):
+        """Screen one: a scrollable stack of room cards."""
+        self.categoriesScreen = QtGui.QScrollArea()
+        self.categoriesScreen.setWidgetResizable(True)
+        self.categoriesScreen.setFrameShape(QtGui.QFrame.NoFrame)
+
+        container = QtGui.QWidget()
+        self.categoriesLayout = QtGui.QVBoxLayout(container)
+        self.categoriesLayout.setSpacing(16)
+        self.categoriesLayout.setContentsMargins(4, 4, 4, 4)
+        self.categoriesScreen.setWidget(container)
+
+    def _buildResultsScreen(self):
+        """Screen two: breadcrumb, search, card grid and detail sidebar."""
+        self.resultsScreen = QtGui.QWidget()
+        v = QtGui.QVBoxLayout(self.resultsScreen)
+        v.setContentsMargins(0, 0, 0, 0)
+
+        self.breadcrumb = QtGui.QHBoxLayout()
+        v.addLayout(self.breadcrumb)
 
         self.search = QtGui.QLineEdit()
         self.search.setPlaceholderText("Search…")
-        self.search.textChanged.connect(self._repopulate)
-        layout.addWidget(self.search)
-
-        groupRow = QtGui.QHBoxLayout()
-        groupRow.addWidget(QtGui.QLabel("Group by:"))
-        self.groupBy = QtGui.QComboBox()
-        self.groupBy.addItems([f.capitalize() for f in GROUP_FACETS])
-        stored = _prefs().GetString(_PREF_GROUP_KEY, DEFAULT_GROUP_FACET)
-        if stored in GROUP_FACETS:
-            self.groupBy.setCurrentIndex(GROUP_FACETS.index(stored))
-        self.groupBy.currentIndexChanged.connect(self._onGroupChanged)
-        groupRow.addWidget(self.groupBy, 1)
-        layout.addLayout(groupRow)
+        self.search.textChanged.connect(self._repopulateGrid)
+        v.addWidget(self.search)
 
         splitter = QtGui.QSplitter(QtCore.Qt.Horizontal)
-        self.tree = QtGui.QListWidget()
-        self.tree.setMaximumWidth(140)
-        self.tree.currentItemChanged.connect(self._repopulateGrid)
-        splitter.addWidget(self.tree)
 
         self.grid = QtGui.QListWidget()
         self.grid.setViewMode(QtGui.QListView.IconMode)
-        self.grid.setIconSize(QtCore.QSize(_THUMB_SIZE, _THUMB_SIZE))
+        self.grid.setFlow(QtGui.QListView.LeftToRight)
+        self.grid.setWrapping(True)
         self.grid.setResizeMode(QtGui.QListView.Adjust)
         self.grid.setMovement(QtGui.QListView.Static)
-        self.grid.setSpacing(6)
-        splitter.addWidget(self.grid)
-        layout.addWidget(splitter, 1)
-
-        self._buildDetail(layout)
-        # Connected only after _buildDetail has created the widgets _onSelect
-        # touches (placeButton, variant, metrics, description) - it is wired
-        # here rather than alongside the rest of self.grid's setup above.
+        self.grid.setSpacing(10)
+        self.grid.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         self.grid.currentItemChanged.connect(self._onSelect)
+        splitter.addWidget(self.grid)
 
-        self.setWidget(body)
+        sidebar = QtGui.QWidget()
+        sidebar.setMinimumWidth(240)
+        sidebar.setMaximumWidth(340)
+        sidebarLayout = QtGui.QVBoxLayout(sidebar)
+        self._buildDetail(sidebarLayout)
+        splitter.addWidget(sidebar)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        v.addWidget(splitter, 1)
 
     def _buildDetail(self, layout):
-        """Preview, measurements, description, variant picker and Place."""
+        """Preview, name, variant chips, measurements, description, Place."""
         self.preview = self._makePreviewWidget()
         self.preview.setMinimumHeight(_PREVIEW_HEIGHT)
         layout.addWidget(self.preview)
 
-        variantRow = QtGui.QHBoxLayout()
-        variantRow.addWidget(QtGui.QLabel("Variant:"))
-        self.variant = QtGui.QComboBox()
-        self.variant.currentIndexChanged.connect(self._onVariantChanged)
-        variantRow.addWidget(self.variant, 1)
-        layout.addLayout(variantRow)
+        self.detailName = QtGui.QLabel("")
+        nameFont = self.detailName.font()
+        nameFont.setBold(True)
+        nameFont.setPointSize(nameFont.pointSize() + 1)
+        self.detailName.setFont(nameFont)
+        self.detailName.setWordWrap(True)
+        layout.addWidget(self.detailName)
+
+        self.variantRow = QtGui.QHBoxLayout()
+        self.variantRow.setSpacing(4)
+        layout.addLayout(self.variantRow)
+        self.variantGroup = QtGui.QButtonGroup(self)
+        self.variantGroup.setExclusive(True)
+        self.variantGroup.buttonToggled.connect(self._onVariantChanged)
 
         self.metrics = QtGui.QLabel("")
+        metricsFont = QtGui.QFont("Monospace")
+        metricsFont.setStyleHint(QtGui.QFont.TypeWriter)
+        self.metrics.setFont(metricsFont)
         layout.addWidget(self.metrics)
 
         self.description = QtGui.QLabel("")
         self.description.setWordWrap(True)
         layout.addWidget(self.description)
 
-        self.placeButton = QtGui.QPushButton("Place")
+        layout.addStretch(1)
+
+        self.placeButton = QtGui.QPushButton("Place in 3D view")
         self.placeButton.setEnabled(False)
         self.placeButton.clicked.connect(self._onPlace)
         layout.addWidget(self.placeButton)
@@ -205,69 +261,289 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
+    def _applyPalette(self):
+        """Build the stylesheet from this widget's QPalette, so the panel
+        follows the user's FreeCAD theme instead of hardcoding hex colours.
+
+        Rounded corners and comfortable padding come from the stylesheet
+        below; the selected part card gets a one-pixel accent RING (not a
+        filled highlight, which would drown the thumbnail)."""
+        pal = self.palette()
+        base = pal.color(QtGui.QPalette.Base)
+        mid = pal.color(QtGui.QPalette.Mid)
+        highlight = pal.color(QtGui.QPalette.Highlight)
+
+        def rgb(c):
+            return "rgb(%d,%d,%d)" % (c.red(), c.green(), c.blue())
+
+        self.setStyleSheet("""
+            QFrame#RoomCard, QFrame#PartCard {
+                background-color: %(base)s;
+                border: 1px solid %(mid)s;
+                border-radius: 8px;
+            }
+            QFrame#PartCard[selected="true"] {
+                border: 1px solid %(highlight)s;
+            }
+            QFrame#HairlineRule {
+                background-color: %(mid)s;
+                border: none;
+            }
+            QPushButton#RoomHeader {
+                font-weight: bold;
+                text-align: left;
+                border: none;
+                padding: 4px 2px;
+            }
+            QPushButton#ElementRow {
+                text-align: left;
+                border: none;
+                padding: 3px 2px 3px 14px;
+            }
+            QPushButton#RoomHeader:hover, QPushButton#ElementRow:hover {
+                color: %(highlight)s;
+            }
+            QPushButton#VariantChip {
+                border: 1px solid %(mid)s;
+                border-radius: 10px;
+                padding: 2px 10px;
+            }
+            QPushButton#VariantChip:checked {
+                border: 1px solid %(highlight)s;
+                color: %(highlight)s;
+            }
+            QPushButton#BreadcrumbSegment {
+                border: none;
+                text-align: left;
+                padding: 0px 2px;
+            }
+            QPushButton#BreadcrumbSegment:hover {
+                color: %(highlight)s;
+                text-decoration: underline;
+            }
+            QListWidget::item:selected, QListWidget::item:hover {
+                background: transparent;
+                border: none;
+            }
+        """ % {"base": rgb(base), "mid": rgb(mid), "highlight": rgb(highlight)})
+
     # -- data ------------------------------------------------------------
     def refresh(self):
-        """Rescan the library and rebuild the whole view."""
+        """Rescan the library and rebuild both screens."""
         import partslib_object
 
         index = partslib_object.libraryIndex(force=True)
         self._entries = index["entries"]
         self._facets = index["facets"]
-        self._repopulate()
-
-    def _groupFacet(self):
-        return GROUP_FACETS[self.groupBy.currentIndex()]
-
-    def _onGroupChanged(self, *args):
-        _prefs().SetString(_PREF_GROUP_KEY, self._groupFacet())
-        self._repopulate()
-
-    def _repopulate(self, *args):
-        """Rebuild the group list, preserving the selected group if possible."""
-        previous = self.tree.currentItem().text() if self.tree.currentItem() \
-            else None
-        matches = partslib_index.search(self._entries, self.search.text())
-        self._groups = partslib_index.group_by(matches, self._groupFacet())
-
-        self.tree.blockSignals(True)
-        self.tree.clear()
-        for name in sorted(self._groups):
-            self.tree.addItem(name)
-        self.tree.blockSignals(False)
-
-        if self.tree.count():
-            row = 0
-            if previous:
-                found = self.tree.findItems(previous, QtCore.Qt.MatchExactly)
-                if found:
-                    row = self.tree.row(found[0])
-            self.tree.setCurrentRow(row)
+        self._populateCategories()
+        self._updateBreadcrumb()
         self._repopulateGrid()
 
+    def _facetIconPath(self, iconName):
+        """Resolve a bare facet icon filename under Resources/icons/facets/.
+
+        A missing file must degrade to no icon, never an error."""
+        if not iconName:
+            return None
+        try:
+            path = os.path.join(_FACET_ICON_DIR, iconName)
+            return path if os.path.exists(path) else None
+        except Exception:
+            return None
+
+    # -- screen one: categories -------------------------------------------
+    def _populateCategories(self):
+        _clearLayout(self.categoriesLayout)
+        self._categories = partslib_index.category_tree(
+            self._entries, self._facets, primary="room", secondary="element")
+        for room in self._categories:
+            self.categoriesLayout.addWidget(self._makeRoomCard(room))
+        self.categoriesLayout.addStretch(1)
+
+    def _makeRoomCard(self, room):
+        """One room card: icon + label header, a hairline rule, then that
+        room's elements as clickable rows with counts."""
+        card = QtGui.QFrame()
+        card.setObjectName("RoomCard")
+        v = QtGui.QVBoxLayout(card)
+        v.setContentsMargins(12, 10, 12, 10)
+        v.setSpacing(6)
+
+        header = QtGui.QPushButton("%s (%d)" % (room["label"], room["count"]))
+        header.setObjectName("RoomHeader")
+        header.setFlat(True)
+        header.setCursor(QtCore.Qt.PointingHandCursor)
+        iconPath = self._facetIconPath(room.get("icon"))
+        if iconPath:
+            header.setIcon(QtGui.QIcon(iconPath))
+            header.setIconSize(QtCore.QSize(20, 20))
+        header.clicked.connect(
+            lambda *args, r=room["value"]: self._showResults(r, None))
+        v.addWidget(header)
+
+        rule = QtGui.QFrame()
+        rule.setObjectName("HairlineRule")
+        rule.setFixedHeight(1)
+        v.addWidget(rule)
+
+        for child in room["children"]:
+            row = QtGui.QPushButton(
+                "%s (%d)" % (child["label"], child["count"]))
+            row.setObjectName("ElementRow")
+            row.setFlat(True)
+            row.setCursor(QtCore.Qt.PointingHandCursor)
+            row.clicked.connect(
+                lambda *args, r=room["value"], e=child["value"]:
+                    self._showResults(r, e))
+            v.addWidget(row)
+
+        return card
+
+    def _showCategories(self, *args):
+        self.stack.setCurrentIndex(0)
+
+    # -- screen two: results -----------------------------------------------
+    def _showResults(self, room=None, element=None):
+        self._filterRoom = room
+        self._filterElement = element
+        self._updateBreadcrumb()
+        self._repopulateGrid()
+        self.stack.setCurrentIndex(1)
+
+    def _roomLabel(self, value):
+        for room in self._categories:
+            if room["value"] == value:
+                return room["label"]
+        return value
+
+    def _elementLabel(self, roomValue, elementValue):
+        for room in self._categories:
+            if room["value"] == roomValue:
+                for child in room["children"]:
+                    if child["value"] == elementValue:
+                        return child["label"]
+        return elementValue
+
+    def _updateBreadcrumb(self):
+        """Rebuild "All > Bathroom > Toilets" - every segment clickable."""
+        _clearLayout(self.breadcrumb)
+        self._addBreadcrumbSegment("All", self._showCategories)
+        if self._filterRoom is not None:
+            self._addBreadcrumbSeparator()
+            label = self._roomLabel(self._filterRoom)
+            self._addBreadcrumbSegment(
+                label,
+                lambda *args, r=self._filterRoom: self._showResults(r, None))
+        if self._filterElement is not None:
+            self._addBreadcrumbSeparator()
+            label = self._elementLabel(self._filterRoom, self._filterElement)
+            self._addBreadcrumbSegment(
+                label,
+                lambda *args, r=self._filterRoom, e=self._filterElement:
+                    self._showResults(r, e))
+        self.breadcrumb.addStretch(1)
+
+    def _addBreadcrumbSegment(self, text, callback):
+        button = QtGui.QPushButton(text)
+        button.setObjectName("BreadcrumbSegment")
+        button.setFlat(True)
+        button.setCursor(QtCore.Qt.PointingHandCursor)
+        button.clicked.connect(callback)
+        self.breadcrumb.addWidget(button)
+
+    def _addBreadcrumbSeparator(self):
+        sep = QtGui.QLabel("›")  # ›
+        self.breadcrumb.addWidget(sep)
+
+    def _facetMatches(self, entry, facet, value):
+        declared = (entry.get("facets") or {}).get(facet)
+        if declared is None or declared == []:
+            return value == partslib_index.UNCLASSIFIED
+        values = declared if isinstance(declared, list) else [declared]
+        return value in values
+
+    def _filteredEntries(self):
+        matches = partslib_index.search(self._entries, self.search.text())
+        if self._filterRoom is not None:
+            matches = [e for e in matches
+                       if self._facetMatches(e, "room", self._filterRoom)]
+        if self._filterElement is not None:
+            matches = [e for e in matches
+                       if self._facetMatches(e, "element", self._filterElement)]
+        return matches
+
     def _repopulateGrid(self, *args):
+        """Rebuild the card grid from the current search text + breadcrumb
+        filter. Each card is always created and added - FIX 3 of the
+        bug-fix round: a thumbnail failure must never hide a card, only its
+        icon is conditional."""
         self.grid.clear()
-        item = self.tree.currentItem()
-        if item is None:
-            return
-        for entry in sorted(self._groups.get(item.text(), []),
-                            key=lambda e: e["name"]):
-            cell = QtGui.QListWidgetItem(entry["name"])
-            cell.setData(QtCore.Qt.UserRole, entry["id"])
-            thumb = partslib_thumbs.thumbnail_path(entry["dir"])
-            if not os.path.exists(thumb):
-                # Spec Sec 9: no thumbnail was committed for this part, so
-                # render one now and cache it to disk - this is the ONE place
-                # browsing is allowed to build a shape, and only the first
-                # time; ensure_thumbnail() writes the PNG next to the part,
-                # so every later open is back to a plain file read. Never
-                # raises: any failure (no committed manifest, no GL context)
-                # returns None and the card below is just shown without an
-                # icon rather than being hidden.
-                thumb = self._ensureGridThumbnail(entry) or thumb
-            if os.path.exists(thumb):
-                cell.setIcon(QtGui.QIcon(thumb))
-            cell.setToolTip(entry.get("description") or entry["name"])
-            self.grid.addItem(cell)
+        for entry in sorted(self._filteredEntries(), key=lambda e: e["name"]):
+            item = QtGui.QListWidgetItem()
+            item.setData(QtCore.Qt.UserRole, entry["id"])
+            card = self._makePartCard(entry)
+            item.setSizeHint(card.sizeHint())
+            self.grid.addItem(item)
+            self.grid.setItemWidget(item, card)
+        if self.grid.count():
+            self.grid.setCurrentRow(0)
+        else:
+            self._onSelect()
+
+    def _makePartCard(self, entry):
+        """Square thumbnail on top, name beneath, a small monospaced line of
+        variant labels - the card look used everywhere in the panel."""
+        card = QtGui.QFrame()
+        card.setObjectName("PartCard")
+        card.setProperty("selected", False)
+        card.setToolTip(entry.get("description") or entry["name"])
+        v = QtGui.QVBoxLayout(card)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.setSpacing(4)
+
+        thumb = QtGui.QLabel()
+        thumb.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
+        thumb.setAlignment(QtCore.Qt.AlignCenter)
+        thumbPath = partslib_thumbs.thumbnail_path(entry["dir"])
+        if not os.path.exists(thumbPath):
+            # Spec Sec 9: no thumbnail was committed for this part, so
+            # render one now and cache it to disk - this is the ONE place
+            # browsing is allowed to build a shape, and only the first time;
+            # ensure_thumbnail() writes the PNG next to the part, so every
+            # later open is back to a plain file read. Never raises: any
+            # failure (no committed manifest, no GL context) returns None
+            # and the card is still shown, just without an icon.
+            thumbPath = self._ensureGridThumbnail(entry) or thumbPath
+        if os.path.exists(thumbPath):
+            pixmap = QtGui.QPixmap(thumbPath)
+            if not pixmap.isNull():
+                thumb.setPixmap(pixmap.scaled(
+                    _THUMB_SIZE, _THUMB_SIZE, QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation))
+        v.addWidget(thumb, 0, QtCore.Qt.AlignHCenter)
+
+        name = QtGui.QLabel(entry["name"])
+        name.setAlignment(QtCore.Qt.AlignHCenter)
+        name.setWordWrap(True)
+        v.addWidget(name)
+
+        variants = QtGui.QLabel("  ".join(entry["variants"]))
+        variantsFont = QtGui.QFont("Monospace")
+        variantsFont.setStyleHint(QtGui.QFont.TypeWriter)
+        variantsFont.setPointSize(max(7, variantsFont.pointSize() - 1))
+        variants.setFont(variantsFont)
+        variants.setAlignment(QtCore.Qt.AlignHCenter)
+        variants.setWordWrap(True)
+        # Dim the variant line relative to the name, using the palette's own
+        # Text colour (not a hardcoded hex) so it still follows the theme.
+        dimPalette = variants.palette()
+        dimColor = self.palette().color(QtGui.QPalette.Text)
+        dimColor.setAlpha(160)
+        dimPalette.setColor(QtGui.QPalette.WindowText, dimColor)
+        variants.setPalette(dimPalette)
+        v.addWidget(variants)
+
+        return card
 
     def _ensureGridThumbnail(self, entry):
         """Render a fallback thumbnail for `entry`'s default variant.
@@ -302,22 +578,69 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         return None
 
     def _onSelect(self, *args):
+        # Re-style every card's selection ring rather than tracking the
+        # previous item separately - grids here are small, and this keeps
+        # the "selected" property and the grid's actual current item from
+        # ever drifting apart.
+        current = self.grid.currentItem()
+        for i in range(self.grid.count()):
+            item = self.grid.item(i)
+            widget = self.grid.itemWidget(item)
+            if widget is not None:
+                widget.setProperty("selected", item is current)
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+
         entry = self.currentEntry()
         self.placeButton.setEnabled(entry is not None)
         if entry is None:
-            self.variant.clear()
+            self.detailName.setText("")
+            self._setVariantChips([])
             self.metrics.setText("")
             self.description.setText("")
             return
 
+        self.detailName.setText(entry["name"])
         self.description.setText(entry.get("description") or "")
-        self.variant.blockSignals(True)
-        self.variant.clear()
-        self.variant.addItems(entry["variants"])
-        self.variant.blockSignals(False)
+        self._setVariantChips(entry["variants"])
         self._refreshPreview()
 
+    def _setVariantChips(self, labels):
+        """Rebuild the variant chip row for the current selection."""
+        for button in list(self.variantGroup.buttons()):
+            self.variantGroup.removeButton(button)
+            button.setParent(None)
+            button.deleteLater()
+        _clearLayout(self.variantRow)
+
+        for label in labels:
+            chip = QtGui.QPushButton(label)
+            chip.setObjectName("VariantChip")
+            chip.setCheckable(True)
+            chip.setCursor(QtCore.Qt.PointingHandCursor)
+            self.variantGroup.addButton(chip)
+            self.variantRow.addWidget(chip)
+        self.variantRow.addStretch(1)
+
+        buttons = self.variantGroup.buttons()
+        if buttons:
+            buttons[0].blockSignals(True)
+            buttons[0].setChecked(True)
+            buttons[0].blockSignals(False)
+
+    def _currentVariantLabel(self):
+        for button in self.variantGroup.buttons():
+            if button.isChecked():
+                return button.text()
+        return None
+
     def _onVariantChanged(self, *args):
+        # buttonToggled(button, checked) fires twice on an exclusive switch
+        # (the old chip going False, the new one going True) - only react
+        # to the "became checked" half.
+        checked = args[1] if len(args) > 1 else True
+        if not checked:
+            return
         self._refreshPreview()
 
     def _resolvedSelection(self):
@@ -328,7 +651,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         if entry is None:
             return None
         manifest = partslib_manifest.load_manifest(entry["path"])
-        label = self.variant.currentText() or entry["variants"][0]
+        label = self._currentVariantLabel() or entry["variants"][0]
         return entry, partslib_manifest.resolve_variant(manifest, label)
 
     def _refreshPreview(self):
@@ -359,7 +682,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: live preview failed: %s\n" % (exc,))
         else:
-            label = self.variant.currentText() or entry["variants"][0]
+            label = self._currentVariantLabel() or entry["variants"][0]
             self._showStaticPreview(entry, shape, label)
 
     def _showStaticPreview(self, entry, shape, label):
@@ -417,18 +740,41 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                 % (entry["id"], label, exc))
             return None
 
-    def _onPlace(self):
-        """Pick a point in the 3D view, then create the part there.
+    def _findSceneGraphSubWindow(self, mdi):
+        """The MDI sub-window whose widget is a real 3D view - the same
+        `getSceneGraph` attribute check doorsplus_gui.py:992 already uses to
+        detect one, just applied across every open sub-window instead of
+        only the active one."""
+        for sub in mdi.subWindowList():
+            if hasattr(sub.widget(), "getSceneGraph"):
+                return sub
+        return None
 
-        Browsing the catalogue never needs a document (see IsActive below),
-        but placing does - a Snapper pick has nowhere to land with no
-        document/3D view open. Check first and bail out cleanly, before any
-        tracker or Snapper session is started."""
+    def _onPlace(self, *args):
+        """Activate a 3D view, pick a point, place the part, and repeat.
+
+        The Snapper needs an ACTIVE 3D view, so this first finds and
+        activates one (browsing the catalogue never needs a document - see
+        IsActive below - but placing does). If there is no document or no
+        3D view open, bail out with a clear console message before any
+        Snapper session or tracker is started."""
         if FreeCAD.ActiveDocument is None:
             FreeCAD.Console.PrintError(
-                "ArchPlus: no active document - create or open a document "
-                "before placing a library part.\n")
+                "ArchPlus: no active document - open a document with a 3D "
+                "view before placing a library part.\n")
             return
+
+        mainWindow = FreeCADGui.getMainWindow()
+        mdi = mainWindow.findChild(QtGui.QMdiArea)
+        sceneSubWindow = self._findSceneGraphSubWindow(mdi) if mdi else None
+        if sceneSubWindow is None:
+            FreeCAD.Console.PrintError(
+                "ArchPlus: no 3D view is open - open a document with a 3D "
+                "view before placing a library part.\n")
+            return
+
+        librarySubWindow = self.parentWidget()
+        mdi.setActiveSubWindow(sceneSubWindow)
 
         import partslib_geometry
         import partslib_object
@@ -441,17 +787,16 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         entry, resolved = selection
         host = partslib_placement.host_of(resolved)
         offset = partslib_placement.offset_of(resolved)
-        variant = self.variant.currentText() or entry["variants"][0]
+        variant = self._currentVariantLabel() or entry["variants"][0]
 
         # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
         # doorsplus_gui.py:887): a rough box preview of the part's footprint
         # that follows the cursor while picking, sized from the built
-        # shape's measured bounding box. It is centred on the same
-        # placement partPlacement() computes for the click - an
-        # approximation, since a part's anchor (manifest "anchor") need not
-        # sit at its box's centre, but enough to judge size and orientation
-        # before committing. Degrade to no tracker, not blocked placement,
-        # if the shape cannot be built.
+        # shape's measured bounding box. It stays ON across every repeat of
+        # the placement loop below and is finalized EXACTLY ONCE, when the
+        # loop ends (Esc, an exception, or - see the early returns above -
+        # never even started when there is no document/3D view). Degrade to
+        # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
         try:
             shape = partslib_geometry.build_shape(resolved, entry["dir"])
@@ -493,9 +838,10 @@ class PartsLibraryPanel(QtGui.QDockWidget):
 
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
+            again = False
             try:
                 if point is None:
-                    return
+                    return  # Esc/cancel - end the repeat-placement loop
                 placement = partslib_placement.partPlacement(
                     point, state["face"], host, offset)
                 doc.openTransaction("Place library part")
@@ -510,40 +856,75 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                         "ArchPlus: cannot place %s: %s\n"
                         % (entry["id"], exc))
                 doc.recompute()
+                again = True
             finally:
-                # Every exit path - commit, abort, or cancel (point is None)
-                # - must clear the tracker, or a cancelled placement leaves a
-                # ghost box stuck in the 3D view. Matches doorsplus_gui.py's
-                # repositionDoor, which uses try/finally for the same reason.
-                if tracker is not None:
-                    tracker.finalize()
+                if again:
+                    # REPEAT PLACEMENT: re-arm for another pick so the user
+                    # can keep clicking to drop more of the same part,
+                    # without switching back to this tab between parts. The
+                    # tracker stays on across repeats.
+                    FreeCADGui.Snapper.getPoint(
+                        callback=placed, movecallback=moved)
+                else:
+                    # Loop end - Esc, or an exception above: finalize the
+                    # tracker exactly once and return the user to the
+                    # library tab they started from.
+                    if tracker is not None:
+                        tracker.finalize()
+                    if librarySubWindow is not None:
+                        mdi.setActiveSubWindow(librarySubWindow)
 
         FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
 
 
-def showPanel():
-    """Create the dock, or raise it if it already exists.
+def _hostInMdi(widget):
+    """Host `widget` as a full-window tab in FreeCAD's MDI area.
 
-    `_panel` can outlive its C++ QDockWidget if FreeCAD ever destroys or
-    recreates docked widgets across a document switch or add-on reload -
-    nothing in this codebase has exercised that path before, since the other
-    ArchPlus tools all use Control.showDialog task panels instead of a
-    QDockWidget. Touching a deleted dock raises RuntimeError; treat that as
-    "no panel" and fall through to the single construction path below rather
-    than leaving the tool permanently dead.
-    """
+    Follows FreeCAD's own shipped idiom exactly (Mod/Help/Help.py:505-510's
+    mdi-hosting branch): find the QMdiArea, addSubWindow, set title/icon,
+    show, and make it active.
+
+    WA_DeleteOnClose is set on `widget` so that closing the tab actually
+    destroys the underlying Qt objects - showPanel()'s RuntimeError-based
+    self-healing below then has something real to catch rather than reusing
+    or silently resurrecting a closed tab."""
+    mainWindow = FreeCADGui.getMainWindow()
+    mdi = mainWindow.findChild(QtGui.QMdiArea)
+    if mdi is None:
+        return None
+    widget.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+    subWindow = mdi.addSubWindow(widget)
+    subWindow.setWindowTitle("ArchPlus Library")
+    subWindow.setWindowIcon(QtGui.QIcon(ICON))
+    subWindow.show()
+    mdi.setActiveSubWindow(subWindow)
+    return subWindow
+
+
+def showPanel():
+    """Create the library tab, or bring it to the front if it already exists.
+
+    `_panel` can outlive its C++ QWidget/QMdiSubWindow if the user closes the
+    tab (WA_DeleteOnClose above then destroys both) or if FreeCAD ever tears
+    down MDI sub-windows across a document switch or add-on reload. Touching
+    a deleted widget raises RuntimeError; treat that as "no panel" and fall
+    through to the single construction path below rather than leaving the
+    tool permanently dead - so closing the tab and clicking the toolbar
+    button again always yields a working tab."""
     global _panel
-    main = FreeCADGui.getMainWindow()
+    mainWindow = FreeCADGui.getMainWindow()
     if _panel is not None:
         try:
             _panel.refresh()
+            mdi = mainWindow.findChild(QtGui.QMdiArea)
+            subWindow = _panel.parentWidget()
+            if mdi is not None and subWindow is not None:
+                mdi.setActiveSubWindow(subWindow)
+            return _panel
         except RuntimeError:
             _panel = None
-    if _panel is None:
-        _panel = PartsLibraryPanel(main)
-        main.addDockWidget(QtCore.Qt.RightDockWidgetArea, _panel)
-    _panel.show()
-    _panel.raise_()
+    _panel = PartsLibraryPanel(mainWindow)
+    _hostInMdi(_panel)
     return _panel
 
 
