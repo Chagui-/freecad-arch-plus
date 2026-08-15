@@ -92,8 +92,12 @@ class _LibraryPart(ArchComponent.Component):
     def setPartProperties(self, obj):
         if PROP_PART_ID not in obj.PropertiesList:
             obj.addProperty("App::PropertyString", PROP_PART_ID, _PARAM_GROUP,
-                            "Library part this object was created from")
-            obj.setEditorMode(PROP_PART_ID, 1)  # read-only
+                            "Library part this object was created from",
+                            locked=True)
+        # Reapplied on every call (including from onDocumentRestored) in case
+        # FreeCAD does not round-trip the ReadOnly editor bit through the
+        # FCStd - belt and braces alongside locked=True above.
+        obj.setEditorMode(PROP_PART_ID, 1)  # read-only
         if PROP_VARIANT not in obj.PropertiesList:
             obj.addProperty("App::PropertyEnumeration", PROP_VARIANT,
                             _PARAM_GROUP, "Which variant of the part to build")
@@ -133,13 +137,17 @@ class _LibraryPart(ArchComponent.Component):
         obj.Placement = placement
 
     def onChanged(self, obj, prop):
-        """Switching Variant rebuilds in place, preserving placement."""
-        if prop == PROP_VARIANT and not getattr(self, "_rebuilding", False):
-            self._rebuilding = True
-            try:
+        """Switching Variant rebuilds in place, preserving placement.
+
+        FreeCAD fires onChanged() for every property as it restores a
+        document, including Variant - so this must not react while
+        "Restore" is in obj.State, or opening a file would silently rebuild
+        from whatever the library currently contains, exactly what this
+        module's cache semantics forbid. Same guard as doorsplus_object.py
+        and windowsplus_object.py."""
+        if prop == PROP_VARIANT:
+            if "Restore" not in obj.State:
                 self.execute(obj)
-            finally:
-                self._rebuilding = False
         else:
             ArchComponent.Component.onChanged(self, obj, prop)
 
@@ -222,16 +230,35 @@ def reloadFromLibrary(obj):
         return False
 
     entry, facets = found
-    manifest = partslib_manifest.load_manifest(entry["path"])
-    labels = partslib_manifest.variant_labels(manifest)
-    current = getattr(obj, PROP_VARIANT, None)
-    setattr(obj, PROP_VARIANT, labels)
-    if current in labels:
-        setattr(obj, PROP_VARIANT, current)
+    try:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        labels = partslib_manifest.variant_labels(manifest)
 
-    resolved = partslib_manifest.resolve_variant(
-        manifest, getattr(obj, PROP_VARIANT, labels[0]))
-    _applyMetadata(obj, resolved, facets)
+        # Decide the label explicitly rather than relying on how a
+        # PropertyEnumeration reads back after being reassigned with the old
+        # selection missing from the new list - that readback is
+        # FreeCAD-version-dependent and can otherwise feed an unknown label
+        # into resolve_variant(), raising KeyError out of this Qt slot.
+        current = getattr(obj, PROP_VARIANT, None)
+        if current in labels:
+            variant = current
+        else:
+            variant = labels[0]
+            if current:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: variant %r of %s no longer exists; using %r "
+                    "instead\n" % (current, obj.Label, variant))
+
+        setattr(obj, PROP_VARIANT, labels)
+        setattr(obj, PROP_VARIANT, variant)
+
+        resolved = partslib_manifest.resolve_variant(manifest, variant)
+        _applyMetadata(obj, resolved, facets)
+    except Exception as exc:
+        FreeCAD.Console.PrintError(
+            "ArchPlus: cannot reload %s: %s\n" % (obj.Label, exc))
+        return False
+
     obj.Proxy.execute(obj)
     obj.Document.recompute()
     return True
