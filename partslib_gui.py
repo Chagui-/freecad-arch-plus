@@ -90,11 +90,14 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         self.grid.setResizeMode(QtGui.QListView.Adjust)
         self.grid.setMovement(QtGui.QListView.Static)
         self.grid.setSpacing(6)
-        self.grid.currentItemChanged.connect(self._onSelect)
         splitter.addWidget(self.grid)
         layout.addWidget(splitter, 1)
 
         self._buildDetail(layout)
+        # Connected only after _buildDetail has created the widgets _onSelect
+        # touches (placeButton, variant, metrics, description) - it is wired
+        # here rather than alongside the rest of self.grid's setup above.
+        self.grid.currentItemChanged.connect(self._onSelect)
 
         self.setWidget(body)
 
@@ -308,14 +311,26 @@ class PartsLibraryPanel(QtGui.QDockWidget):
 
 
 def showPanel():
-    """Create the dock, or raise it if it already exists."""
+    """Create the dock, or raise it if it already exists.
+
+    `_panel` can outlive its C++ QDockWidget if FreeCAD ever destroys or
+    recreates docked widgets across a document switch or add-on reload -
+    nothing in this codebase has exercised that path before, since the other
+    ArchPlus tools all use Control.showDialog task panels instead of a
+    QDockWidget. Touching a deleted dock raises RuntimeError; treat that as
+    "no panel" and fall through to the single construction path below rather
+    than leaving the tool permanently dead.
+    """
     global _panel
     main = FreeCADGui.getMainWindow()
+    if _panel is not None:
+        try:
+            _panel.refresh()
+        except RuntimeError:
+            _panel = None
     if _panel is None:
         _panel = PartsLibraryPanel(main)
         main.addDockWidget(QtCore.Qt.RightDockWidgetArea, _panel)
-    else:
-        _panel.refresh()
     _panel.show()
     _panel.raise_()
     return _panel
