@@ -1,7 +1,25 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+.venv/
+
+# FreeCAD backups
 *.FCStd1
 *.FCBak
+
+# Parts library generated caches (parsed BREP, rendered thumbnails)
 .cache/
-.venv/
+
+# Local tool config (not shared)
+.claude/
+.mcp.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

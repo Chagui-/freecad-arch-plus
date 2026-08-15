@@ -193,15 +193,24 @@ _panel = None
 
 
 def _warnPreviewUnavailable(exc):
-    """Print the one-per-session console warning that the live pivy.quarter
-    preview could not be built, and that the panel is falling back to a
-    static image instead."""
+    """Note, once per session, that the live pivy.quarter preview could not be
+    built and the panel is using a static image instead.
+
+    This goes to the developer log rather than the console on purpose. On
+    FreeCAD 1.1 it fires every single session and always will: Qt6 moved
+    QOpenGLWidget out of QtWidgets, and pivy's bundled QuarterWidget still
+    imports it from the old location. There is nothing the user can do about
+    it, the static preview is a complete substitute, and a warning nobody can
+    act on is just noise that trains people to ignore the report view. The
+    detection stays in place so a future pivy fix silently restores the live
+    preview, and the message stays available under View > Panels > Report
+    view with logging enabled for anyone diagnosing it."""
     global _PREVIEW_WARNED
     if _PREVIEW_WARNED:
         return
     _PREVIEW_WARNED = True
-    FreeCAD.Console.PrintWarning(
-        "ArchPlus: live 3D preview is unavailable on this FreeCAD build "
+    FreeCAD.Console.PrintLog(
+        "ArchPlus: live 3D preview unavailable on this build "
         "(%s); using a static image preview instead.\n" % (exc,))
 
 

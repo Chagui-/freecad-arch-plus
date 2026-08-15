@@ -11,6 +11,7 @@
 #   Double sliding, Opening only.
 # Panel styles: Solid, Glass (full).
 
+import json
 import math
 import os
 import sys
@@ -24,6 +25,41 @@ if _DIR not in sys.path:
     sys.path.append(_DIR)
 
 ICON = os.path.join(_DIR, "Resources", "icons", "DoorsPlus.svg")
+
+# ---------------------------------------------------------------------------
+# Spec persistence
+# ---------------------------------------------------------------------------
+# The native Window object only stores Width/Height/Frame. The remaining panel
+# settings (operation, panel style, frame width/depth, swing, panel position)
+# are persisted on the object as a hidden JSON string so they can be restored
+# when the object is edited.
+SPEC_PROP = "ArchPlusSpec"
+
+
+def storeSpec(obj, spec):
+    """Persist the ArchPlus creation spec on the object as JSON."""
+    if obj is None:
+        return
+    if not hasattr(obj, SPEC_PROP):
+        obj.addProperty("App::PropertyString", SPEC_PROP, "ArchPlus",
+                        "Serialized ArchPlus settings (internal)")
+        try:
+            obj.setEditorMode(SPEC_PROP, 2)   # hidden from the property editor
+        except Exception:
+            pass
+    setattr(obj, SPEC_PROP, json.dumps(spec))
+
+
+def readSpec(obj):
+    """Return the stored ArchPlus spec dict, or None if absent/unreadable."""
+    raw = getattr(obj, SPEC_PROP, "") or ""
+    if not raw:
+        return None
+    try:
+        d = json.loads(raw)
+    except Exception:
+        return None
+    return d if isinstance(d, dict) else None
 
 # ---------------------------------------------------------------------------
 # Door type → preset mapping
@@ -794,6 +830,9 @@ class DoorsPlusTaskPanel:
             if hasattr(self.obj, "SymbolElevation"):
                 self.obj.SymbolElevation = self.symbolElev.isChecked()
 
+            # Persist the spec so it can be restored when the object is edited.
+            storeSpec(self.obj, spec)
+
             # Touch the object so recompute is guaranteed to rebuild it, then
             # re-cut the host wall so the change is visible immediately.
             self.obj.touch()
@@ -815,11 +854,27 @@ class DoorsPlusTaskPanel:
     def _loadFromObject(self):
         o = self.obj
         self._sketch = o.Base            # needed for placement reuse on rebuild
-        self._setmm(self.width, o.Width.Value)
-        self._setmm(self.height, o.Height.Value)
-        self._setmm(self.frameWidth, 70)     # not stored separately
-        self._setmm(self.panelThk, o.Frame.Value)
-        self._setmm(self.frameDepth, 100)    # not stored separately
+        spec = readSpec(o)
+        if spec:
+            # Populate the widgets from the stored spec.
+            self.operation.setCurrentText(spec.get("operation", "Single swing"))
+            self.panelStyle.setCurrentText(spec.get("panelStyle", "Solid"))
+            self._setmm(self.width, spec.get("width", o.Width.Value))
+            self._setmm(self.height, spec.get("height", o.Height.Value))
+            self._setmm(self.frameWidth, spec.get("frameWidth", 70))
+            self._setmm(self.panelThk, spec.get("panelThk", o.Frame.Value))
+            self._setmm(self.frameDepth, spec.get("frameDepth", 100))
+            self.swingSide.setCurrentText(spec.get("swingSide", "Left"))
+            self.swingDir.setCurrentText(spec.get("swingDir", "Inward"))
+            self.panelPos.setCurrentText(spec.get("panelPos", "Centered"))
+        else:
+            # Legacy object with no stored spec: restore what the native
+            # properties hold; frame width/depth fall back to the defaults.
+            self._setmm(self.width, o.Width.Value)
+            self._setmm(self.height, o.Height.Value)
+            self._setmm(self.frameWidth, 70)
+            self._setmm(self.panelThk, o.Frame.Value)
+            self._setmm(self.frameDepth, 100)
         self.opening.setValue(int(getattr(o, "Opening", 0)))
         self._loadSill()
         if hasattr(o, "SymbolPlan"):
