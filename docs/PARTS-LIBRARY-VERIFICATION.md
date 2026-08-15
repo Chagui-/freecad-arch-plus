@@ -10,21 +10,61 @@ passed at the time this doc was written, including `tests/test_partslib_theme.py
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
-## The library ships EMPTY
+## The library now ships 14 real parts — UNVERIFIED in real FreeCAD
 
-`library/` now contains only `facets.json` (the faceted vocabulary) — no
-parts. The two placeholder parts this checklist was originally written
-against (`base-cabinet`, `wc-demo`) proved the pipeline during development
-and have since been removed now that real content is authored on a separate
-branch. **Every step below that involves placing, previewing, selecting
-variants, or reading parameters off a part (all of Parts B7 onward, C, D, E,
-F, G, I9/B10's thumbnail checks, J, K) cannot run until you have added at
-least one real part under `library/`.** Steps that only exercise the empty
-library itself — A (startup/toolbar), B1/B2 (the categories screen's new
-empty-state message and its library-path hint), B6-as-a-search-with-nothing
-(the results screen's empty-state message) — remain valid as written today.
-The rest of the checklist is not wrong, only dormant: it becomes runnable
-again, unchanged, the moment a part exists.
+`library/` no longer ships empty. The `parts-library-content` branch adds 14
+parametric parts across five rooms (Dining Room, Bedroom, Living Room, Bath
+Room, Office) — see the table below — plus two new builder modules
+(`partslib_builders/furniture.py`, `partslib_builders/sanitary.py`) and a
+shared geometry-massing helper (`partslib_builders/_shapes.py`: rounded
+corners, tapered legs, softened cushion edges, toe-kick recesses, oval
+basin/bowl scaling).
+
+**None of this geometry has been built in a real FreeCAD process.** There is
+no FreeCAD available in this development environment, so the only
+verification so far is: (1) the headless `pytest tests/` suite (manifests
+and facets are well-formed, every `geometry.builder` symbol resolves, every
+variant-label list is non-empty and unique), and (2) a throwaway script that
+ran every part/variant's builder function against a bounding-box-only stand-in
+for `Part`/`FreeCAD` — confirming the Python executes without exceptions and
+that measured `W × D × H` figures are plausible, but **not** that the real
+OCC boolean/fillet operations actually succeed. Every step below that
+involves placing, previewing or measuring a part (B7 onward, C, D, E, F, G,
+I, J, K) needs a real human-in-FreeCAD pass before this content can be
+trusted. In particular, watch for:
+
+- Any `PrintWarning`/`PrintError` from a `makeFillet` or boolean op falling
+  back silently (every fillet in `_shapes.py` is wrapped in a try/except that
+  degrades to a sharp edge on failure — a part that looks "blockier" than
+  intended in the preview is this fallback firing, not a bug to fix blind).
+- The toilet, bathtub, vanity and shower base's oval/recessed geometry
+  (`sanitary.py`) actually resolving to valid solids — these are the parts
+  most likely to hit an OCC edge case (non-uniform scale of a filleted
+  surface, a cut whose cavity clips through more of the shell than intended).
+- The bookcase's open-front shell + shelf dividers (`furniture.bookcase`) —
+  the one part built as a hollow carcass rather than a solid block.
+
+New rooms this content adds: **Dining Room, Living Room** — in addition to
+the existing Bathroom, Bedroom, Office. New elements: Table, Bed, Nightstand,
+Wardrobe, Sofa, Bathtub, Shower, Vanity, Desk, Bookcase. 16 new/backfilled
+facet icon SVGs were added under `Resources/icons/facets/` (the 4 existing
+element icons the vocabulary already referenced but which were missing on
+disk — `wc.svg`, `basin.svg`, `cabinet.svg`, `chair.svg` — plus 12 new ones)
+— eyeball these render correctly at both toolbar and list-row icon sizes,
+light and dark theme, since they too have never been seen inside FreeCAD.
+
+| Room | Parts |
+|---|---|
+| Dining Room | Dining table (parametric, 4/6/8-seat), Basic chair (common size) |
+| Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand (parametric), Wardrobe (parametric) |
+| Living Room | Coffee table (parametric), Sofa (parametric, 2/3-seat) |
+| Bath Room | Toilet (common size), Bathtub (parametric), Shower base (parametric), Vanity (parametric) |
+| Office | Desk (parametric), Bookcase (parametric) |
+
+Steps that only exercised the empty library in the prior pass (A, B1/B2, the
+empty-state message) remain valid as written but are no longer the
+interesting case — B2 in particular should now show all seven rooms above,
+each with its declared elements and counts.
 
 ## The panel is now an MDI tab, not a dock
 

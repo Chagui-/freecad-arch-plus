@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "id": "wardrobe",
+  "name": "Wardrobe",
+  "description": "Parametric wardrobe carcass with a toe-kick recess and a centre door seam.",
+  "keywords": ["wardrobe", "closet", "cabinet", "parametric"],
+  "facets": {
+    "function": "Storage",
+    "element": "Wardrobe",
+    "room": ["Bedroom"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 1000 },
+    "Depth": { "type": "Length", "default": 600 },
+    "Height": { "type": "Length", "default": 2000 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "variants": [
+    { "label": "1000 mm", "params": { "Width": { "type": "Length", "default": 1000 } } },
+    { "label": "1200 mm", "params": { "Width": { "type": "Length", "default": 1200 } } },
+    { "label": "1500 mm", "params": { "Width": { "type": "Length", "default": 1500 } } }
+  ],
+  "geometry": { "builder": "furniture.wardrobe" }
+}
