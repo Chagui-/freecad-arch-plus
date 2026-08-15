@@ -5,9 +5,10 @@ Parts Library feature (Tasks 7–15, plus the pass-2 restructure into a
 full-window MDI tab with a two-screen catalogue browser). None of it can be
 run headlessly: it needs a real FreeCAD 1.1 process, a real Qt event loop and
 (for the preview and thumbnail checks) a real GL/offscreen context. Automated
-coverage stops at `uv run --with pytest --no-project pytest tests/ -q` (114
-passed at the time this doc was written); everything below is what that
-suite cannot see.
+coverage stops at `uv run --with pytest --no-project pytest tests/ -q` (122
+passed at the time this doc was written, including `tests/test_partslib_theme.py`'s
+headless coverage of the dark/light theme decision); everything below is
+what that suite cannot see.
 
 ## The panel is now an MDI tab, not a dock
 
@@ -130,6 +131,24 @@ unaffected by the fallback.
       opening the panel and browsing this session — the categories screen,
       breadcrumb, grid and sidebar all rendered without a Python console
       error.
+- [ ] **B2a (fix round — dark theme legibility).** Switch FreeCAD to a dark
+      theme (Edit → Preferences → General → Appearance, or whichever build
+      of 1.1 you have exposes `Theme`/`StyleSheet` — the exact reported
+      config was `Theme = "FreeCAD Dark"`, `StyleSheet = "FreeCAD.qss"`).
+      Reopen the Parts Library tab (or click **Parts Library** again — the
+      panel is rebuilt fresh each time `showPanel()` constructs it). On the
+      categories screen: the room cards are a **dark** card colour clearly
+      distinct from the page behind them (cards read as raised, not the
+      same flat black-on-black), every room name and every element row
+      (e.g. `Toilets (1)`) is legible near-white text — never the same
+      colour as its own card background — and the cards are laid out as a
+      **grid** (multiple cards per row when the tab is wide enough), not
+      one full-width row per card. Resize the tab narrower and wider: the
+      column count changes at natural card-width breakpoints and no card
+      is left stretched edge-to-edge while others exist beside it. Switch
+      back to a light theme and confirm the same screen still reads
+      correctly (light cards, dark text) — this is the same code path,
+      not a separate dark-only fix.
 - [ ] **B10 (fix round — on-demand thumbnail fallback).** Neither seed part
       ships a committed `thumbnail.png`, so this exercises the fallback by
       default. Before opening the panel this session, confirm (in a file

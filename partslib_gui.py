@@ -32,6 +32,7 @@ if _DIR not in sys.path:
     sys.path.append(_DIR)
 
 import partslib_index
+import partslib_theme
 import partslib_thumbs
 
 # partslib_object is imported lazily, inside the functions that need it
@@ -47,6 +48,120 @@ ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
 
 _THUMB_SIZE = 96
+
+# Target width (px) for a card in the categories/results grids - used to
+# compute how many columns fit the available viewport width. See
+# _columnCountFor() / Fix 3 of the bug-fix round.
+_CARD_TARGET_WIDTH = 260
+
+# Explicit colour token sets for the two screens' stylesheet, keyed by
+# name so _applyTheme() (partslib_theme.read_is_dark_theme()) can pick the
+# right one. These replace the old QPalette-derived colours: FreeCAD
+# applies its theme as a global Qt STYLESHEET, not a palette, so
+# palette().color(Base) stayed the Qt default WHITE regardless of how dark
+# the active theme was, and the panel painted white cards with light text
+# on top of them - white on white.
+#
+# Accent blue matches this add-on's own icon colour (#1a5fb4) on light;
+# a lighter blue (#63a0e8) is used on dark so it does not disappear against
+# a dark card.
+_DARK_TOKENS = {
+    "card_bg": "#3c3c3c",
+    "page_bg": "#2b2b2b",
+    "text": "#f2f2f2",
+    "text_dim": "#b3b3b3",
+    "border": "#5c5c5c",
+    "accent": "#63a0e8",
+    "accent_text": "#12233a",
+    "ring": "#63a0e8",
+}
+_LIGHT_TOKENS = {
+    "card_bg": "#ffffff",
+    "page_bg": "#f2f2f2",
+    "text": "#1c1c1c",
+    "text_dim": "#5a5a5a",
+    "border": "#c9c9c9",
+    "accent": "#1a5fb4",
+    "accent_text": "#ffffff",
+    "ring": "#1a5fb4",
+}
+
+# STRUCTURAL RULE: every selector below that sets a background-color also
+# sets a color, and vice versa, both drawn from the SAME token set
+# (_DARK_TOKENS or _LIGHT_TOKENS - never mixed). That pairing is what makes
+# white-on-white (or its dark-theme mirror, invisible-on-invisible)
+# impossible to reintroduce by accident rather than merely unlikely - do
+# not add a rule below that sets only one half of the pair.
+_STYLESHEET_TEMPLATE = """
+    QWidget#ArchPlusPartsLibrary, QWidget#CategoriesContainer,
+    QWidget#ResultsScreen {
+        background-color: %(page_bg)s;
+        color: %(text)s;
+    }
+    QFrame#RoomCard, QFrame#PartCard {
+        background-color: %(card_bg)s;
+        color: %(text)s;
+        border: 1px solid %(border)s;
+        border-radius: 8px;
+    }
+    QFrame#PartCard[selected="true"] {
+        background-color: %(card_bg)s;
+        color: %(text)s;
+        border: 2px solid %(ring)s;
+    }
+    QFrame#HairlineRule {
+        background-color: %(border)s;
+        color: %(border)s;
+        border: none;
+    }
+    QPushButton#RoomHeader {
+        background-color: transparent;
+        color: %(text)s;
+        font-weight: bold;
+        text-align: left;
+        border: none;
+        padding: 4px 2px;
+    }
+    QPushButton#ElementRow {
+        background-color: transparent;
+        color: %(text_dim)s;
+        text-align: left;
+        border: none;
+        padding: 3px 2px 3px 14px;
+    }
+    QPushButton#RoomHeader:hover, QPushButton#ElementRow:hover {
+        background-color: transparent;
+        color: %(accent)s;
+    }
+    QPushButton#VariantChip {
+        background-color: transparent;
+        color: %(text)s;
+        border: 1px solid %(border)s;
+        border-radius: 10px;
+        padding: 2px 10px;
+    }
+    QPushButton#VariantChip:checked {
+        background-color: transparent;
+        color: %(accent)s;
+        border: 1px solid %(accent)s;
+    }
+    QPushButton#BreadcrumbSegment {
+        background-color: transparent;
+        color: %(text)s;
+        border: none;
+        text-align: left;
+        padding: 0px 2px;
+    }
+    QPushButton#BreadcrumbSegment:hover {
+        background-color: transparent;
+        color: %(accent)s;
+        text-decoration: underline;
+    }
+    QListWidget::item:selected, QListWidget::item:hover {
+        background: transparent;
+        border: none;
+    }
+"""
 
 # The Task 1 spike found that pivy's bundled Quarter is unusable on FreeCAD
 # 1.1: QOpenGLWidget moved out of QtWidgets into QtOpenGLWidgets in Qt6, and
@@ -126,6 +241,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._entries = []
         self._facets = {}
         self._categories = []
+        self._categoryCards = []
+        self._categoryColumns = 0
         self._filterRoom = None
         self._filterElement = None
         self._buildUi()
@@ -145,7 +262,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.stack.addWidget(self.resultsScreen)
         self.stack.setCurrentIndex(0)
 
-        self._applyPalette()
+        self._applyTheme()
 
     def _buildCategoriesScreen(self):
         """Screen one: a scrollable stack of room cards."""
@@ -154,14 +271,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.categoriesScreen.setFrameShape(QtGui.QFrame.NoFrame)
 
         container = QtGui.QWidget()
-        self.categoriesLayout = QtGui.QVBoxLayout(container)
+        container.setObjectName("CategoriesContainer")
+        self.categoriesLayout = QtGui.QGridLayout(container)
         self.categoriesLayout.setSpacing(16)
         self.categoriesLayout.setContentsMargins(4, 4, 4, 4)
         self.categoriesScreen.setWidget(container)
+        self.categoriesScreen.viewport().installEventFilter(self)
 
     def _buildResultsScreen(self):
         """Screen two: breadcrumb, search, card grid and detail sidebar."""
         self.resultsScreen = QtGui.QWidget()
+        self.resultsScreen.setObjectName("ResultsScreen")
         v = QtGui.QVBoxLayout(self.resultsScreen)
         v.setContentsMargins(0, 0, 0, 0)
 
@@ -261,71 +381,22 @@ class PartsLibraryPanel(QtGui.QWidget):
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
-    def _applyPalette(self):
-        """Build the stylesheet from this widget's QPalette, so the panel
-        follows the user's FreeCAD theme instead of hardcoding hex colours.
+    def _applyTheme(self):
+        """Build the stylesheet from an explicit dark/light colour token
+        set (see _DARK_TOKENS/_LIGHT_TOKENS above), chosen by
+        partslib_theme.read_is_dark_theme() - not from this widget's
+        QPalette. FreeCAD applies its theme as a global Qt STYLESHEET, not
+        a palette, so palette().color(Base) stayed the Qt default WHITE
+        regardless of how dark the active theme was, and the previous
+        version of this method painted white cards with light text on top
+        of them: white on white.
 
         Rounded corners and comfortable padding come from the stylesheet
-        below; the selected part card gets a one-pixel accent RING (not a
-        filled highlight, which would drown the thumbnail)."""
-        pal = self.palette()
-        base = pal.color(QtGui.QPalette.Base)
-        mid = pal.color(QtGui.QPalette.Mid)
-        highlight = pal.color(QtGui.QPalette.Highlight)
-
-        def rgb(c):
-            return "rgb(%d,%d,%d)" % (c.red(), c.green(), c.blue())
-
-        self.setStyleSheet("""
-            QFrame#RoomCard, QFrame#PartCard {
-                background-color: %(base)s;
-                border: 1px solid %(mid)s;
-                border-radius: 8px;
-            }
-            QFrame#PartCard[selected="true"] {
-                border: 1px solid %(highlight)s;
-            }
-            QFrame#HairlineRule {
-                background-color: %(mid)s;
-                border: none;
-            }
-            QPushButton#RoomHeader {
-                font-weight: bold;
-                text-align: left;
-                border: none;
-                padding: 4px 2px;
-            }
-            QPushButton#ElementRow {
-                text-align: left;
-                border: none;
-                padding: 3px 2px 3px 14px;
-            }
-            QPushButton#RoomHeader:hover, QPushButton#ElementRow:hover {
-                color: %(highlight)s;
-            }
-            QPushButton#VariantChip {
-                border: 1px solid %(mid)s;
-                border-radius: 10px;
-                padding: 2px 10px;
-            }
-            QPushButton#VariantChip:checked {
-                border: 1px solid %(highlight)s;
-                color: %(highlight)s;
-            }
-            QPushButton#BreadcrumbSegment {
-                border: none;
-                text-align: left;
-                padding: 0px 2px;
-            }
-            QPushButton#BreadcrumbSegment:hover {
-                color: %(highlight)s;
-                text-decoration: underline;
-            }
-            QListWidget::item:selected, QListWidget::item:hover {
-                background: transparent;
-                border: none;
-            }
-        """ % {"base": rgb(base), "mid": rgb(mid), "highlight": rgb(highlight)})
+        template; the selected part card gets a two-pixel accent RING (not
+        a filled highlight, which would drown the thumbnail)."""
+        dark = partslib_theme.read_is_dark_theme()
+        self._tokens = _DARK_TOKENS if dark else _LIGHT_TOKENS
+        self.setStyleSheet(_STYLESHEET_TEMPLATE % self._tokens)
 
     # -- data ------------------------------------------------------------
     def refresh(self):
@@ -353,12 +424,70 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     # -- screen one: categories -------------------------------------------
     def _populateCategories(self):
+        """Rebuild the room-card grid from scratch (new entries/facets).
+
+        The cards themselves are (re)built here; _reflowCategories() below
+        only ever repositions them in the grid, so a mere resize never
+        rebuilds a card."""
         _clearLayout(self.categoriesLayout)
         self._categories = partslib_index.category_tree(
             self._entries, self._facets, primary="room", secondary="element")
-        for room in self._categories:
-            self.categoriesLayout.addWidget(self._makeRoomCard(room))
-        self.categoriesLayout.addStretch(1)
+        self._categoryCards = [self._makeRoomCard(room)
+                                for room in self._categories]
+        self._categoryColumns = 0  # force _reflowCategories to (re)place them
+        self._reflowCategories()
+
+    def _columnCountFor(self, width):
+        """How many ~_CARD_TARGET_WIDTH-wide columns fit in `width`, never
+        fewer than one."""
+        if width <= 0:
+            return 1
+        return max(1, width // _CARD_TARGET_WIDTH)
+
+    def _reflowCategories(self):
+        """Lay self._categoryCards out in a grid, sized from the scroll
+        area's current viewport width.
+
+        Only actually re-flows - taking the existing card widgets out of
+        the grid and re-adding them at their new row/col, never rebuilding
+        or leaking them - when the computed column count has actually
+        CHANGED (or on the initial call, where _categoryColumns is reset to
+        0 by _populateCategories). This is what keeps a resize drag from
+        thrashing the layout on every pixel."""
+        columns = self._columnCountFor(self.categoriesScreen.viewport().width())
+        if columns == self._categoryColumns:
+            return
+        self._categoryColumns = columns
+
+        while self.categoriesLayout.count():
+            # Detach only - takeAt() does not delete the widget, so every
+            # card is reused, never rebuilt or destroyed, across a reflow.
+            self.categoriesLayout.takeAt(0)
+
+        for index, card in enumerate(self._categoryCards):
+            row, col = divmod(index, columns)
+            self.categoriesLayout.addWidget(card, row, col)
+
+        rowCount = 0
+        if self._categoryCards:
+            rowCount = (len(self._categoryCards) - 1) // columns + 1
+        # Equal stretch on every occupied (and a few spare) column keeps
+        # cards in a row equal-width and stops a lone card in a short row
+        # from being stretched across the whole grid; one stretched row
+        # below the last real row keeps cards pinned to the top instead of
+        # stretching vertically to fill the scroll area. Reset a generous
+        # fixed range every time rather than tracking the previous extent,
+        # so a shrinking grid never leaves stale stretch behind.
+        for c in range(64):
+            self.categoriesLayout.setColumnStretch(c, 1 if c < columns else 0)
+        for r in range(64):
+            self.categoriesLayout.setRowStretch(r, 1 if r == rowCount else 0)
+
+    def eventFilter(self, watched, event):
+        if (watched is self.categoriesScreen.viewport()
+                and event.type() == QtCore.QEvent.Resize):
+            self._reflowCategories()
+        return super(PartsLibraryPanel, self).eventFilter(watched, event)
 
     def _makeRoomCard(self, room):
         """One room card: icon + label header, a hairline rule, then that
@@ -534,13 +663,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         variants.setFont(variantsFont)
         variants.setAlignment(QtCore.Qt.AlignHCenter)
         variants.setWordWrap(True)
-        # Dim the variant line relative to the name, using the palette's own
-        # Text colour (not a hardcoded hex) so it still follows the theme.
-        dimPalette = variants.palette()
-        dimColor = self.palette().color(QtGui.QPalette.Text)
-        dimColor.setAlpha(160)
-        dimPalette.setColor(QtGui.QPalette.WindowText, dimColor)
-        variants.setPalette(dimPalette)
+        # Dim the variant line relative to the name, using this screen's own
+        # text_dim token (never QPalette - see _applyTheme's docstring for
+        # why palette colours cannot be trusted here).
+        variants.setStyleSheet("color: %s;" % self._tokens["text_dim"])
         v.addWidget(variants)
 
         return card
