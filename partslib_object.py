@@ -37,13 +37,21 @@ _PARAMS_GROUP = "Parameters"
 # is refused, not guessed: a mistyped dimension property would be worse than
 # an absent one, since the absent case still falls back to the manifest
 # default in build_shape() and builds correctly.
+#
+# "Enum" is intentionally absent, not merely unimplemented: the manifest
+# schema has no "options" field to declare an App::PropertyEnumeration's
+# allowed values, so there is no honest way to build one. A fallback that
+# only worked when a "default" happened to be present would raise instead
+# whenever it was absent, and do so at property-declaration time - the worst
+# possible moment, since it can be reached from onChanged()'s Variant branch
+# with nothing there to catch it. Refuse it the same as any unknown type
+# (skip + warn) until the schema grows an "options" field.
 _PARAM_PROPERTY_TYPES = {
     "Length": "App::PropertyLength",
     "Angle": "App::PropertyAngle",
     "Integer": "App::PropertyInteger",
     "Bool": "App::PropertyBool",
     "String": "App::PropertyString",
-    "Enum": "App::PropertyEnumeration",
 }
 
 LIBRARY_DIR = os.path.join(_DIR, "library")
@@ -130,7 +138,8 @@ class _LibraryPart(ArchComponent.Component):
         self._declareParamProperties(obj, resolved, reseed)
 
     def _declareParamProperties(self, obj, resolved, reseed):
-        """Add/seed the "Parameters" group properties for `resolved`.
+        """Add/seed the "Parameters" group properties for `resolved`, and
+        show/hide that group's properties to match what `resolved` declares.
 
         This is a genuinely reachable reentrancy hazard, unlike the
         `_rebuilding` flag removed from this file in an earlier review (that
@@ -144,7 +153,17 @@ class _LibraryPart(ArchComponent.Component):
         performs explicitly once this returns.
         """
         specs = partslib_manifest.param_specs(resolved) if resolved else {}
-        names = set()
+        # Computed up front, from `specs` alone, rather than accumulated
+        # during the loop below: onChanged()'s reentrancy guard consults
+        # self._paramNames, and if it were only assigned after the loop
+        # finished, the guard would consult the OLD set while a property is
+        # being declared for the very first time and miss it. Assigning it
+        # before the loop also means _paramNames stays consistent with what
+        # this call intends to declare even if the loop below raised partway
+        # through, instead of being left stale from some earlier call.
+        names = {name for name, spec in specs.items()
+                  if _PARAM_PROPERTY_TYPES.get(spec.get("type")) is not None}
+        self._paramNames = names
         self._reseeding = True
         try:
             for name, spec in specs.items():
@@ -160,22 +179,22 @@ class _LibraryPart(ArchComponent.Component):
                 if is_new:
                     obj.addProperty(prop_type, name, _PARAMS_GROUP,
                                     "Part parameter %r" % (name,))
-                if (is_new or reseed) and prop_type == "App::PropertyEnumeration":
-                    # An Enumeration property needs its allowed values set
-                    # before a current value is accepted. The manifest
-                    # schema has no declared "options" list for Enum params
-                    # yet, so fall back to a single-choice enum of just the
-                    # default rather than guess at a wider vocabulary.
-                    options = spec.get("options") or (
-                        [spec.get("default")]
-                        if spec.get("default") is not None else [])
-                    setattr(obj, name, options)
                 if is_new or reseed:
                     setattr(obj, name, spec.get("default"))
-                names.add(name)
         finally:
             self._reseeding = False
-        self._paramNames = names
+        # Non-destructive fix for a variant/part switch that declares fewer
+        # params than before: the now-undeclared property is never removed
+        # (removing a document property is destructive and can break older
+        # files), but it must stop being an editable field that silently
+        # does nothing. Hide anything in the "Parameters" group `resolved`
+        # does not declare, and un-hide what it does - idempotent, and using
+        # getGroupOfProperty() so this only ever touches properties in that
+        # group, never PartId/Variant or anything inherited from
+        # ArchComponent.
+        for existing in obj.PropertiesList:
+            if obj.getGroupOfProperty(existing) == _PARAMS_GROUP:
+                obj.setEditorMode(existing, 0 if existing in names else 2)
 
     def _resolveCurrent(self, obj):
         """(resolved manifest) for obj's current PartId/Variant, or None.
@@ -370,16 +389,29 @@ def reloadFromLibrary(obj):
                     "ArchPlus: variant %r of %s no longer exists; using %r "
                     "instead\n" % (current, obj.Label, variant))
 
-        # Reassigning PROP_VARIANT fires onChanged(Variant) even when
-        # `variant` is unchanged from before, which re-seeds Parameter
-        # properties to their (possibly library-corrected) defaults - the
-        # same discard-on-reload behaviour this command already applies to
-        # metadata and geometry, just extended to dimensions now that they
-        # are properties too.
+        # Reassigning PROP_VARIANT fires onChanged(Variant) when FreeCAD
+        # considers the value to have actually changed, which would re-seed
+        # Parameter properties on its own - but for the by-far-most-common
+        # case here (reload with the same variant still selected), whether
+        # that cascade fires depends on FreeCAD's PropertyEnumeration
+        # "did the value really change" semantics, which this file has no
+        # reliable way to assert headlessly. Relying on it would mean a
+        # user's hand-edited Parameter value could survive "Reload from
+        # library" untouched, contradicting what this command promises: it
+        # means "take the library's current truth", so it must discard
+        # hand-edits exactly as an explicit Variant switch does.
         setattr(obj, PROP_VARIANT, labels)
         setattr(obj, PROP_VARIANT, variant)
 
         resolved = partslib_manifest.resolve_variant(manifest, variant)
+        # Explicit, not left to the cascade above - same reasoning as
+        # makePart(). setPartProperties()/_declareParamProperties() are
+        # idempotent under reseed=True and guarded by self._reseeding
+        # against re-entrant rebuilds, so calling this explicitly is
+        # redundant-but-safe if the cascade above already ran, and
+        # load-bearing (discarding any hand-edited Parameter value) if it
+        # did not.
+        obj.Proxy.setPartProperties(obj, resolved, reseed=True)
         _applyMetadata(obj, resolved, facets)
     except Exception as exc:
         FreeCAD.Console.PrintError(

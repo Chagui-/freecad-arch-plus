@@ -179,6 +179,27 @@ unaffected by the fallback.
       duplicate/lingering rebuild artefacts — this exercises the guard
       around one Variant change re-seeding several Parameter properties at
       once.
+- [ ] **D10 (fix round — reload discards hand-edits too).** Place a fresh
+      Base cabinet and edit `Width` to a custom value (e.g. `750`, not one
+      of the shipped variants). Right-click the object → **Reload from
+      library**, leaving `Variant` untouched (the same variant is still
+      selected — this is the common case, and the one the fix targets).
+      Confirm `Width` snaps back to the current variant's manifest default
+      rather than staying at `750` — "Reload from library" means "take the
+      library's current truth", so it must discard hand-edits exactly like
+      switching `Variant` does, not only when the cascade from reassigning
+      `Variant` happens to fire.
+- [ ] **D11 (fix round — no dead editable field survives a variant
+      switch).** Pick (or temporarily edit a `part.json` to create) a part
+      whose variants declare a different set of params — e.g. one variant
+      with `Width`/`Depth`/`Height` and another that drops one of them.
+      Place it on the first variant and confirm all its params show as
+      editable fields in the **Parameters** group. Switch to the variant
+      that declares fewer params. Confirm the now-undeclared property is no
+      longer visible in the property editor (hidden, not deleted) rather
+      than lingering as a field that silently does nothing. Switch back to
+      the first variant: confirm the property reappears as editable. If you
+      edited a `part.json` for this check, revert it afterwards.
 
 ## Part E — IFC properties and export round-trip (deferred, Task 10)
 
