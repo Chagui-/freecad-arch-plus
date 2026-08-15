@@ -44,6 +44,20 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
       inside the BIM workbench (not just the toolbar).
 - [ ] **A3.** Create a new document and draw an Arch Wall (BIM → Wall), so
       there is a wall face available to click later.
+- [ ] **A4 (parts-library branch — startup fix).** This is the check for the
+      reported "the tool doesn't even open" failure. Fully restart FreeCAD
+      (not just switch workbenches) and switch to **BIM** again. Confirm A1
+      still passes — the ArchPlus toolbar appears with all four buttons,
+      Parts Library included — and check the Report view for any traceback
+      from `InitGui.py`'s `add_ui()` (it swallows import errors into a
+      printed message rather than raising). The fix under test: an
+      `import partslib_object` at module scope in `partslib_gui.py`
+      transitively imports `ArchComponent`, which may not yet be importable
+      during the BIM workbench's `Initialize()`; that import has been moved
+      into the two functions that actually need it (`refresh()`,
+      `_onPlace()`), matching `windowsplus_gui.py`'s lazy
+      `import windowsplus_object`. If the toolbar still fails to appear here,
+      the hypothesis was wrong and the real cause is still open.
 
 ## Part B — Opening the panel and browsing (brief Step 5, checks 1–8)
 

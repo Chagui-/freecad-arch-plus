@@ -22,8 +22,16 @@ if _DIR not in sys.path:
     sys.path.append(_DIR)
 
 import partslib_index
-import partslib_object
 import partslib_thumbs
+
+# partslib_object is imported lazily, inside the functions that need it
+# (refresh(), _onPlace()) rather than here at module scope. It imports
+# ArchComponent at its own module scope, and this module is imported during
+# the BIM workbench's Initialize() (InitGui.py's add_ui()), wrapped in a bare
+# except that only prints to the Report view - if ArchComponent were not yet
+# importable at that point, the import would raise, appendToolbar() would
+# never run, and the whole ArchPlus toolbar would silently fail to appear.
+# Matches windowsplus_gui.py's lazy `import windowsplus_object`.
 
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 
@@ -134,6 +142,8 @@ class PartsLibraryPanel(QtGui.QDockWidget):
     # -- data ------------------------------------------------------------
     def refresh(self):
         """Rescan the library and rebuild the whole view."""
+        import partslib_object
+
         index = partslib_object.libraryIndex(force=True)
         self._entries = index["entries"]
         self._facets = index["facets"]
@@ -291,6 +301,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
     def _onPlace(self):
         """Pick a point in the 3D view, then create the part there."""
         import partslib_geometry
+        import partslib_object
         import partslib_placement
         import draftguitools.gui_trackers as DraftTrackers
 
