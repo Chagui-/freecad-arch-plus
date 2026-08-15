@@ -961,15 +961,28 @@ class PartsLibraryPanel(QtGui.QWidget):
         QPixmap, or None on any failure (a bad cache path, or a renderer
         with no GL context - render_shape already returns False rather than
         raising in that case) so the caller can fall through to the next
-        layer."""
+        layer.
+
+        Checks the shared session failure cache first: on a machine where
+        the renderer can never succeed, re-selecting the same part/variant
+        (or switching Variant back and forth) would otherwise retry the
+        same doomed render every single time - see partslib_thumbs.py's
+        _RENDER_FAILED for the full rationale."""
+        cache_dir = os.path.join(entry["dir"], ".cache")
+        out_path = os.path.join(
+            cache_dir, "%s.png" % _sanitizeVariantLabel(label))
         try:
-            cache_dir = os.path.join(entry["dir"], ".cache")
-            out_path = os.path.join(
-                cache_dir, "%s.png" % _sanitizeVariantLabel(label))
-            if not os.path.exists(out_path):
-                if not partslib_thumbs.render_shape(
-                        shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
-                    return None
+            if os.path.exists(out_path):
+                pixmap = QtGui.QPixmap(out_path)
+                return None if pixmap.isNull() else pixmap
+            if partslib_thumbs.render_failed_before(out_path):
+                return None
+            if not partslib_thumbs.render_shape(
+                    shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
+                partslib_thumbs.mark_render_failed(out_path, (
+                    "ArchPlus: cannot render a detail preview for %r (%s); "
+                    "will not retry this session\n" % (entry["id"], label)))
+                return None
             pixmap = QtGui.QPixmap(out_path)
             return None if pixmap.isNull() else pixmap
         except Exception as exc:
