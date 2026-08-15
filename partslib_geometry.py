@@ -16,6 +16,8 @@ _DIR = os.path.dirname(__file__)
 if _DIR not in sys.path:
     sys.path.append(_DIR)
 
+import partslib_manifest
+
 BUILDER_PACKAGE = "partslib_builders"
 CACHE_DIRNAME = ".cache"
 
@@ -117,9 +119,13 @@ def measure(shape):
     """Derived measurements, in mm, from the built shape's bounding box.
 
     Measurements are never authored in a manifest - deriving them is what
-    stops a part's stated size disagreeing with its geometry."""
+    stops a part's stated size disagreeing with its geometry. The metric
+    names come from partslib_manifest.derived_metric_names() so there is one
+    definition of what "derived" means, mapped in order onto the bounding
+    box's X/Y/Z extents."""
     box = shape.BoundBox
-    return {"Width": box.XLength, "Depth": box.YLength, "Height": box.ZLength}
+    lengths = (box.XLength, box.YLength, box.ZLength)
+    return dict(zip(partslib_manifest.derived_metric_names(), lengths))
 
 
 def build_shape(resolved, part_dir):

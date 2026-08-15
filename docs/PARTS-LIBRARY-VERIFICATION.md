@@ -71,6 +71,17 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
       that the library is populated, but confirm no traceback ever appeared
       on first opening the panel this session — the dock, tree and grid all
       rendered without a Python console error.
+- [ ] **B9 (fix round — on-demand thumbnail fallback).** Neither seed part
+      ships a committed `thumbnail.png`, so this exercises the fallback by
+      default. Before opening the panel this session, confirm (in a file
+      browser, or `os.path.exists` in the Python console against each
+      part's own directory) that neither `base-cabinet`'s nor
+      `wc-demo`'s folder under `library/` yet contains a `thumbnail.png`.
+      Open the panel: both cards still show their names even with no icon
+      yet. Close the panel, and confirm each part's folder now contains a
+      freshly-rendered `thumbnail.png`. Reopen the panel: both cards now
+      show an icon, read straight from that file (no re-render — check the
+      file's mtime is unchanged across the reopen).
 
 ## Part C — Live preview (the unverified spike)
 
@@ -105,6 +116,15 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
       empty space (no face under the cursor) instead of a wall/floor. The
       part still places (using the no-host fallback) without raising an
       exception.
+- [ ] **D7 (fix round — ghost tracker).** Select Base cabinet, click
+      **Place**. Before clicking to commit, move the mouse around the 3D
+      view: a translucent box sized to the cabinet's measured dimensions
+      follows the cursor and re-orients over a wall face vs. the floor.
+      Click to commit — the tracker disappears at the same moment the real
+      object appears (no lingering ghost box). Repeat and this time press
+      **Escape** (or right-click) to cancel the pick instead of clicking:
+      confirm the tracker box also disappears on this cancel path, leaving
+      no leftover geometry in the 3D view.
 
 ## Part E — IFC properties and export round-trip (deferred, Task 10)
 

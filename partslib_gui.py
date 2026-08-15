@@ -177,12 +177,42 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                             key=lambda e: e["name"]):
             cell = QtGui.QListWidgetItem(entry["name"])
             cell.setData(QtCore.Qt.UserRole, entry["id"])
-            thumb = os.path.join(entry["dir"],
-                                 partslib_thumbs.THUMBNAIL_FILENAME)
+            thumb = partslib_thumbs.thumbnail_path(entry["dir"])
+            if not os.path.exists(thumb):
+                # Spec Sec 9: no thumbnail was committed for this part, so
+                # render one now and cache it to disk - this is the ONE place
+                # browsing is allowed to build a shape, and only the first
+                # time; ensure_thumbnail() writes the PNG next to the part,
+                # so every later open is back to a plain file read. Never
+                # raises: any failure (no committed manifest, no GL context)
+                # returns None and the card below is just shown without an
+                # icon rather than being hidden.
+                thumb = self._ensureGridThumbnail(entry) or thumb
             if os.path.exists(thumb):
                 cell.setIcon(QtGui.QIcon(thumb))
             cell.setToolTip(entry.get("description") or entry["name"])
             self.grid.addItem(cell)
+
+    def _ensureGridThumbnail(self, entry):
+        """Render a fallback thumbnail for `entry`'s default variant.
+
+        Resolved the same way `_resolvedSelection` does, but for the first
+        variant rather than whatever is currently selected in the detail
+        pane - the grid is not variant-specific. Must never raise: a bad
+        manifest or a failed render must still leave the entry's card
+        visible by name, just with no icon."""
+        import partslib_manifest
+
+        try:
+            manifest = partslib_manifest.load_manifest(entry["path"])
+            resolved = partslib_manifest.resolve_variant(
+                manifest, entry["variants"][0])
+            return partslib_thumbs.ensure_thumbnail(entry, resolved)
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot render a thumbnail for %s: %s\n"
+                % (entry["id"], exc))
+            return None
 
     def currentEntry(self):
         """The selected entry dict, or None."""
@@ -253,15 +283,16 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: live preview failed: %s\n" % (exc,))
         else:
-            thumb = os.path.join(entry["dir"],
-                                 partslib_thumbs.THUMBNAIL_FILENAME)
+            thumb = partslib_thumbs.thumbnail_path(entry["dir"])
             if os.path.exists(thumb):
                 self.preview.setPixmap(QtGui.QPixmap(thumb).scaledToHeight(
                     _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
 
     def _onPlace(self):
         """Pick a point in the 3D view, then create the part there."""
+        import partslib_geometry
         import partslib_placement
+        import draftguitools.gui_trackers as DraftTrackers
 
         selection = self._resolvedSelection()
         if selection is None:
@@ -270,6 +301,30 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         host = partslib_placement.host_of(resolved)
         offset = partslib_placement.offset_of(resolved)
         variant = self.variant.currentText() or entry["variants"][0]
+
+        # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
+        # doorsplus_gui.py:887): a rough box preview of the part's footprint
+        # that follows the cursor while picking, sized from the built
+        # shape's measured bounding box. It is centred on the same
+        # placement partPlacement() computes for the click - an
+        # approximation, since a part's anchor (manifest "anchor") need not
+        # sit at its box's centre, but enough to judge size and orientation
+        # before committing. Degrade to no tracker, not blocked placement,
+        # if the shape cannot be built.
+        tracker = None
+        try:
+            shape = partslib_geometry.build_shape(resolved, entry["dir"])
+            metrics = partslib_geometry.measure(shape)
+            tracker = DraftTrackers.boxTracker()
+            tracker.length(metrics["Width"])
+            tracker.width(metrics["Depth"])
+            tracker.height(metrics["Height"])
+            tracker.on()
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: no placement preview for %s: %s\n"
+                % (entry["id"], exc))
+            tracker = None
 
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
@@ -289,23 +344,38 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                     state["face"] = [target, index]
             else:
                 state["face"] = None
+            if tracker is not None:
+                preview = partslib_placement.partPlacement(
+                    point, state["face"], host, offset)
+                tracker.setRotation(preview.Rotation)
+                tracker.pos(preview.Base)
 
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
-            if point is None:
-                return
-            placement = partslib_placement.partPlacement(
-                point, state["face"], host, offset)
-            doc.openTransaction("Place library part")
             try:
-                partslib_object.makePart(
-                    entry, self._facets, variant=variant, placement=placement)
-                doc.commitTransaction()
-            except Exception as exc:
-                doc.abortTransaction()
-                FreeCAD.Console.PrintError(
-                    "ArchPlus: cannot place %s: %s\n" % (entry["id"], exc))
-            doc.recompute()
+                if point is None:
+                    return
+                placement = partslib_placement.partPlacement(
+                    point, state["face"], host, offset)
+                doc.openTransaction("Place library part")
+                try:
+                    partslib_object.makePart(
+                        entry, self._facets, variant=variant,
+                        placement=placement)
+                    doc.commitTransaction()
+                except Exception as exc:
+                    doc.abortTransaction()
+                    FreeCAD.Console.PrintError(
+                        "ArchPlus: cannot place %s: %s\n"
+                        % (entry["id"], exc))
+                doc.recompute()
+            finally:
+                # Every exit path - commit, abort, or cancel (point is None)
+                # - must clear the tracker, or a cancelled placement leaves a
+                # ghost box stuck in the 3D view. Matches doorsplus_gui.py's
+                # repositionDoor, which uses try/finally for the same reason.
+                if tracker is not None:
+                    tracker.finalize()
 
         FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
 
