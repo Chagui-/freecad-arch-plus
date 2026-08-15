@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- outer frame, 4-sided -->
+  <g fill="none" stroke="#1a5fb4" stroke-width="3" stroke-linejoin="round">
+    <rect x="8" y="8" width="48" height="48" rx="1" fill="#e8f4ff"/>
+  </g>
+  <!-- 3x3 grid of cells, top-left filled -->
+  <g stroke="#1a5fb4" stroke-width="1.5">
+    <rect x="8" y="8" width="16" height="16" fill="#2ec27e"/>
+    <rect x="24" y="8" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="40" y="8" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="8" y="24" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="24" y="24" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="40" y="24" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="8" y="40" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="24" y="40" width="16" height="16" fill="#e8f4ff"/>
+    <rect x="40" y="40" width="16" height="16" fill="#e8f4ff"/>
+  </g>
+</svg>
