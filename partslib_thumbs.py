@@ -23,6 +23,22 @@
 # for the rest of this FreeCAD session.
 
 import os
+import time
+
+# TEMPORARY diagnostic instrumentation (see the "still very slow" thread) -
+# prints wall-clock elapsed time with the number embedded in the message
+# text itself, not relied on the Report view's own timestamp column: if the
+# main thread is blocked, Qt does not repaint the Report view until it
+# unblocks, so several messages can appear to share one on-screen timestamp
+# even though real time passed between when each was actually printed.
+_TIMING = True
+
+
+def _timelog(message):
+    if not _TIMING:
+        return
+    _warn("ArchPlus: [timing] %s\n" % (message,))
+
 
 THUMBNAIL_FILENAME = "thumbnail.png"
 THUMBNAIL_SIZE = 256
@@ -84,10 +100,18 @@ def scene_from_shape(shape):
 
 def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
     """Render `shape` to a PNG. Returns True on success, False otherwise."""
+    _t_total = time.perf_counter()
     try:
+        _t = time.perf_counter()
         from pivy import coin
+        _timelog("render_shape(%s): `from pivy import coin` took %.3fs"
+                  % (out_path, time.perf_counter() - _t))
 
+        _t = time.perf_counter()
         node = scene_from_shape(shape)
+        _timelog("render_shape(%s): scene_from_shape() took %.3fs"
+                  % (out_path, time.perf_counter() - _t))
+
         root = coin.SoSeparator()
         root.addChild(coin.SoDirectionalLight())
         camera = coin.SoPerspectiveCamera()
@@ -102,20 +126,30 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
 
         root.ref()
         try:
+            _t = time.perf_counter()
             ok = renderer.render(root)
+            _timelog("render_shape(%s): renderer.render() took %.3fs (ok=%r)"
+                      % (out_path, time.perf_counter() - _t, ok))
         finally:
             root.unref()
 
         if not ok:
+            _timelog("render_shape(%s): TOTAL %.3fs (renderer.render()==False)"
+                      % (out_path, time.perf_counter() - _t_total))
             return False
 
         folder = os.path.dirname(out_path)
         if folder and not os.path.isdir(folder):
             os.makedirs(folder)
         renderer.writeToFile(out_path, "PNG")
-        return os.path.exists(out_path)
+        result = os.path.exists(out_path)
+        _timelog("render_shape(%s): TOTAL %.3fs (wrote file=%r)"
+                  % (out_path, time.perf_counter() - _t_total, result))
+        return result
     except Exception as exc:
         _warn("ArchPlus: thumbnail render failed: %s\n" % (exc,))
+        _timelog("render_shape(%s): TOTAL %.3fs (raised %r)"
+                  % (out_path, time.perf_counter() - _t_total, exc))
         return False
 
 
@@ -128,10 +162,14 @@ def ensure_thumbnail(entry, resolved):
     the render call."""
     import partslib_geometry
 
+    _t0 = time.perf_counter()
     path = thumbnail_path(entry["dir"])
     if os.path.exists(path):
         return path
     if render_failed_before(path):
+        _timelog("ensure_thumbnail(%r): short-circuited (marked failed "
+                  "earlier this session), took %.3fs"
+                  % (entry["id"], time.perf_counter() - _t0))
         return None
     try:
         shape = partslib_geometry.build_shape(resolved, entry["dir"])
@@ -140,9 +178,17 @@ def ensure_thumbnail(entry, resolved):
             "ArchPlus: cannot build %r for a thumbnail; will not retry "
             "this session: %s\n" % (entry["id"], exc)))
         return None
+    _t1 = time.perf_counter()
+    _timelog("ensure_thumbnail(%r): build_shape() took %.3fs"
+              % (entry["id"], _t1 - _t0))
+
     if render_shape(shape, path):
+        _timelog("ensure_thumbnail(%r): TOTAL %.3fs (rendered)"
+                  % (entry["id"], time.perf_counter() - _t0))
         return path
     mark_render_failed(path, (
         "ArchPlus: cannot render a thumbnail for %r (no GL context?); "
         "will not retry this session\n" % (entry["id"],)))
+    _timelog("ensure_thumbnail(%r): TOTAL %.3fs (render failed)"
+              % (entry["id"], time.perf_counter() - _t0))
     return None

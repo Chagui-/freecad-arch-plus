@@ -22,6 +22,7 @@
 import os
 import re
 import sys
+import time
 
 import FreeCAD
 import FreeCADGui
@@ -46,6 +47,24 @@ import partslib_thumbs
 
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
+
+# TEMPORARY diagnostic instrumentation (see the "still very slow" thread):
+# prints wall-clock elapsed time for the phases inside refresh()/
+# _repopulateGrid()/_onSelect(), with the number embedded in the message text
+# itself rather than relied on the Report view's own timestamp column - if
+# the main thread is blocked, Qt does not repaint the Report view until it
+# unblocks, so several messages can appear to share one on-screen timestamp
+# even though real time passed between when each was actually printed.
+_TIMING = True
+
+
+def _timelog(message):
+    if not _TIMING:
+        return
+    try:
+        FreeCAD.Console.PrintMessage("ArchPlus: [timing] %s\n" % (message,))
+    except Exception:
+        pass
 
 _THUMB_SIZE = 96
 
@@ -436,12 +455,27 @@ class PartsLibraryPanel(QtGui.QWidget):
         """Rescan the library and rebuild both screens."""
         import partslib_object
 
+        _t0 = time.perf_counter()
         index = partslib_object.libraryIndex(force=True)
+        _t1 = time.perf_counter()
+        _timelog("refresh(): libraryIndex(force=True) took %.3fs (%d entries)"
+                  % (_t1 - _t0, len(index["entries"])))
+
         self._entries = index["entries"]
         self._facets = index["facets"]
+
         self._populateCategories()
+        _t2 = time.perf_counter()
+        _timelog("refresh(): _populateCategories() took %.3fs" % (_t2 - _t1,))
+
         self._updateBreadcrumb()
+        _t3 = time.perf_counter()
+        _timelog("refresh(): _updateBreadcrumb() took %.3fs" % (_t3 - _t2,))
+
         self._repopulateGrid()
+        _t4 = time.perf_counter()
+        _timelog("refresh(): _repopulateGrid() took %.3fs" % (_t4 - _t3,))
+        _timelog("refresh(): TOTAL %.3fs" % (_t4 - _t0,))
 
     def _facetIconPath(self, iconName):
         """Resolve a bare facet icon filename under Resources/icons/facets/.
@@ -699,13 +733,21 @@ class PartsLibraryPanel(QtGui.QWidget):
         reappears - covering both "clear the search" and "the library
         gained its first part"."""
         self.grid.clear()
-        for entry in sorted(self._filteredEntries(), key=lambda e: e["name"]):
+        _entries = sorted(self._filteredEntries(), key=lambda e: e["name"])
+        _timelog("_repopulateGrid(): building %d card(s) "
+                  "(filterRoom=%r, filterElement=%r, search=%r)"
+                  % (len(_entries), self._filterRoom, self._filterElement,
+                     self.search.text()))
+        for entry in _entries:
+            _tcard = time.perf_counter()
             item = QtGui.QListWidgetItem()
             item.setData(QtCore.Qt.UserRole, entry["id"])
             card = self._makePartCard(entry)
             item.setSizeHint(card.sizeHint())
             self.grid.addItem(item)
             self.grid.setItemWidget(item, card)
+            _timelog("_repopulateGrid(): card %r took %.3fs"
+                      % (entry["id"], time.perf_counter() - _tcard))
         if self.grid.count():
             self.gridStack.setCurrentWidget(self.grid)
             self.grid.setCurrentRow(0)
@@ -896,6 +938,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         """Build the selected variant and show it with its measurements."""
         import partslib_geometry
 
+        _t0 = time.perf_counter()
         selection = self._resolvedSelection()
         if selection is None:
             return
@@ -905,6 +948,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         except Exception as exc:
             self.metrics.setText("Cannot build this part: %s" % exc)
             return
+        _t1 = time.perf_counter()
+        _timelog("_refreshPreview(): build_shape(%r) took %.3fs"
+                  % (entry["id"], _t1 - _t0))
 
         metrics = partslib_geometry.measure(shape)
         self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
@@ -922,6 +968,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         else:
             label = self._currentVariantLabel() or entry["variants"][0]
             self._showStaticPreview(entry, shape, label)
+        _timelog("_refreshPreview(): total for %r (%s) took %.3fs"
+                  % (entry["id"], label if not _PREVIEW_LIVE else "live",
+                     time.perf_counter() - _t0))
 
     def _showStaticPreview(self, entry, shape, label):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix
@@ -1163,19 +1212,29 @@ def showPanel():
     tool permanently dead - so closing the tab and clicking the toolbar
     button again always yields a working tab."""
     global _panel
+    _t0 = time.perf_counter()
     mainWindow = FreeCADGui.getMainWindow()
     if _panel is not None:
         try:
+            _timelog("showPanel(): reusing existing panel, calling refresh()")
             _panel.refresh()
             mdi = mainWindow.findChild(QtGui.QMdiArea)
             subWindow = _panel.parentWidget()
             if mdi is not None and subWindow is not None:
                 mdi.setActiveSubWindow(subWindow)
+            _timelog("showPanel(): TOTAL %.3fs (reused panel)"
+                      % (time.perf_counter() - _t0,))
             return _panel
         except RuntimeError:
             _panel = None
+    _timelog("showPanel(): constructing a new panel")
     _panel = PartsLibraryPanel(mainWindow)
+    _t1 = time.perf_counter()
+    _timelog("showPanel(): PartsLibraryPanel() construction took %.3fs"
+              % (_t1 - _t0,))
     _hostInMdi(_panel)
+    _timelog("showPanel(): TOTAL %.3fs (new panel, incl. _hostInMdi %.3fs)"
+              % (time.perf_counter() - _t0, time.perf_counter() - _t1))
     return _panel
 
 
