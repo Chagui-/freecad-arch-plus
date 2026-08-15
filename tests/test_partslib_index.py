@@ -117,6 +117,27 @@ def test_load_cache_returns_none_when_absent(tmp_path):
     assert px.load_cache(str(tmp_path / "nope.json")) is None
 
 
+def test_scan_records_the_vocabulary_mtime(tmp_path):
+    root = _library(tmp_path, _part("wc-a", "WC A"))
+    index = px.scan(root)
+    assert index["facetsMtime"] == os.path.getmtime(
+        os.path.join(root, "facets.json"))
+
+
+def test_cache_is_stale_when_the_vocabulary_changes(tmp_path):
+    root = _library(tmp_path, _part("wc-a", "WC A"))
+    index = px.scan(root)
+    os.utime(os.path.join(root, "facets.json"), (0, 0))
+    assert px.is_cache_valid(index, root) is False
+
+
+def test_saved_cache_still_validates_after_a_roundtrip(tmp_path):
+    root = _library(tmp_path, _part("wc-a", "WC A"))
+    cache_path = str(tmp_path / "index.json")
+    px.save_cache(px.scan(root), cache_path)
+    assert px.is_cache_valid(px.load_cache(cache_path), root) is True
+
+
 ENTRIES = [
     {"id": "wc-a", "name": "Wall-hung WC", "description": "Rimless pan.",
      "keywords": ["toilet", "pan"],

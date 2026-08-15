@@ -38,7 +38,7 @@ def scan(library_dir):
     except ValueError as exc:
         return {"facets": {}, "entries": [],
                 "errors": ["%s: %s" % (FACETS_FILENAME, exc)],
-                "warnings": []}
+                "warnings": [], "facetsMtime": None}
     errors.extend(pm.validate_facets(facets))
 
     seen = {}
@@ -75,12 +75,18 @@ def scan(library_dir):
         })
 
     return {"facets": facets, "entries": entries,
-            "errors": errors, "warnings": warnings}
+            "errors": errors, "warnings": warnings,
+            "facetsMtime": os.path.getmtime(facets_path)}
 
 
 def is_cache_valid(cache, library_dir):
     """True when no manifest has been added, removed or modified."""
     if not cache or cache.get("entries") is None:
+        return False
+    facets_path = os.path.join(library_dir, FACETS_FILENAME)
+    if not os.path.exists(facets_path):
+        return False
+    if cache.get("facetsMtime") != os.path.getmtime(facets_path):
         return False
     cached = {e["path"]: e["mtime"] for e in cache["entries"]}
     # A manifest that failed validation is absent from entries, so a library
@@ -97,10 +103,17 @@ def is_cache_valid(cache, library_dir):
 
 def save_cache(index, path):
     """Persist an index. Errors and warnings are not cached - a rescan
-    regenerates them."""
+    regenerates them.
+
+    facetsMtime was added without bumping CACHE_VERSION: a pre-existing cache
+    on disk simply has no such key, so it reads back as None, compares
+    unequal to the real facets.json mtime in is_cache_valid() and is treated
+    as stale. That forces one rescan which then writes the key, so the
+    migration is self-healing and needs no version gate."""
     payload = {"version": CACHE_VERSION,
                "facets": index["facets"],
-               "entries": index["entries"]}
+               "entries": index["entries"],
+               "facetsMtime": index.get("facetsMtime")}
     folder = os.path.dirname(path)
     if folder and not os.path.isdir(folder):
         os.makedirs(folder)
