@@ -132,6 +132,17 @@ class _LibraryPart(ArchComponent.Component):
         obj.Shape = shape
         obj.Placement = placement
 
+    def onChanged(self, obj, prop):
+        """Switching Variant rebuilds in place, preserving placement."""
+        if prop == PROP_VARIANT and not getattr(self, "_rebuilding", False):
+            self._rebuilding = True
+            try:
+                self.execute(obj)
+            finally:
+                self._rebuilding = False
+        else:
+            ArchComponent.Component.onChanged(self, obj, prop)
+
 
 class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
 
@@ -144,6 +155,13 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
 
     def setEdit(self, vobj, mode):
         return False
+
+    def setupContextMenu(self, vobj, menu):
+        from PySide import QtGui
+
+        action = QtGui.QAction("Reload from library", menu)
+        action.triggered.connect(lambda: reloadFromLibrary(vobj.Object))
+        menu.addAction(action)
 
 
 def _applyMetadata(obj, resolved, facets):
@@ -188,3 +206,32 @@ def makePart(entry, facets, variant=None, placement=None):
 
     obj.Proxy.execute(obj)
     return obj
+
+
+def reloadFromLibrary(obj):
+    """Force one object to rebuild from the current library contents.
+
+    This is deliberately explicit. Automatic rebuilding on document open would
+    let a corrected library part silently change drawings already issued."""
+    libraryIndex(force=True)
+    partId = getattr(obj, PROP_PART_ID, "")
+    found = resolveEntry(partId)
+    if found is None:
+        FreeCAD.Console.PrintError(
+            "ArchPlus: part %r is not in the library\n" % (partId,))
+        return False
+
+    entry, facets = found
+    manifest = partslib_manifest.load_manifest(entry["path"])
+    labels = partslib_manifest.variant_labels(manifest)
+    current = getattr(obj, PROP_VARIANT, None)
+    setattr(obj, PROP_VARIANT, labels)
+    if current in labels:
+        setattr(obj, PROP_VARIANT, current)
+
+    resolved = partslib_manifest.resolve_variant(
+        manifest, getattr(obj, PROP_VARIANT, labels[0]))
+    _applyMetadata(obj, resolved, facets)
+    obj.Proxy.execute(obj)
+    obj.Document.recompute()
+    return True
