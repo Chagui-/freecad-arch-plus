@@ -34,16 +34,40 @@ _PARAM_GROUP = "Part"
 
 LIBRARY_DIR = os.path.join(_DIR, "library")
 
+# Spec §9: browsing must never re-parse the whole library. The scanned index
+# is cached outside the add-on folder so a git checkout never clobbers it.
+CACHE_PATH = os.path.join(
+    FreeCAD.getUserAppDataDir(), "ArchPlus", "index.json")
+
 _INDEX = None
 
 
 def libraryIndex(force=False):
-    """The scanned library index, cached for the session."""
+    """The scanned library index, memoised for the session.
+
+    `force` drops the in-memory copy but still honours the on-disk cache -
+    the cache is mtime-validated against every manifest and against
+    facets.json, so only a real change to the library costs a full rescan."""
     global _INDEX
-    if _INDEX is None or force:
-        _INDEX = partslib_index.scan(LIBRARY_DIR)
-        for message in _INDEX["errors"]:
-            FreeCAD.Console.PrintError("ArchPlus library: %s\n" % message)
+    if _INDEX is not None and not force:
+        return _INDEX
+
+    cached = partslib_index.load_cache(CACHE_PATH)
+    if cached and partslib_index.is_cache_valid(cached, LIBRARY_DIR):
+        cached.setdefault("errors", [])
+        cached.setdefault("warnings", [])
+        _INDEX = cached
+        return _INDEX
+
+    _INDEX = partslib_index.scan(LIBRARY_DIR)
+    for message in _INDEX["errors"]:
+        FreeCAD.Console.PrintError("ArchPlus library: %s\n" % message)
+    try:
+        partslib_index.save_cache(_INDEX, CACHE_PATH)
+    except Exception as exc:
+        # A cache we cannot write is a slow library, not a broken one.
+        FreeCAD.Console.PrintWarning(
+            "ArchPlus: cannot write the library cache: %s\n" % (exc,))
     return _INDEX
 
 
