@@ -24,3 +24,11 @@ def test_unknown_builder_module_is_rejected():
 def test_unknown_builder_function_is_rejected():
     with pytest.raises(ValueError):
         pg.resolve_builder("asset.nosuchfunction")
+
+
+def test_stock_asset_builder_resolves():
+    assert callable(pg.resolve_builder("asset.single"))
+
+
+def test_demo_builder_resolves():
+    assert callable(pg.resolve_builder("demo.box"))
