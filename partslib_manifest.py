@@ -6,12 +6,24 @@
 # parsing, facet resolution and variant merging can be unit-tested headlessly
 # under plain pytest. Do not add FreeCAD, Part or PySide dependencies here.
 
+import json
+import re
+
 SCHEMA_VERSION = 1
 DEFAULT_IFC_TYPE = "Building Element Proxy"
 
 # Order in which facets are consulted for an IfcType mapping when the part
 # does not declare one explicitly.
 IFC_TYPE_FACET_ORDER = ("element", "function")
+
+REQUIRED_FIELDS = ("schema", "id", "name", "facets", "geometry")
+
+KNOWN_FIELDS = REQUIRED_FIELDS + (
+    "description", "keywords", "ifcType", "ifcProperties",
+    "params", "placement", "variants",
+)
+
+_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 def validate_facets(doc):
@@ -42,3 +54,79 @@ def facet_is_multi(doc, facet):
 def facet_values(doc, facet):
     """Sorted list of allowed values for a facet."""
     return sorted(doc.get(facet, {}).get("values", {}))
+
+
+def load_manifest(path):
+    """Read a part.json. Raises ValueError if it is missing or malformed."""
+    try:
+        with open(path, "r", encoding="utf8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError("cannot read manifest %s: %s" % (path, exc))
+    if not isinstance(data, dict):
+        raise ValueError("manifest %s must be an object" % path)
+    return data
+
+
+def validate_manifest(data, facets):
+    """Validate one part manifest against a facet vocabulary.
+
+    Returns (errors, warnings). Unknown top-level fields are warnings so that
+    a manifest written against a later schema still loads."""
+    errors = []
+    warnings = []
+
+    for field in REQUIRED_FIELDS:
+        if field not in data:
+            errors.append("missing required field %r" % field)
+
+    if data.get("schema") not in (None, SCHEMA_VERSION):
+        errors.append("unsupported schema version %r (expected %d)"
+                      % (data.get("schema"), SCHEMA_VERSION))
+
+    part_id = data.get("id")
+    if part_id is not None and not (
+            isinstance(part_id, str) and _ID_RE.match(part_id)):
+        errors.append("id %r must be a lowercase slug [a-z0-9-]" % (part_id,))
+
+    errors.extend(_validate_part_facets(data.get("facets"), facets))
+
+    geometry = data.get("geometry")
+    if geometry is not None:
+        if not isinstance(geometry, dict):
+            errors.append("geometry must be an object")
+        elif not isinstance(geometry.get("builder"), str):
+            errors.append("geometry has no 'builder'")
+
+    for field in data:
+        if field not in KNOWN_FIELDS:
+            warnings.append("unknown field %r (ignored)" % field)
+
+    return errors, warnings
+
+
+def _validate_part_facets(declared, facets):
+    """Check a manifest's facets block against the vocabulary."""
+    if declared is None:
+        return []
+    if not isinstance(declared, dict):
+        return ["facets must be an object"]
+
+    errors = []
+    for name, value in declared.items():
+        if name not in facets:
+            errors.append("unknown facet %r" % name)
+            continue
+        multi = facet_is_multi(facets, name)
+        if isinstance(value, list):
+            if not multi:
+                errors.append("facet %r is single-valued, got a list" % name)
+                continue
+            values = value
+        else:
+            values = [value]
+        allowed = facets[name].get("values", {})
+        for item in values:
+            if item not in allowed:
+                errors.append("facet %r has unknown value %r" % (name, item))
+    return errors

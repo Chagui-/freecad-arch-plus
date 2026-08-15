@@ -39,3 +39,94 @@ def test_multi_defaults_to_false():
 
 def test_facet_values_are_listed_sorted():
     assert pm.facet_values(FACETS, "room") == ["Bathroom", "Kitchen"]
+
+
+import json
+
+import pytest
+
+
+def _part(**over):
+    data = {
+        "schema": 1,
+        "id": "wc-geberit-icon",
+        "name": "Wall-hung WC",
+        "facets": {"function": "Sanitary", "element": "WC",
+                   "room": ["Bathroom"]},
+        "geometry": {"builder": "asset.single",
+                     "assets": {"body": "wc-360.brep"}},
+    }
+    data.update(over)
+    return data
+
+
+def test_valid_manifest_has_no_errors():
+    errors, warnings = pm.validate_manifest(_part(), FACETS)
+    assert errors == []
+    assert warnings == []
+
+
+@pytest.mark.parametrize("field", ["schema", "id", "name", "facets", "geometry"])
+def test_missing_required_field_is_an_error(field):
+    data = _part()
+    del data[field]
+    errors, _ = pm.validate_manifest(data, FACETS)
+    assert any(field in e for e in errors)
+
+
+def test_future_schema_version_is_an_error():
+    errors, _ = pm.validate_manifest(_part(schema=2), FACETS)
+    assert any("schema" in e for e in errors)
+
+
+def test_id_must_be_a_lowercase_slug():
+    errors, _ = pm.validate_manifest(_part(id="WC Geberit"), FACETS)
+    assert any("id" in e for e in errors)
+
+
+def test_unknown_facet_is_an_error():
+    data = _part(facets={"function": "Sanitary", "colour": "Blue"})
+    errors, _ = pm.validate_manifest(data, FACETS)
+    assert any("colour" in e for e in errors)
+
+
+def test_unknown_facet_value_is_an_error():
+    data = _part(facets={"function": "Plumbing"})
+    errors, _ = pm.validate_manifest(data, FACETS)
+    assert any("Plumbing" in e for e in errors)
+
+
+def test_list_value_on_single_valued_facet_is_an_error():
+    data = _part(facets={"function": ["Sanitary", "Seating"]})
+    errors, _ = pm.validate_manifest(data, FACETS)
+    assert any("function" in e for e in errors)
+
+
+def test_multi_valued_facet_accepts_a_bare_string():
+    data = _part(facets={"function": "Sanitary", "room": "Bathroom"})
+    errors, _ = pm.validate_manifest(data, FACETS)
+    assert errors == []
+
+
+def test_geometry_without_builder_is_an_error():
+    errors, _ = pm.validate_manifest(_part(geometry={}), FACETS)
+    assert any("builder" in e for e in errors)
+
+
+def test_unknown_top_level_field_is_a_warning_not_an_error():
+    errors, warnings = pm.validate_manifest(_part(futureField=1), FACETS)
+    assert errors == []
+    assert any("futureField" in w for w in warnings)
+
+
+def test_load_manifest_reads_json(tmp_path):
+    path = tmp_path / "part.json"
+    path.write_text(json.dumps(_part()), encoding="utf8")
+    assert pm.load_manifest(str(path))["id"] == "wc-geberit-icon"
+
+
+def test_load_manifest_raises_on_bad_json(tmp_path):
+    path = tmp_path / "part.json"
+    path.write_text("{not json", encoding="utf8")
+    with pytest.raises(ValueError):
+        pm.load_manifest(str(path))
