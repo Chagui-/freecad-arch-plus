@@ -120,3 +120,68 @@ def load_cache(path):
     if cache.get("version") != CACHE_VERSION:
         return None
     return cache
+
+
+UNCLASSIFIED = "(unclassified)"
+
+# Match strength, strongest first. Name matches outrank keyword matches, which
+# outrank description matches, so typing "chair" finds the chair rather than
+# everything that mentions one.
+_SCORE_NAME_EXACT = 100
+_SCORE_NAME_PREFIX = 80
+_SCORE_NAME_SUBSTRING = 60
+_SCORE_KEYWORD_EXACT = 50
+_SCORE_KEYWORD_SUBSTRING = 40
+_SCORE_DESCRIPTION = 20
+
+
+def score(entry, query):
+    """Match strength of one entry against a query. 0 means no match."""
+    query = (query or "").strip().lower()
+    if not query:
+        return 1
+
+    name = (entry.get("name") or "").lower()
+    if name == query:
+        return _SCORE_NAME_EXACT
+    if name.startswith(query):
+        return _SCORE_NAME_PREFIX
+    if query in name:
+        return _SCORE_NAME_SUBSTRING
+
+    keywords = [k.lower() for k in entry.get("keywords", [])]
+    if any(query == k for k in keywords):
+        return _SCORE_KEYWORD_EXACT
+    if any(query in k for k in keywords):
+        return _SCORE_KEYWORD_SUBSTRING
+
+    if query in (entry.get("description") or "").lower():
+        return _SCORE_DESCRIPTION
+    return 0
+
+
+def search(entries, query):
+    """Entries matching `query`, best first, ties broken by name."""
+    scored = [(score(e, query), e) for e in entries]
+    matches = [(s, e) for s, e in scored if s > 0]
+    matches.sort(key=lambda pair: (-pair[0], (pair[1].get("name") or "")))
+    return [e for _s, e in matches]
+
+
+def group_by(entries, facet):
+    """Bucket entries by one facet value.
+
+    A multi-valued facet legitimately places one entry in several buckets;
+    entries that do not declare the facet land under UNCLASSIFIED."""
+    groups = {}
+    for entry in entries:
+        value = (entry.get("facets") or {}).get(facet)
+        if value is None or value == []:
+            values = [UNCLASSIFIED]
+        elif isinstance(value, list):
+            values = value
+        else:
+            values = [value]
+        for item in values:
+            groups.setdefault(item, []).append(entry)
+    return groups

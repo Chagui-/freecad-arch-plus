@@ -115,3 +115,69 @@ def test_cache_is_stale_when_a_part_is_added(tmp_path):
 
 def test_load_cache_returns_none_when_absent(tmp_path):
     assert px.load_cache(str(tmp_path / "nope.json")) is None
+
+
+ENTRIES = [
+    {"id": "wc-a", "name": "Wall-hung WC", "description": "Rimless pan.",
+     "keywords": ["toilet", "pan"],
+     "facets": {"function": "Sanitary", "element": "WC",
+                "room": ["Bathroom", "Kitchen"]}},
+    {"id": "chair-a", "name": "Stacking chair", "description": "Café chair.",
+     "keywords": ["seat"],
+     "facets": {"function": "Seating", "element": "Chair",
+                "room": ["Kitchen"]}},
+    {"id": "misc-a", "name": "Mystery object", "description": "",
+     "keywords": [], "facets": {"function": "Sanitary"}},
+]
+
+
+def test_empty_query_returns_everything_by_name():
+    assert [e["id"] for e in px.search(ENTRIES, "")] == [
+        "misc-a", "chair-a", "wc-a"]
+
+
+def test_search_matches_the_name():
+    assert [e["id"] for e in px.search(ENTRIES, "chair")] == ["chair-a"]
+
+
+def test_search_matches_a_keyword():
+    assert [e["id"] for e in px.search(ENTRIES, "toilet")] == ["wc-a"]
+
+
+def test_search_matches_the_description():
+    assert [e["id"] for e in px.search(ENTRIES, "rimless")] == ["wc-a"]
+
+
+def test_search_is_case_insensitive():
+    assert [e["id"] for e in px.search(ENTRIES, "WALL-HUNG")] == ["wc-a"]
+
+
+def test_name_matches_outrank_description_matches():
+    entries = [
+        {"id": "desc", "name": "Basin", "description": "next to the chair",
+         "keywords": [], "facets": {}},
+        {"id": "name", "name": "Chair", "description": "",
+         "keywords": [], "facets": {}},
+    ]
+    assert [e["id"] for e in px.search(entries, "chair")] == ["name", "desc"]
+
+
+def test_search_excludes_non_matches():
+    assert px.search(ENTRIES, "zzzz") == []
+
+
+def test_group_by_single_valued_facet():
+    groups = px.group_by(ENTRIES, "function")
+    assert sorted(groups) == ["Sanitary", "Seating"]
+    assert sorted(e["id"] for e in groups["Sanitary"]) == ["misc-a", "wc-a"]
+
+
+def test_multi_valued_facet_puts_one_part_in_several_groups():
+    groups = px.group_by(ENTRIES, "room")
+    assert sorted(e["id"] for e in groups["Kitchen"]) == ["chair-a", "wc-a"]
+    assert [e["id"] for e in groups["Bathroom"]] == ["wc-a"]
+
+
+def test_entries_missing_the_facet_are_unclassified():
+    groups = px.group_by(ENTRIES, "room")
+    assert [e["id"] for e in groups[px.UNCLASSIFIED]] == ["misc-a"]
