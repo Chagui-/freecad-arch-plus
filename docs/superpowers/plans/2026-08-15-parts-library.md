@@ -2223,11 +2223,11 @@ class PartsLibraryPanel(QtGui.QDockWidget):
     def _groupFacet(self):
         return GROUP_FACETS[self.groupBy.currentIndex()]
 
-    def _onGroupChanged(self):
+    def _onGroupChanged(self, *args):
         _prefs().SetString(_PREF_GROUP_KEY, self._groupFacet())
         self._repopulate()
 
-    def _repopulate(self):
+    def _repopulate(self, *args):
         """Rebuild the group list, preserving the selected group if possible."""
         previous = self.tree.currentItem().text() if self.tree.currentItem() \
             else None
@@ -2249,7 +2249,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
             self.tree.setCurrentRow(row)
         self._repopulateGrid()
 
-    def _repopulateGrid(self):
+    def _repopulateGrid(self, *args):
         self.grid.clear()
         item = self.tree.currentItem()
         if item is None:
@@ -2276,7 +2276,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                 return entry
         return None
 
-    def _onSelect(self):
+    def _onSelect(self, *args):
         """Extended in Task 14 to drive the detail pane."""
         pass
 
@@ -2408,7 +2408,7 @@ Add these methods to `PartsLibraryPanel`, and call `self._buildDetail(layout)` f
         self.placeButton.clicked.connect(self._onPlace)
         layout.addWidget(self.placeButton)
 
-    def _onSelect(self):
+    def _onSelect(self, *args):
         entry = self.currentEntry()
         self.placeButton.setEnabled(entry is not None)
         if entry is None:
@@ -2424,7 +2424,7 @@ Add these methods to `PartsLibraryPanel`, and call `self._buildDetail(layout)` f
         self.variant.blockSignals(False)
         self._refreshPreview()
 
-    def _onVariantChanged(self):
+    def _onVariantChanged(self, *args):
         self._refreshPreview()
 
     def _resolvedSelection(self):
@@ -2484,13 +2484,31 @@ Add these methods to `PartsLibraryPanel`, and call `self._buildDetail(layout)` f
         offset = partslib_placement.offset_of(resolved)
         variant = self.variant.currentText() or entry["variants"][0]
 
+        # The Snapper's callback does NOT hand back the picked face - only the
+        # movecallback's `info` dict carries it. Capture it there and read it
+        # back on click, exactly as repositionDoor does
+        # (doorsplus_gui.py:922-934).
+        doc = FreeCAD.ActiveDocument
+        state = {"face": None}
+
+        def moved(point, info):
+            if info and "Face" in info.get("Component", ""):
+                target = doc.getObject(info["Object"])
+                try:
+                    index = int(info["Component"][4:]) - 1
+                except (ValueError, IndexError):
+                    state["face"] = None
+                else:
+                    state["face"] = [target, index]
+            else:
+                state["face"] = None
+
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
             if point is None:
                 return
             placement = partslib_placement.partPlacement(
-                point, obj, host, offset)
-            doc = FreeCAD.ActiveDocument
+                point, state["face"], host, offset)
             doc.openTransaction("Place library part")
             try:
                 partslib_object.makePart(
@@ -2502,7 +2520,7 @@ Add these methods to `PartsLibraryPanel`, and call `self._buildDetail(layout)` f
                     "ArchPlus: cannot place %s: %s\n" % (entry["id"], exc))
             doc.recompute()
 
-        FreeCADGui.Snapper.getPoint(callback=placed)
+        FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
 ```
 
 - [ ] **Step 2: Verify in FreeCAD**
