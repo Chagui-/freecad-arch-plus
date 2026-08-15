@@ -43,6 +43,8 @@ behaviour is added on top, without affecting the built-in tools.
   hinge, sliding leaves slide aside.
 - **Panel position** — place the leaf Centered (default), flush Front, or flush
   Back within the frame depth.
+- **Height above wall base** — lift the door off the floor for a threshold or
+  mid-wall placement (0 = sitting on the floor).
 - **Opening symbols** — plan (swing arc) and elevation symbols, each
   toggleable (elevation off by default).
 - **Mouse placement** — click a wall face and the door drops to the wall base
@@ -87,6 +89,8 @@ behaviour is added on top, without affecting the built-in tools.
 - **Reposition with the mouse** — from the panel button or right-click →
   **Reposition**: pick a new spot; the window re-orients to the wall face you
   point at, re-sets to the sill height, and re-cuts the host wall.
+- **Flip without reopening** — right-click a casement window → **Invert Opening
+  Direction** or **Invert Hinge Position** to mirror the swing in place.
 
 ## Installation
 
