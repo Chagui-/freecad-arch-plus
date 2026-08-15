@@ -34,6 +34,12 @@ _PREF_GROUP_KEY = "PartsLibraryGroupBy"
 
 _THUMB_SIZE = 96
 
+# Set from the Task 1 spike: True when pivy.quarter.QuarterWidget embeds
+# under FreeCAD 1.1's PySide shim, False to fall back to a static image.
+PREVIEW_LIVE = True
+
+_PREVIEW_HEIGHT = 180
+
 _panel = None
 
 
@@ -88,7 +94,39 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         splitter.addWidget(self.grid)
         layout.addWidget(splitter, 1)
 
+        self._buildDetail(layout)
+
         self.setWidget(body)
+
+    def _buildDetail(self, layout):
+        """Preview, measurements, description, variant picker and Place."""
+        if PREVIEW_LIVE:
+            from pivy import quarter
+            self.preview = quarter.QuarterWidget()
+        else:
+            self.preview = QtGui.QLabel()
+            self.preview.setAlignment(QtCore.Qt.AlignCenter)
+        self.preview.setMinimumHeight(_PREVIEW_HEIGHT)
+        layout.addWidget(self.preview)
+
+        variantRow = QtGui.QHBoxLayout()
+        variantRow.addWidget(QtGui.QLabel("Variant:"))
+        self.variant = QtGui.QComboBox()
+        self.variant.currentIndexChanged.connect(self._onVariantChanged)
+        variantRow.addWidget(self.variant, 1)
+        layout.addLayout(variantRow)
+
+        self.metrics = QtGui.QLabel("")
+        layout.addWidget(self.metrics)
+
+        self.description = QtGui.QLabel("")
+        self.description.setWordWrap(True)
+        layout.addWidget(self.description)
+
+        self.placeButton = QtGui.QPushButton("Place")
+        self.placeButton.setEnabled(False)
+        self.placeButton.clicked.connect(self._onPlace)
+        layout.addWidget(self.placeButton)
 
     # -- data ------------------------------------------------------------
     def refresh(self):
@@ -155,8 +193,118 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         return None
 
     def _onSelect(self, *args):
-        """Extended in Task 14 to drive the detail pane."""
-        pass
+        entry = self.currentEntry()
+        self.placeButton.setEnabled(entry is not None)
+        if entry is None:
+            self.variant.clear()
+            self.metrics.setText("")
+            self.description.setText("")
+            return
+
+        self.description.setText(entry.get("description") or "")
+        self.variant.blockSignals(True)
+        self.variant.clear()
+        self.variant.addItems(entry["variants"])
+        self.variant.blockSignals(False)
+        self._refreshPreview()
+
+    def _onVariantChanged(self, *args):
+        self._refreshPreview()
+
+    def _resolvedSelection(self):
+        """(entry, resolved manifest) for the current selection, or None."""
+        import partslib_manifest
+
+        entry = self.currentEntry()
+        if entry is None:
+            return None
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        label = self.variant.currentText() or entry["variants"][0]
+        return entry, partslib_manifest.resolve_variant(manifest, label)
+
+    def _refreshPreview(self):
+        """Build the selected variant and show it with its measurements."""
+        import partslib_geometry
+
+        selection = self._resolvedSelection()
+        if selection is None:
+            return
+        entry, resolved = selection
+        try:
+            shape = partslib_geometry.build_shape(resolved, entry["dir"])
+        except Exception as exc:
+            self.metrics.setText("Cannot build this part: %s" % exc)
+            return
+
+        metrics = partslib_geometry.measure(shape)
+        self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
+                             % (metrics["Width"], metrics["Depth"],
+                                metrics["Height"]))
+
+        if PREVIEW_LIVE:
+            try:
+                self.preview.setSceneGraph(
+                    partslib_thumbs.scene_from_shape(shape))
+                self.preview.viewAll()
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: live preview failed: %s\n" % (exc,))
+        else:
+            thumb = os.path.join(entry["dir"],
+                                 partslib_thumbs.THUMBNAIL_FILENAME)
+            if os.path.exists(thumb):
+                self.preview.setPixmap(QtGui.QPixmap(thumb).scaledToHeight(
+                    _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
+
+    def _onPlace(self):
+        """Pick a point in the 3D view, then create the part there."""
+        import partslib_placement
+
+        selection = self._resolvedSelection()
+        if selection is None:
+            return
+        entry, resolved = selection
+        host = partslib_placement.host_of(resolved)
+        offset = partslib_placement.offset_of(resolved)
+        variant = self.variant.currentText() or entry["variants"][0]
+
+        # The Snapper's callback does NOT hand back the picked face - only the
+        # movecallback's `info` dict carries it. Capture it there and read it
+        # back on click, exactly as repositionDoor does
+        # (doorsplus_gui.py:922-934).
+        doc = FreeCAD.ActiveDocument
+        state = {"face": None}
+
+        def moved(point, info):
+            if info and "Face" in info.get("Component", ""):
+                target = doc.getObject(info["Object"])
+                try:
+                    index = int(info["Component"][4:]) - 1
+                except (ValueError, IndexError):
+                    state["face"] = None
+                else:
+                    state["face"] = [target, index]
+            else:
+                state["face"] = None
+
+        def placed(point=None, obj=None):
+            FreeCADGui.Snapper.off()
+            if point is None:
+                return
+            placement = partslib_placement.partPlacement(
+                point, state["face"], host, offset)
+            doc.openTransaction("Place library part")
+            try:
+                partslib_object.makePart(
+                    entry, self._facets, variant=variant, placement=placement)
+                doc.commitTransaction()
+            except Exception as exc:
+                doc.abortTransaction()
+                FreeCAD.Console.PrintError(
+                    "ArchPlus: cannot place %s: %s\n" % (entry["id"], exc))
+            doc.recompute()
+
+        FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
 
 
 def showPanel():
