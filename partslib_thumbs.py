@@ -9,9 +9,10 @@
 #
 # The technique follows FreeCAD's own OfflineRenderingUtils.render().
 #
-# SESSION-LEVEL FAILURE CACHE: on a machine where SoOffscreenRenderer cannot
-# get a GL context, render_shape() returns False on every single call - not
-# an exception, so there is nothing here for a caller to catch and remember
+# SESSION-LEVEL FAILURE CACHE: where rendering cannot work at all on a
+# machine (no GL context, no writable image backend), render_shape() returns
+# False on every single call - not an exception, so there is nothing here
+# for a caller to catch and remember
 # on its own. Without _RENDER_FAILED below, every part lacking a committed
 # thumbnail would rebuild its real geometry (booleans, fillets) and retry a
 # doomed render on every grid repaint: every keystroke in the search box,
@@ -67,9 +68,36 @@ def reset_render_failures():
     _RENDER_FAILED.clear()
 
 
-# Tessellation for writeInventor: (deviation, angular deviation). Coarse
-# enough to render fast, fine enough for a 256px thumbnail.
-_TESSELLATION = (2, 0.01)
+# Angular deviation for writeInventor, in radians - how finely a curved
+# surface is split around its axis. ~0.2 rad is ~31 facets per full turn:
+# smooth at 256px, cheap to mesh.
+_ANGULAR_DEVIATION = 0.2
+
+# Linear deviation is scaled to the part instead of fixed. writeInventor's
+# signature is (Mode, Deviation, AngularDeviation) and Deviation is an
+# ABSOLUTE chord tolerance in mm, so the widely-copied FreeCAD idiom
+# `writeInventor(2, 0.01)` asks OCC to mesh every surface to within 0.01mm -
+# a hundredth of a millimetre, on parts up to 1.7m long. Planar faces do not
+# care (a box is two triangles at any tolerance), which is why every
+# box-shaped part in this library rendered in ~0.02s and hid the problem.
+# Curved faces care enormously: the toilet's oval bowl is a BSpline surface
+# (oval() runs the cone through transformGeometry), and meshing it that
+# finely took 17 SECONDS in writeInventor alone. Deviation is derived from
+# the shape's own bounding box so a nightstand and a bathtub get comparable
+# on-screen smoothness; /400 keeps the chord error under about a pixel at
+# THUMBNAIL_SIZE.
+_DEVIATION_RATIO = 1.0 / 400.0
+_MIN_DEVIATION = 0.05
+
+
+def _tessellation_for(shape):
+    """(Mode, Deviation, AngularDeviation) args for Shape.writeInventor()."""
+    try:
+        diagonal = shape.BoundBox.DiagonalLength
+    except Exception:
+        diagonal = 1000.0
+    deviation = max(diagonal * _DEVIATION_RATIO, _MIN_DEVIATION)
+    return (2, deviation, _ANGULAR_DEVIATION)
 
 
 def thumbnail_path(part_dir):
@@ -92,10 +120,56 @@ def scene_from_shape(shape):
     """Build a Coin scene graph from a bare Part.Shape - no document needed."""
     from pivy import coin
 
-    buf = shape.writeInventor(*_TESSELLATION)
+    buf = shape.writeInventor(*_tessellation_for(shape))
     reader = coin.SoInput()
     reader.setBuffer(buf)
     return coin.SoDB.readAll(reader)
+
+
+def _save_buffer_as_png(renderer, out_path, size):
+    """Save the renderer's frame buffer as a PNG through Qt.
+
+    SoOffscreenRenderer.writeToFile() can only emit the image formats Coin
+    was BUILT with, and Coin gets PNG/JPEG only from the optional simage
+    library. This FreeCAD build ships pivy without it: writeToFile() returns
+    0 and silently writes nothing, even though render() succeeded - which is
+    exactly what every part in this library did. (FreeCAD's own CAM
+    ImageBuilder guards the same call with isWriteSupported() for this
+    reason; its getQImage() fallback is not available in this pivy build
+    either, so go through the raw buffer.)
+
+    Qt is always present in a GUI session and always writes PNG, so this is
+    the primary path, not the fallback."""
+    from PySide import QtGui
+
+    buf = renderer.getBuffer()
+    if buf is None:
+        return False
+    if not isinstance(buf, (bytes, bytearray)):
+        buf = bytes(bytearray(buf))
+
+    # Derive the component count from the buffer itself rather than trusting
+    # getComponents(): a mismatch here reads past the end of the buffer.
+    pixels = size * size
+    components = len(buf) // pixels if pixels else 0
+    if components == 4:
+        image_format = QtGui.QImage.Format_RGBA8888
+    elif components == 3:
+        image_format = QtGui.QImage.Format_RGB888
+    else:
+        _timelog("_save_buffer_as_png(%s): unexpected buffer: %d bytes for "
+                  "%dx%d" % (out_path, len(buf), size, size))
+        return False
+
+    image = QtGui.QImage(buf, size, size, size * components, image_format)
+    # OpenGL's frame buffer starts at the BOTTOM-left row, QImage's at the
+    # top - without this the thumbnail comes out upside down. mirrored()
+    # also deep-copies, which detaches the QImage from `buf`'s lifetime.
+    if hasattr(image, "mirrored"):
+        image = image.mirrored(False, True)
+    else:
+        image = image.transformed(QtGui.QTransform().scale(1.0, -1.0))
+    return bool(image.save(out_path, "PNG"))
 
 
 def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
@@ -141,13 +215,17 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
         folder = os.path.dirname(out_path)
         if folder and not os.path.isdir(folder):
             os.makedirs(folder)
+
         _t = time.perf_counter()
-        wrote = renderer.writeToFile(out_path, "PNG")
-        _timelog("render_shape(%s): writeToFile() returned %r, took %.3fs; "
-                  "folder isdir=%r, out_path exists=%r"
-                  % (out_path, wrote, time.perf_counter() - _t,
-                     os.path.isdir(folder) if folder else None,
-                     os.path.exists(out_path)))
+        saved = _save_buffer_as_png(renderer, out_path, size)
+        _timelog("render_shape(%s): Qt PNG save returned %r, took %.3fs"
+                  % (out_path, saved, time.perf_counter() - _t))
+        if not saved and renderer.isWriteSupported("PNG"):
+            # Only worth trying where Coin actually claims PNG support -
+            # otherwise it returns 0 and writes nothing, which is the bug
+            # this whole path exists to work around.
+            renderer.writeToFile(out_path, "PNG")
+
         result = os.path.exists(out_path)
         _timelog("render_shape(%s): TOTAL %.3fs (wrote file=%r)"
                   % (out_path, time.perf_counter() - _t_total, result))
