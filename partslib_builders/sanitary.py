@@ -24,7 +24,15 @@ def toilet(params, assets, ctx):
     top_radius = bowl_width / 2.0
     base_radius = top_radius * 0.6
     bowl = Part.makeCone(base_radius, top_radius, bowl_height)
-    bowl = sh.soften_top(bowl, min(15, top_radius * 0.3))
+    # Deliberately NOT soften_top()'d here. Filleting the cone's circular
+    # rim BEFORE the oval() scale below turns a simple torus-segment blend
+    # into a distorted, non-uniformly-scaled NURBS surface - measured at
+    # ~25s to tessellate in writeInventor() on real FreeCAD/OCC (see the
+    # "still very slow" debugging thread), dwarfing every other part's
+    # thumbnail attempt combined. The tank below still gets a softened rim
+    # since it is a plain box, never non-uniformly scaled, so this is the
+    # one edge in the whole library that must stay sharp.
+    #
     # The cone (and its top rim edge) is centred on the origin; scaling Y
     # gives it an oval footprint, then place() recentres it onto the part's
     # own footprint at (bowl_width/2, bowl_depth/2).

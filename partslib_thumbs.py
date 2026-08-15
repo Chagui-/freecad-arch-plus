@@ -141,7 +141,13 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
         folder = os.path.dirname(out_path)
         if folder and not os.path.isdir(folder):
             os.makedirs(folder)
-        renderer.writeToFile(out_path, "PNG")
+        _t = time.perf_counter()
+        wrote = renderer.writeToFile(out_path, "PNG")
+        _timelog("render_shape(%s): writeToFile() returned %r, took %.3fs; "
+                  "folder isdir=%r, out_path exists=%r"
+                  % (out_path, wrote, time.perf_counter() - _t,
+                     os.path.isdir(folder) if folder else None,
+                     os.path.exists(out_path)))
         result = os.path.exists(out_path)
         _timelog("render_shape(%s): TOTAL %.3fs (wrote file=%r)"
                   % (out_path, time.perf_counter() - _t_total, result))
@@ -187,8 +193,9 @@ def ensure_thumbnail(entry, resolved):
                   % (entry["id"], time.perf_counter() - _t0))
         return path
     mark_render_failed(path, (
-        "ArchPlus: cannot render a thumbnail for %r (no GL context?); "
-        "will not retry this session\n" % (entry["id"],)))
+        "ArchPlus: cannot render a thumbnail for %r (render_shape() "
+        "returned False - see the [timing] lines above for which stage "
+        "failed); will not retry this session\n" % (entry["id"],)))
     _timelog("ensure_thumbnail(%r): TOTAL %.3fs (render failed)"
               % (entry["id"], time.perf_counter() - _t0))
     return None
