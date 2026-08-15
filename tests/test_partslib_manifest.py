@@ -206,3 +206,48 @@ def test_ifc_type_falls_back_to_the_default():
     facets = {"function": {"values": {"Seating": {}}}}
     data = _part(facets={"function": "Seating"})
     assert pm.resolve_ifc_type(data, facets) == pm.DEFAULT_IFC_TYPE
+
+
+# -- param_specs / merge_params ---------------------------------------------
+
+def _resolved_with_params():
+    return pm.resolve_variant(_part_with_variants(), "490 mm")
+
+
+def test_param_specs_returns_the_resolved_params_block():
+    resolved = _resolved_with_params()
+    assert pm.param_specs(resolved) == {
+        "Width": {"type": "Length", "default": 490}}
+
+
+def test_param_specs_is_empty_when_params_block_absent():
+    resolved = pm.resolve_variant(_part(), "Default")
+    assert pm.param_specs(resolved) == {}
+
+
+def test_merge_params_uses_declared_defaults_with_no_overrides():
+    resolved = _resolved_with_params()
+    assert pm.merge_params(resolved, None) == {"Width": 490}
+    assert pm.merge_params(resolved, {}) == {"Width": 490}
+
+
+def test_merge_params_override_replaces_the_default():
+    resolved = _resolved_with_params()
+    assert pm.merge_params(resolved, {"Width": 750}) == {"Width": 750}
+
+
+def test_merge_params_none_override_falls_back_to_default():
+    resolved = _resolved_with_params()
+    assert pm.merge_params(resolved, {"Width": None}) == {"Width": 490}
+
+
+def test_merge_params_ignores_an_undeclared_override():
+    resolved = _resolved_with_params()
+    merged = pm.merge_params(resolved, {"Width": 750, "Bogus": 42})
+    assert merged == {"Width": 750}
+    assert "Bogus" not in merged
+
+
+def test_merge_params_with_no_params_block_is_empty():
+    resolved = pm.resolve_variant(_part(), "Default")
+    assert pm.merge_params(resolved, {"Width": 750}) == {}

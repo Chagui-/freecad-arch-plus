@@ -177,6 +177,31 @@ def resolve_variant(manifest, label):
     return resolved
 
 
+def param_specs(resolved):
+    """The resolved variant's `params` block, or {} if it declares none."""
+    return dict(resolved.get("params") or {})
+
+
+def merge_params(resolved, overrides):
+    """{name: value} for every param the manifest declares.
+
+    Each name gets its declared default, replaced by overrides[name] only
+    when that key is present in `overrides` AND its value is not None - a
+    None override (e.g. a property nobody has touched) falls back to the
+    default rather than handing a builder a literal None.
+
+    Never returns a key the manifest did not declare: an override for an
+    undeclared param is silently dropped, so a stale property left behind
+    on an object by an old manifest (or a typo) cannot inject a surprise
+    argument into a builder."""
+    overrides = overrides or {}
+    merged = {}
+    for name, spec in param_specs(resolved).items():
+        value = overrides.get(name)
+        merged[name] = value if value is not None else spec.get("default")
+    return merged
+
+
 def resolve_ifc_type(manifest, facets):
     """Explicit ifcType, else a facet mapping, else the default."""
     explicit = manifest.get("ifcType")

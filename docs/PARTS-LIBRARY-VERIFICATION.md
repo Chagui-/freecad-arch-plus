@@ -4,7 +4,7 @@ This checklist is the deferred, human-in-FreeCAD verification for the whole
 Parts Library feature (Tasks 7–15). None of it can be run headlessly: it
 needs a real FreeCAD 1.1 process, a real Qt event loop and (for the preview
 and thumbnail checks) a real GL/offscreen context. Automated coverage stops
-at `uv run --with pytest --no-project pytest tests/ -q` (88 passed at the
+at `uv run --with pytest --no-project pytest tests/ -q` (95 passed at the
 time this doc was written); everything below is what that suite cannot see.
 
 Work through it top to bottom in a single FreeCAD session. Each step has a
@@ -125,6 +125,26 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
       **Escape** (or right-click) to cancel the pick instead of clicking:
       confirm the tracker box also disappears on this cancel path, leaving
       no leftover geometry in the 3D view.
+- [ ] **D8 (parts-library branch — editable dimensions).** Select the placed
+      Base cabinet (any variant). In the property editor, confirm a new
+      **Parameters** group appears alongside **Part**, containing `Width`,
+      `Depth`, `Height` as editable (not read-only) Length properties. Change
+      `Width` to `750` — a size the manifest's shipped variants (600/800/
+      1000 mm) do not offer. The object rebuilds in place at 750 mm (check
+      both the property editor and the 3D view) and its placement is
+      unchanged. This proves the dimension is genuinely editable, not just
+      re-picking a shipped variant.
+- [ ] **D9 (parts-library branch — variant reseed).** With the object still
+      at `Width = 750` from D8, change `Variant` to `1000 mm`. Confirm
+      `Width` snaps to `1000` (the new variant's declared default) rather
+      than staying at `750` — switching `Variant` deliberately discards
+      hand-edited Parameter values, since a variant is a different catalogue
+      product and a surviving stale edit would match no entry in it. Edit
+      `Width` to a custom value again, then switch `Variant` to yet another
+      label: confirm it reseeds again, with no console error and no
+      duplicate/lingering rebuild artefacts — this exercises the guard
+      around one Variant change re-seeding several Parameter properties at
+      once.
 
 ## Part E — IFC properties and export round-trip (deferred, Task 10)
 

@@ -128,13 +128,17 @@ def measure(shape):
     return dict(zip(partslib_manifest.derived_metric_names(), lengths))
 
 
-def build_shape(resolved, part_dir):
-    """Build one resolved variant's shape."""
+def build_shape(resolved, part_dir, overrides=None):
+    """Build one resolved variant's shape.
+
+    `overrides` is an optional {paramName: value} map - typically an
+    inserted object's current Parameter property values - merged over the
+    manifest's declared defaults by partslib_manifest.merge_params(), which
+    also drops anything the manifest does not declare."""
     geometry = resolved.get("geometry") or {}
     builder = resolve_builder(geometry.get("builder"))
     assets = AssetLoader(part_dir, geometry.get("assets"))
-    params = {name: spec.get("default")
-              for name, spec in (resolved.get("params") or {}).items()}
+    params = partslib_manifest.merge_params(resolved, overrides)
     return builder(params, assets, _Context(geometry))
 
 
