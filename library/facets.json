@@ -1,0 +1,33 @@
+{
+  "function": {
+    "label": "Function",
+    "multi": false,
+    "values": {
+      "Sanitary": { "ifcType": "Sanitary Terminal" },
+      "Seating": { "ifcType": "Furniture" },
+      "Storage": { "ifcType": "Furniture" },
+      "Lighting": { "ifcType": "Lighting Fixture" }
+    }
+  },
+  "element": {
+    "label": "Element",
+    "multi": false,
+    "values": {
+      "WC": { "ifcType": "Sanitary Terminal" },
+      "Basin": { "ifcType": "Sanitary Terminal" },
+      "Cabinet": { "ifcType": "Furniture" },
+      "Chair": { "ifcType": "Furniture" }
+    }
+  },
+  "room": {
+    "label": "Room",
+    "multi": true,
+    "values": {
+      "Bathroom": {},
+      "Cloakroom": {},
+      "Kitchen": {},
+      "Bedroom": {},
+      "Office": {}
+    }
+  }
+}

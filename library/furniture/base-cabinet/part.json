@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "base-cabinet",
+  "name": "Base cabinet",
+  "description": "Parametric kitchen base carcass. Sits on the floor.",
+  "keywords": ["cabinet", "carcass", "kitchen", "unit"],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": ["Kitchen", "Office"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 600 },
+    "Depth": { "type": "Length", "default": 560 },
+    "Height": { "type": "Length", "default": 720 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "variants": [
+    { "label": "600 mm", "params": { "Width": { "type": "Length", "default": 600 } } },
+    { "label": "800 mm", "params": { "Width": { "type": "Length", "default": 800 } } },
+    { "label": "1000 mm", "params": { "Width": { "type": "Length", "default": 1000 } } }
+  ],
+  "geometry": { "builder": "demo.box" },
+  "ifcProperties": {
+    "Reference": "Pset_ManufacturerTypeInformation;;IfcLabel;;ArchPlus demo"
+  }
+}

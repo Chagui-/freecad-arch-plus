@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "wc-demo",
+  "name": "Wall-hung WC (demo)",
+  "description": "Placeholder wall-hung pan. Demonstrates wall hosting at a 400 mm mounting height.",
+  "keywords": ["toilet", "wc", "pan"],
+  "facets": {
+    "function": "Sanitary",
+    "element": "WC",
+    "room": ["Bathroom", "Cloakroom"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 360 },
+    "Depth": { "type": "Length", "default": 540 },
+    "Height": { "type": "Length", "default": 400 }
+  },
+  "placement": { "host": "wall", "offset": 400 },
+  "geometry": { "builder": "demo.box" }
+}
