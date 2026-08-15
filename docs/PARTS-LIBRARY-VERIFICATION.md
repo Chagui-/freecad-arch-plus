@@ -11,25 +11,41 @@ Work through it top to bottom in a single FreeCAD session. Each step has a
 checkbox — tick it only after you have actually observed the stated result,
 not merely run the action.
 
-## ⚠️ Read this before you start: `PREVIEW_LIVE` is UNVERIFIED
+## Read this before you start: the live preview is RESOLVED — it does not work on FreeCAD 1.1
 
-`partslib_gui.py` sets `PREVIEW_LIVE = True` near the top of the file. This
-turns on a live 3D preview in the detail pane using
-`pivy.quarter.QuarterWidget` embedded inside the dock's Qt layout. **This
-spike was never run** — nobody has confirmed that `QuarterWidget` actually
-embeds correctly under FreeCAD 1.1's Qt6/PySide shim on this machine.
+This was previously an open risk ("is `PREVIEW_LIVE` verified?"). It is now a
+confirmed, permanent limitation, with a known cause and a shipped fix.
 
-If Check 7 below (the live preview) fails to appear, crashes, throws a
-console traceback on selecting a part, or embeds as a broken/blank widget:
+`pivy`'s bundled Quarter (`pivy/quarter/QuarterWidget.py`) does
+`from pivy.qt.QtWidgets import QOpenGLWidget`. Under FreeCAD 1.1's Qt6-based
+`pivy.qt` shim, `QOpenGLWidget` moved out of `QtWidgets` into
+`QtOpenGLWidgets` — pivy's copy of Quarter is Qt5-era and was never updated
+for that move, so `from pivy import quarter` raises `ImportError` on this
+build. This is a bug inside FreeCAD's own bundled `pivy` (under
+`Program Files`), not in ArchPlus, and it is not something this add-on
+patches or works around by injecting names into pivy's namespace.
 
-> **The fix is one line.** Open `partslib_gui.py`, find `PREVIEW_LIVE = True`
-> near the top of the file, and change it to `PREVIEW_LIVE = False`. This
-> disables the embedded live preview only — grouping, search, variants,
-> measurements, placement and everything else the panel does are
-> independent of this flag and are unaffected by the fallback.
+`partslib_gui.py` now **auto-detects** this at panel construction: it
+attempts `from pivy import quarter` and `quarter.QuarterWidget()` inside a
+try/except covering both steps, and on any failure (an `ImportError` today,
+but the same path also covers a GL-context failure raising something else)
+falls back to a static rendered-image preview instead — printing one console
+warning per session, not one per part selected. Panel construction itself
+can never fail because of this: nothing in `_buildUi` → `_buildDetail` →
+preview setup propagates an exception from a missing/broken live widget.
 
-Do not spend time debugging `QuarterWidget` itself before trying the flag
-flip — it is the accepted, pre-agreed mitigation for exactly this risk.
+A module-level `PREVIEW_LIVE_ALLOWED = True` remains as an override (set it
+`False` to force the static fallback even on a machine where the live widget
+would work); the actually-detected outcome is recorded separately and is not
+something you need to touch by hand.
+
+**What this means for verification below:** wherever the checklist mentions
+"the live preview", read it as "the panel opens and shows a still preview of
+the part" — that is the check that matters on this build. Confirming that
+`QuarterWidget` itself embeds live is not expected to pass on FreeCAD 1.1 and
+is no longer part of this checklist's bar for success. Grouping, search,
+variants, measurements, placement and everything else the panel does are
+unaffected by the fallback.
 
 ---
 
@@ -97,18 +113,22 @@ flip — it is the accepted, pre-agreed mitigation for exactly this risk.
       show an icon, read straight from that file (no re-render — check the
       file's mtime is unchanged across the reopen).
 
-## Part C — Live preview (the unverified spike)
+## Part C — Preview pane (confirmed static fallback)
 
-- [ ] **C1 (brief check 7, the preview half — SPIKE).** With Base cabinet
-      selected, confirm a live 3D preview actually renders in the detail
-      pane (a shaded box), not just the measurements/description. If this
-      fails, apply the `PREVIEW_LIVE = False` fix described above, then
-      re-open the panel and confirm the pane degrades gracefully (no crash,
-      measurements/description/variant/Place button all still work) with
-      the preview area simply absent or blank.
+- [ ] **C1 (brief check 7, the preview half).** With Base cabinet selected,
+      confirm the detail pane shows a rendered still image of the part (not
+      a live/rotatable 3D view — that is expected on FreeCAD 1.1, see the
+      caveat above), alongside the measurements/description. Confirm the
+      Report view shows at most ONE
+      "live 3D preview is unavailable on this FreeCAD build" warning for the
+      whole session, not one per part selected. The bar for this check is
+      "the panel opens and shows a still preview", not "the live preview
+      embeds".
 - [ ] **C2 (deferred, Task 14).** Switch **Variant** to `1000 mm` while
-      still in the panel (not yet placed). The preview updates to the new
-      width alongside the measurements.
+      still in the panel (not yet placed). The preview image updates to the
+      new width alongside the measurements (rendered fresh for that variant
+      and cached under the part's `.cache/` folder — check the folder now
+      contains a PNG named after the variant).
 
 ## Part D — Placement
 
@@ -299,7 +319,8 @@ print(pg.measure(shape))
 ## Wrap-up
 
 - [ ] Every checkbox above is ticked, or the specific failure and its
-      resolution (e.g. the `PREVIEW_LIVE` flip) is recorded here:
+      resolution (e.g. an unexpected `PREVIEW_LIVE_ALLOWED` override) is
+      recorded here:
 
   ```
   (record any deviations / fixes applied during this verification pass)

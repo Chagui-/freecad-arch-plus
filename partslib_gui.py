@@ -11,6 +11,7 @@
 # placed.
 
 import os
+import re
 import sys
 
 import FreeCAD
@@ -42,13 +43,56 @@ _PREF_GROUP_KEY = "PartsLibraryGroupBy"
 
 _THUMB_SIZE = 96
 
-# Set from the Task 1 spike: True when pivy.quarter.QuarterWidget embeds
-# under FreeCAD 1.1's PySide shim, False to fall back to a static image.
-PREVIEW_LIVE = True
+# The Task 1 spike found that pivy's bundled Quarter is unusable on FreeCAD
+# 1.1: QOpenGLWidget moved out of QtWidgets into QtOpenGLWidgets in Qt6, and
+# pivy/qt/quarter/QuarterWidget.py still imports it from the old location, so
+# `from pivy import quarter` raises ImportError on this build. The panel must
+# never let that (or any other failure building the live widget) block it
+# from opening, so live preview support is now auto-detected rather than
+# hardcoded.
+#
+# PREVIEW_LIVE_ALLOWED is an override, not a statement of fact: True lets the
+# panel attempt the live widget (falling back automatically if that attempt
+# fails); set it False to force the static fallback even on a machine where
+# the live widget would work.
+PREVIEW_LIVE_ALLOWED = True
+
+# The detected outcome for this session: None before the first attempt, then
+# True or False once a live widget has actually been tried. Read this (not
+# PREVIEW_LIVE_ALLOWED) wherever the code needs to know which preview path is
+# actually in use.
+_PREVIEW_LIVE = None
+
+# Set once the "live preview unavailable" console warning has been printed,
+# so the user sees it once per session rather than once per panel/selection.
+_PREVIEW_WARNED = False
 
 _PREVIEW_HEIGHT = 180
 
 _panel = None
+
+
+def _warnPreviewUnavailable(exc):
+    """Print the one-per-session console warning that the live pivy.quarter
+    preview could not be built, and that the panel is falling back to a
+    static image instead."""
+    global _PREVIEW_WARNED
+    if _PREVIEW_WARNED:
+        return
+    _PREVIEW_WARNED = True
+    FreeCAD.Console.PrintWarning(
+        "ArchPlus: live 3D preview is unavailable on this FreeCAD build "
+        "(%s); using a static image preview instead.\n" % (exc,))
+
+
+def _sanitizeVariantLabel(label):
+    """Turn a variant label ("800 mm") into a safe filename fragment.
+
+    Labels are free text from the manifest and may contain spaces or, in
+    principle, path characters ("/", ".."); this must never be used
+    unsanitised as part of a filename."""
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", label or "").strip("_")
+    return safe or "variant"
 
 
 def _prefs():
@@ -111,12 +155,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
 
     def _buildDetail(self, layout):
         """Preview, measurements, description, variant picker and Place."""
-        if PREVIEW_LIVE:
-            from pivy import quarter
-            self.preview = quarter.QuarterWidget()
-        else:
-            self.preview = QtGui.QLabel()
-            self.preview.setAlignment(QtCore.Qt.AlignCenter)
+        self.preview = self._makePreviewWidget()
         self.preview.setMinimumHeight(_PREVIEW_HEIGHT)
         layout.addWidget(self.preview)
 
@@ -138,6 +177,33 @@ class PartsLibraryPanel(QtGui.QDockWidget):
         self.placeButton.setEnabled(False)
         self.placeButton.clicked.connect(self._onPlace)
         layout.addWidget(self.placeButton)
+
+    def _makePreviewWidget(self):
+        """Build the live 3D preview widget if possible, else a static image
+        label - FIX 1 of the bug-fix round.
+
+        A preview is a nice-to-have and must never sit on panel
+        construction's critical path: both `from pivy import quarter` and
+        `quarter.QuarterWidget()` are wrapped so that ANY failure (today an
+        ImportError - pivy's bundled QuarterWidget.py imports QOpenGLWidget
+        from QtWidgets, which moved to QtOpenGLWidgets in Qt6 - but possibly
+        a GL-context failure raising something else entirely) falls back to
+        the static QLabel path instead of propagating out of __init__."""
+        global _PREVIEW_LIVE
+        if PREVIEW_LIVE_ALLOWED and _PREVIEW_LIVE is not False:
+            try:
+                from pivy import quarter
+                widget = quarter.QuarterWidget()
+            except Exception as exc:
+                if _PREVIEW_LIVE is None:
+                    _warnPreviewUnavailable(exc)
+                _PREVIEW_LIVE = False
+            else:
+                _PREVIEW_LIVE = True
+                return widget
+        label = QtGui.QLabel()
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        return label
 
     # -- data ------------------------------------------------------------
     def refresh(self):
@@ -284,7 +350,7 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                              % (metrics["Width"], metrics["Depth"],
                                 metrics["Height"]))
 
-        if PREVIEW_LIVE:
+        if _PREVIEW_LIVE:
             try:
                 self.preview.setSceneGraph(
                     partslib_thumbs.scene_from_shape(shape))
@@ -293,13 +359,77 @@ class PartsLibraryPanel(QtGui.QDockWidget):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: live preview failed: %s\n" % (exc,))
         else:
-            thumb = partslib_thumbs.thumbnail_path(entry["dir"])
-            if os.path.exists(thumb):
-                self.preview.setPixmap(QtGui.QPixmap(thumb).scaledToHeight(
-                    _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
+            label = self.variant.currentText() or entry["variants"][0]
+            self._showStaticPreview(entry, shape, label)
+
+    def _showStaticPreview(self, entry, shape, label):
+        """Static-image fallback for the detail pane - FIX 2 of the bug-fix
+        round. Degrades through three layers, most-specific first, each
+        wrapped so a failure falls through to the next rather than raising:
+
+          1. a freshly rendered/cached per-variant PNG at detail (256px)
+             resolution;
+          2. the part's committed thumbnail.png (not variant-specific, but
+             still a real preview of the part);
+          3. a plain text placeholder - this layer must always succeed, even
+             with no pivy/GL available at all, since it is what stands
+             between the user and a blank pane."""
+        pixmap = self._renderVariantPreview(entry, shape, label)
+        if pixmap is None:
+            try:
+                thumb = partslib_thumbs.thumbnail_path(entry["dir"])
+                if os.path.exists(thumb):
+                    candidate = QtGui.QPixmap(thumb)
+                    if not candidate.isNull():
+                        pixmap = candidate
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: cannot load committed thumbnail for %s: %s\n"
+                    % (entry["id"], exc))
+
+        if pixmap is not None:
+            self.preview.setPixmap(pixmap.scaledToHeight(
+                _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
+        else:
+            self.preview.setPixmap(QtGui.QPixmap())
+            self.preview.setText("No preview available")
+
+    def _renderVariantPreview(self, entry, shape, label):
+        """Render `shape` at detail resolution, cached under the part's
+        `.cache/` directory keyed by the sanitised variant label. Returns a
+        QPixmap, or None on any failure (a bad cache path, or a renderer
+        with no GL context - render_shape already returns False rather than
+        raising in that case) so the caller can fall through to the next
+        layer."""
+        try:
+            cache_dir = os.path.join(entry["dir"], ".cache")
+            out_path = os.path.join(
+                cache_dir, "%s.png" % _sanitizeVariantLabel(label))
+            if not os.path.exists(out_path):
+                if not partslib_thumbs.render_shape(
+                        shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
+                    return None
+            pixmap = QtGui.QPixmap(out_path)
+            return None if pixmap.isNull() else pixmap
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot render a detail preview for %s (%s): %s\n"
+                % (entry["id"], label, exc))
+            return None
 
     def _onPlace(self):
-        """Pick a point in the 3D view, then create the part there."""
+        """Pick a point in the 3D view, then create the part there.
+
+        Browsing the catalogue never needs a document (see IsActive below),
+        but placing does - a Snapper pick has nowhere to land with no
+        document/3D view open. Check first and bail out cleanly, before any
+        tracker or Snapper session is started."""
+        if FreeCAD.ActiveDocument is None:
+            FreeCAD.Console.PrintError(
+                "ArchPlus: no active document - create or open a document "
+                "before placing a library part.\n")
+            return
+
         import partslib_geometry
         import partslib_object
         import partslib_placement
@@ -426,13 +556,16 @@ class PartsLibraryCommand:
                 "ToolTip": "Browse and place reusable BIM parts"}
 
     def IsActive(self):
-        return FreeCAD.ActiveDocument is not None
+        # Browsing the catalogue never needs a document - only placing does,
+        # and _onPlace handles that case itself (stairsplus_gui.py:488
+        # follows the same permissive pattern).
+        return True
 
     def Activated(self):
         showPanel()
 
 
 # Register the command (FreeCAD 1.1 has no removeCommand; addCommand is a
-# no-op when the name already exists).
-if FreeCAD.GuiUp:
+# no-op if it's already registered, so guard to stay reload-safe).
+if "ArchPlus_PartsLibrary" not in FreeCADGui.listCommands():
     FreeCADGui.addCommand("ArchPlus_PartsLibrary", PartsLibraryCommand())

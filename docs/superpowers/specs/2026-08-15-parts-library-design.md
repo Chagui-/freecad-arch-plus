@@ -462,11 +462,27 @@ manually against a checklist.
 
 ## 12. Risks
 
-1. **`QuarterWidget` under the Qt6 `PySide` shim.** FreeCAD's own usage imports
-   `PySide2` (`OfflineRenderingUtils.py:485`) while ArchPlus modules use the
-   `PySide` shim. This is the riskiest widget in the plan — resolve with a
-   ~20-line spike **before** committing to the live preview pane. Fallback: a
-   larger static PNG in the detail pane.
+1. **`QuarterWidget` under the Qt6 `PySide` shim — CONFIRMED, not a risk.**
+   `pivy`'s bundled Quarter (`pivy/quarter/QuarterWidget.py`) does
+   `from pivy.qt.QtWidgets import QOpenGLWidget`. In Qt6, `QOpenGLWidget`
+   moved out of `QtWidgets` into `PySide6.QtOpenGLWidgets`; pivy's bundled
+   Quarter is Qt5-era and still imports it from the old location, so
+   `from pivy import quarter` raises `ImportError` under FreeCAD 1.1's
+   `pivy.qt` shim. This is a defect in FreeCAD's own bundled `pivy` — outside
+   ArchPlus's tree — and is not something ArchPlus patches or works around by
+   injecting names into pivy's namespace. Confirmed limitation: the live
+   `QuarterWidget` preview is unusable on FreeCAD 1.1, full stop.
+   **Mitigation (shipped):** `partslib_gui.py` auto-detects this at panel
+   construction — `from pivy import quarter` and `quarter.QuarterWidget()`
+   are both wrapped in a single try/except catching `Exception` (not just
+   `ImportError`, since a GL-context failure could raise something else), and
+   on any failure the panel falls back to a static rendered-image preview
+   instead, printing one console warning per session rather than per
+   selection. A `PREVIEW_LIVE_ALLOWED` override remains for forcing the
+   static path even where the live one would work. Panel construction itself
+   can never fail because of this — the preview is a nice-to-have, not on the
+   critical path. Fallback: a per-variant static PNG rendered at detail
+   resolution in the detail pane (§9).
 2. **`SoOffscreenRenderer` needs a GL context** and fails on some drivers.
    Mitigated by committing thumbnails, which makes runtime rendering a
    convenience rather than a dependency.
