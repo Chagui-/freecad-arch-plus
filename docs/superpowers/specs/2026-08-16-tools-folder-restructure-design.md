@@ -129,11 +129,20 @@ stays where it is.
 
 **`common/spec.py`** — used by doors and windows:
 
-- `storeSpec(obj, spec)`, `readSpec(obj)` — byte-identical.
+- `storeSpec(obj, spec)`, `readSpec(obj)` — byte-identical module-level
+  functions. The `SPEC_PROP = "ArchPlusSpec"` constant they depend on is also
+  identical in both, and moves with them.
 
 **`common/geometry.py`** — used by doors and windows:
 
-- `_rect(p1, p2, p3, p4)`, `_addFrame(...)` — byte-identical.
+- `_rect(p1, p2, p3, p4)`, `_addFrame(...)` — byte-identical *bodies*, but they
+  are **closures** nested inside `_makeDoorGeometry` / `_makeWindowGeometry`,
+  not module-level functions. Each captures the enclosing scope's sketch object
+  `s`. The extracted versions therefore take it as an explicit first parameter:
+  `add_rect(s, p1, p2, p3, p4)` and
+  `add_frame(s, outer_p1..outer_p4, inner_p1..inner_p4)`. This is the only
+  signature change in the extraction; every other helper moves unchanged apart
+  from losing its `self`.
 
 Three modules rather than one, deliberately: `widgets.py` pulls in PySide,
 `geometry.py` pulls in `Part`/`Sketcher`. A single combined module would make
