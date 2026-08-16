@@ -13,7 +13,7 @@ built-in tools. The Parts Library is different in kind: it is a content
 library and browser rather than a modified copy of a native Arch module,
 inserting single lightweight objects built from bundled part definitions.
 
-<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
+<img src="docs/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
 
 ## Features (Stairs)
 
@@ -28,12 +28,12 @@ inserting single lightweight objects built from bundled part definitions.
   steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
   square footprint. Set the turn to a single step for a flat landing instead.
 
-<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="100">
+<img src="docs/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="100">
 
 ### Configuration dialog
 
-<img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="250">
-<img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="250">
+<img src="docs/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="250">
+<img src="docs/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="250">
 
 ## Features (Doors)
 
@@ -60,12 +60,12 @@ inserting single lightweight objects built from bundled part definitions.
   **Reposition**: pick a new spot; the door re-orients to the wall face you
   point at, re-snaps to the floor, and re-cuts the host wall.
 
-<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100">
+<img src="docs/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100">
 
 ### Configuration dialog
 
-<img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="250">
-<img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="250">
+<img src="docs/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="250">
+<img src="docs/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="250">
 
 
 ## Features (Windows)
@@ -413,7 +413,7 @@ free to disagree with the geometry.
 
 To use a room, function or element the vocabulary doesn't have yet, add it
 to `partslib/library/facets.json` *and* drop a matching 24×24 line-art SVG into
-`Resources/icons/facets/` using `stroke="currentColor"` so it works in both
+`tools/partslib/resources/icons/facets/` using `stroke="currentColor"` so it works in both
 themes. A test asserts every referenced icon exists — a missing one renders
 as a blank card with nothing in the console to explain why.
 

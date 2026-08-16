@@ -63,7 +63,7 @@ for:
 - The bookcase's open-front shell + shelf dividers (`furniture.bookcase`) —
   the one part built as a hollow carcass rather than a solid block.
 
-27 facet icon SVGs live under `Resources/icons/facets/` — eyeball that they
+27 facet icon SVGs live under `tools/partslib/resources/icons/facets/` — eyeball that they
 render at both toolbar and list-row sizes in light and dark theme. A test
 now asserts every icon a facet value names actually exists on disk (four
 shipped missing once, rendering as blank cards with nothing in the console
@@ -141,7 +141,7 @@ unaffected by the fallback.
 
 - [ ] **A1.** Restart FreeCAD 1.1, switch to the **BIM** workbench. The
       **ArchPlus** toolbar shows a fourth button with the Parts Library icon
-      (`Resources/icons/PartsLibrary.svg`), rendering correctly and visually
+      (`tools/partslib/resources/icons/PartsLibrary.svg`), rendering correctly and visually
       consistent in weight/style with the Stairs/Doors/Windows icons at both
       toolbar and tree icon sizes.
 - [ ] **A2.** The command also appears under the **ArchPlus** menu group
@@ -174,7 +174,7 @@ unaffected by the fallback.
       vocabulary — a room with zero parts, e.g. `Bedroom`, must not be
       drawn at all). Each visible room card shows its icon (where
       `library/facets.json` declares one under
-      `Resources/icons/facets/`), its label, a hairline rule, then that
+      `tools/partslib/resources/icons/facets/`), its label, a hairline rule, then that
       room's elements as rows with counts (e.g. `Toilets (1)` under
       `Bathroom`).
 - [ ] **B3 (drilling in).** Click the `Toilets` row under `Bathroom`. The
