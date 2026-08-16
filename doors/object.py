@@ -1059,7 +1059,7 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
         if FreeCADGui.Control.activeDialog():
             return False
         try:
-            import doorsplus_gui
+            from . import gui as doorsplus_gui
             FreeCADGui.Control.showDialog(doorsplus_gui.DoorsPlusTaskPanel(obj))
             return True
         except Exception as exc:
@@ -1127,7 +1127,7 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
         "Move this door to a new mouse-picked location (DoorsPlus)."
 
         try:
-            import doorsplus_gui
+            from . import gui as doorsplus_gui
             doorsplus_gui.repositionDoor(self.Object)
         except Exception as exc:
             FreeCAD.Console.PrintError("DoorsPlus: %s\n" % exc)
