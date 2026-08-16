@@ -5,8 +5,8 @@ Parts Library feature (Tasks 7–15, plus the pass-2 restructure into a
 full-window MDI tab with a two-screen catalogue browser). None of it can be
 run headlessly: it needs a real FreeCAD 1.1 process, a real Qt event loop and
 (for the preview and thumbnail checks) a real GL/offscreen context. Automated
-coverage stops at `uv run --with pytest --no-project pytest tests/ -q` (122
-passed at the time this doc was written, including `tests/test_partslib_theme.py`'s
+coverage stops at `uv run --with pytest --no-project pytest -q` (122
+passed at the time this doc was written, including `tools/partslib/tests/test_partslib_theme.py`'s
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
@@ -40,7 +40,7 @@ change its host — the television relies on this to be floor-hosted on a
 stand and wall-hosted on a bracket.
 
 There is no FreeCAD in the development environment, so automated
-verification stops at: (1) the headless `pytest tests/` suite (manifests
+verification stops at: (1) the headless `pytest -q` suite (manifests
 and facets are well-formed, every `geometry.builder` symbol resolves, every
 variant-label list is non-empty and unique, every declared placement host
 is known, every facet icon exists on disk), and (2) a throwaway script that

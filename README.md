@@ -104,11 +104,11 @@ inserting single lightweight objects built from bundled part definitions.
 
 ArchPlus ships a starter catalogue of 31 parametric parts across Kitchen,
 Dining Room, Bedroom, Living Room, Bath Room and Office,
-alongside the faceted vocabulary (`partslib/library/facets.json`) and the
+alongside the faceted vocabulary (`tools/partslib/library/facets.json`) and the
 browser/placement machinery. Parts are floor-, wall- or free-hosted, so
 wall cabinets, mirrors and curtains position against a wall the way a
 door does.
-Add further part folders under `partslib/library/` (each with its own `part.json`
+Add further part folders under `tools/partslib/library/` (each with its own `part.json`
 manifest, validated against that vocabulary) to extend it; an empty result
 set (e.g. after a search with no matches) shows a plain "nothing here yet"
 message instead of a blank void.
@@ -174,7 +174,7 @@ BIM workbench → **ArchPlus** toolbar:
 
 ## Adding parts to the library
 
-A part is a folder under `partslib/library/` containing a `part.json` manifest. The
+A part is a folder under `tools/partslib/library/` containing a `part.json` manifest. The
 scan walks the whole tree, so the intermediate folders (`furniture/`,
 `kitchen/`, `sanitary/`, `fittings/`) are grouping for humans only — nothing
 reads them. Parts are found by their manifest, and grouped in the browser by
@@ -194,7 +194,7 @@ a manufacturer's download, or something too organic to describe in code.
 
 ### 1. Write the manifest
 
-`partslib/library/furniture/my-stool/part.json`:
+`tools/partslib/library/furniture/my-stool/part.json`:
 
 ```json
 {
@@ -219,7 +219,7 @@ a manufacturer's download, or something too organic to describe in code.
 
 - `schema`, `id`, `name`, `facets` and `geometry` are required; the rest are
   optional. `id` must be a lowercase slug and unique across the library.
-- Every facet value must already exist in `partslib/library/facets.json` — an unknown
+- Every facet value must already exist in `tools/partslib/library/facets.json` — an unknown
   one is a hard error, not a silent pass. `room` is multi-valued (a list);
   `function` and `element` take a single string.
 - `params` become editable properties on the placed object. Types:
@@ -239,7 +239,7 @@ Drop the file in the part's own folder and point the manifest at the stock
 `asset.single` builder. No Python, no new module:
 
 ```
-partslib/library/sanitary/geberit-icon/
+tools/partslib/library/sanitary/geberit-icon/
   part.json
   geberit-icon.step        # or .brep — as downloaded
   .cache/                  # generated on first load, gitignored
@@ -287,13 +287,13 @@ content. Expect to be the first to shake it out.
 ### 2b. Write a builder (parametric geometry)
 
 Manifests reference geometry by symbol only — `"module.function"`, resolved
-inside `partslib/builders/`. A manifest can never name a path or an import
+inside `tools/partslib/builders/`. A manifest can never name a path or an import
 target outside that package, which is what stops a manifest from executing
 arbitrary code. Adding a new module there is enough; there is no registry to
 update.
 
 ```python
-# partslib/builders/furniture.py
+# tools/partslib/builders/furniture.py
 from . import _shapes as sh
 
 def bar_stool(params, assets, ctx):
@@ -355,10 +355,10 @@ render:
 ### 4. Check it
 
 ```bash
-uv run --with pytest --no-project pytest tests/ -q
+uv run --with pytest --no-project pytest -q
 ```
 
-`tests/partslib/test_library_content.py` scans the real shipped library, so a
+`tools/partslib/tests/test_library_content.py` scans the real shipped library, so a
 malformed manifest, an unknown facet value, an unresolvable builder symbol,
 an unknown placement host or a facet icon missing from disk all fail here
 rather than reaching a user as an empty panel.
@@ -385,7 +385,7 @@ that survives into the model a consultant receives.
 3. the `ifcType` on its `function` facet value,
 4. `"Building Element Proxy"`.
 
-So in practice you set it **once per element** in `partslib/library/facets.json` and
+So in practice you set it **once per element** in `tools/partslib/library/facets.json` and
 never think about it again. Override on the part only when one element covers
 two IFC types — a browse category like "Bathtubs & Showers" grouping an
 `IfcSanitaryTerminal` with something else.
@@ -412,7 +412,7 @@ free to disagree with the geometry.
 ### Adding a new facet value
 
 To use a room, function or element the vocabulary doesn't have yet, add it
-to `partslib/library/facets.json` *and* drop a matching 24×24 line-art SVG into
+to `tools/partslib/library/facets.json` *and* drop a matching 24×24 line-art SVG into
 `tools/partslib/resources/icons/facets/` using `stroke="currentColor"` so it works in both
 themes. A test asserts every referenced icon exists — a missing one renders
 as a blank card with nothing in the console to explain why.
