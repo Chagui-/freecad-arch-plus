@@ -16,6 +16,41 @@ def _clean_render_failure_cache():
     pt.reset_render_failures()
 
 
+def _captured_warnings(monkeypatch):
+    """Collect what Timer.report() would print to the Report view."""
+    lines = []
+    monkeypatch.setattr(pt, "_warn", lines.append)
+    return lines
+
+
+def test_timer_says_nothing_about_a_fast_operation(monkeypatch):
+    # The whole point of the threshold: a quiet Report view means nothing
+    # was slow, so an operation under it must not print at all.
+    lines = _captured_warnings(monkeypatch)
+    timer = pt.Timer("something quick")
+    timer.mark("phase")
+    assert timer.report() < pt.SLOW_SECONDS
+    assert lines == []
+
+
+def test_timer_reports_a_slow_operation_with_its_breakdown(monkeypatch):
+    lines = _captured_warnings(monkeypatch)
+    timer = pt.Timer("rendering a toilet")
+    # Rather than actually sleeping past the threshold, backdate the start
+    # and inject phases - this asserts the reporting logic, not the clock.
+    timer._start -= 20.0
+    timer._phases = [("build", 0.2), ("tessellate", 17.0), ("save", 0.001)]
+
+    assert timer.report("14 parts") >= 20.0
+    assert len(lines) == 1
+    message = lines[0]
+    assert "rendering a toilet" in message
+    assert "tessellate 17.0s" in message
+    assert "14 parts" in message
+    # Sub-_PHASE_FLOOR phases are noise in a 20s report, not information.
+    assert "save" not in message
+
+
 def test_thumbnails_are_jpegs():
     # The saved format is driven off the filename's extension, so the two
     # have to agree - a thumbnail_path() ending in .png would silently make

@@ -26,19 +26,59 @@
 import os
 import time
 
-# TEMPORARY diagnostic instrumentation (see the "still very slow" thread) -
-# prints wall-clock elapsed time with the number embedded in the message
-# text itself, not relied on the Report view's own timestamp column: if the
-# main thread is blocked, Qt does not repaint the Report view until it
-# unblocks, so several messages can appear to share one on-screen timestamp
-# even though real time passed between when each was actually printed.
-_TIMING = True
+# Slow-operation reporting. Anything that blocks the UI for longer than
+# this gets one line naming what it was and where the time went; anything
+# faster says nothing at all. The point is that a quiet Report view means
+# "nothing was slow", so a line appearing is itself the signal.
+#
+# Elapsed time is printed in the message text rather than read off the
+# Report view's own timestamp column: while the main thread is blocked Qt
+# does not repaint that view, so a whole run of messages can land on one
+# on-screen timestamp even though real time passed between them.
+SLOW_SECONDS = 0.5
+
+# Phases quicker than this are folded away rather than cluttering the
+# breakdown of a slow operation.
+_PHASE_FLOOR = 0.05
 
 
-def _timelog(message):
-    if not _TIMING:
-        return
-    _warn("ArchPlus: [timing] %s\n" % (message,))
+class Timer(object):
+    """Times an operation phase by phase, and reports ONE line - only if
+    the whole thing turned out to be slow.
+
+    Logging each phase as it happens is what made the Report view
+    unreadable: 14 parts x 5 phases of mostly-instant work, burying the one
+    part that actually took 17 seconds. Collecting the phases and deciding
+    at the end means the breakdown is still there when it matters."""
+
+    def __init__(self, label):
+        self.label = label
+        self._start = time.perf_counter()
+        self._last = self._start
+        self._phases = []
+
+    def mark(self, name):
+        """Record the time since the previous mark (or since the start)."""
+        now = time.perf_counter()
+        self._phases.append((name, now - self._last))
+        self._last = now
+
+    def elapsed(self):
+        return time.perf_counter() - self._start
+
+    def report(self, note=None):
+        """Emit one line if this operation was slow. Returns elapsed time."""
+        total = self.elapsed()
+        if total < SLOW_SECONDS:
+            return total
+        breakdown = ", ".join(
+            "%s %.1fs" % (name, seconds)
+            for name, seconds in self._phases if seconds >= _PHASE_FLOOR)
+        _warn("ArchPlus: %s took %.1fs%s%s\n" % (
+            self.label, total,
+            " (%s)" % breakdown if breakdown else "",
+            " - %s" % note if note else ""))
+        return total
 
 
 THUMBNAIL_FILENAME = "thumbnail.jpg"
@@ -176,8 +216,8 @@ def _save_buffer_as_image(renderer, out_path, size):
     elif components == 3:
         image_format = QtGui.QImage.Format_RGB888
     else:
-        _timelog("_save_buffer_as_image(%s): unexpected buffer: %d bytes for "
-                  "%dx%d" % (out_path, len(buf), size, size))
+        _warn("ArchPlus: unexpected render buffer for %s: %d bytes for "
+              "%dx%d\n" % (out_path, len(buf), size, size))
         return False
 
     image = QtGui.QImage(buf, size, size, size * components, image_format)
@@ -195,20 +235,20 @@ def _save_buffer_as_image(renderer, out_path, size):
     return bool(image.save(out_path, image_type, quality))
 
 
-def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
+def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
     """Render `shape` to an image file, in the format `out_path`'s extension
-    asks for. Returns True on success, False otherwise."""
-    _t_total = time.perf_counter()
-    try:
-        _t = time.perf_counter()
-        from pivy import coin
-        _timelog("render_shape(%s): `from pivy import coin` took %.3fs"
-                  % (out_path, time.perf_counter() - _t))
+    asks for. Returns True on success, False otherwise.
 
-        _t = time.perf_counter()
+    `timer` lets a caller that already did some of the work (building the
+    shape, say) hand in its own Timer so the slow-operation line covers the
+    whole job rather than just this half of it."""
+    own_timer = timer is None
+    if own_timer:
+        timer = Timer("rendering %s" % (os.path.basename(out_path),))
+    try:
+        from pivy import coin
         node = scene_from_shape(shape)
-        _timelog("render_shape(%s): scene_from_shape() took %.3fs"
-                  % (out_path, time.perf_counter() - _t))
+        timer.mark("tessellate")
 
         root = coin.SoSeparator()
         root.addChild(coin.SoDirectionalLight())
@@ -224,16 +264,12 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
 
         root.ref()
         try:
-            _t = time.perf_counter()
             ok = renderer.render(root)
-            _timelog("render_shape(%s): renderer.render() took %.3fs (ok=%r)"
-                      % (out_path, time.perf_counter() - _t, ok))
         finally:
             root.unref()
+        timer.mark("render")
 
         if not ok:
-            _timelog("render_shape(%s): TOTAL %.3fs (renderer.render()==False)"
-                      % (out_path, time.perf_counter() - _t_total))
             return False
 
         folder = os.path.dirname(out_path)
@@ -241,25 +277,21 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
             os.makedirs(folder)
 
         image_type, _ = _image_format_for(out_path)
-        _t = time.perf_counter()
-        saved = _save_buffer_as_image(renderer, out_path, size)
-        _timelog("render_shape(%s): Qt %s save returned %r, took %.3fs"
-                  % (out_path, image_type, saved, time.perf_counter() - _t))
-        if not saved and renderer.isWriteSupported(image_type):
+        if not _save_buffer_as_image(renderer, out_path, size) \
+                and renderer.isWriteSupported(image_type):
             # Only worth trying where Coin actually claims support for the
             # format - otherwise it returns 0 and writes nothing, which is
             # the bug this whole path exists to work around.
             renderer.writeToFile(out_path, image_type)
+        timer.mark("save")
 
-        result = os.path.exists(out_path)
-        _timelog("render_shape(%s): TOTAL %.3fs (wrote file=%r)"
-                  % (out_path, time.perf_counter() - _t_total, result))
-        return result
+        return os.path.exists(out_path)
     except Exception as exc:
         _warn("ArchPlus: thumbnail render failed: %s\n" % (exc,))
-        _timelog("render_shape(%s): TOTAL %.3fs (raised %r)"
-                  % (out_path, time.perf_counter() - _t_total, exc))
         return False
+    finally:
+        if own_timer:
+            timer.report()
 
 
 def ensure_thumbnail(entry, resolved):
@@ -271,15 +303,13 @@ def ensure_thumbnail(entry, resolved):
     the render call."""
     import partslib_geometry
 
-    _t0 = time.perf_counter()
     path = thumbnail_path(entry["dir"])
     if os.path.exists(path):
         return path
     if render_failed_before(path):
-        _timelog("ensure_thumbnail(%r): short-circuited (marked failed "
-                  "earlier this session), took %.3fs"
-                  % (entry["id"], time.perf_counter() - _t0))
         return None
+
+    timer = Timer("first thumbnail for %r" % (entry["id"],))
     try:
         shape = partslib_geometry.build_shape(resolved, entry["dir"])
     except Exception as exc:
@@ -287,18 +317,13 @@ def ensure_thumbnail(entry, resolved):
             "ArchPlus: cannot build %r for a thumbnail; will not retry "
             "this session: %s\n" % (entry["id"], exc)))
         return None
-    _t1 = time.perf_counter()
-    _timelog("ensure_thumbnail(%r): build_shape() took %.3fs"
-              % (entry["id"], _t1 - _t0))
+    timer.mark("build")
 
-    if render_shape(shape, path):
-        _timelog("ensure_thumbnail(%r): TOTAL %.3fs (rendered)"
-                  % (entry["id"], time.perf_counter() - _t0))
+    rendered = render_shape(shape, path, timer=timer)
+    timer.report()
+    if rendered:
         return path
     mark_render_failed(path, (
-        "ArchPlus: cannot render a thumbnail for %r (render_shape() "
-        "returned False - see the [timing] lines above for which stage "
-        "failed); will not retry this session\n" % (entry["id"],)))
-    _timelog("ensure_thumbnail(%r): TOTAL %.3fs (render failed)"
-              % (entry["id"], time.perf_counter() - _t0))
+        "ArchPlus: cannot render a thumbnail for %r; will not retry this "
+        "session\n" % (entry["id"],)))
     return None
