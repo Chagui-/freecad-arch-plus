@@ -2,7 +2,7 @@
 #
 # Tests for the Doors tool: geometry generation and the edit round-trip.
 
-import doorsplus_gui as dg
+from doors import gui as dg
 from conftest import FakeObj, FakeCombo, FakeNum, FakeCheck, quantity, fake_base
 
 

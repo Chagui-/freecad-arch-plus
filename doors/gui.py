@@ -14,15 +14,12 @@
 import json
 import math
 import os
-import sys
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(os.path.dirname(__file__))     # repo root, for Resources/
 
 ICON = os.path.join(_DIR, "Resources", "icons", "DoorsPlus.svg")
 
@@ -389,7 +386,7 @@ def makeDoor(width=900.0, height=2100.0, operation="Single swing",
              panelStyle="Solid", frameWidth=70.0, panelThk=45.0,
              frameDepth=100.0, swingSide="Left", swingDir="Inward"):
     """Create a _Window-based door object with the given parameters."""
-    import doorsplus_object
+    from . import object as doorsplus_object
 
     if FreeCAD.ActiveDocument is None:
         FreeCAD.newDocument()
@@ -762,7 +759,7 @@ class DoorsPlusTaskPanel:
 
     # ---- live preview -----------------------------------------------------
     def _startPreview(self):
-        import doorsplus_object
+        from . import object as doorsplus_object
 
         if FreeCAD.ActiveDocument is None:
             FreeCAD.newDocument()
@@ -1138,7 +1135,7 @@ class DoorsPlusCommand:
         sketch.Placement = pl
         doc.recompute()
 
-        import doorsplus_object
+        from . import object as doorsplus_object
         door = doorsplus_object.makeWindow(sketch, self.width, self.height,
                                            wp_list, name="Door")
         if door is None:
