@@ -47,6 +47,10 @@ import partslib_thumbs
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
 
+# Qt class name of FreeCAD's 3D view, used both to ask Gui.activateView for
+# one and to find its MDI sub-window.
+_VIEW3D_CLASS = "Gui::View3DInventor"
+
 # Slow-operation reporting for the panel's own phases, sharing the timer
 # and threshold used for thumbnails so the whole feature has one notion of
 # "slow enough to be worth telling the user about". See
@@ -1013,7 +1017,22 @@ class PartsLibraryPanel(QtGui.QWidget):
                 % (entry["id"], label, exc))
             return None
 
-    def _activate3DView(self):
+    def _find3DSubWindow(self, mdi):
+        """The MDI sub-window holding a 3D view, or None.
+
+        Matched on the widget's Qt class name: PySide hands back a plain
+        QWidget for a sub-window's widget and knows nothing of FreeCAD's
+        view API, but the widget's metaObject still reports the real C++
+        class underneath."""
+        for sub in mdi.subWindowList():
+            try:
+                if sub.widget().metaObject().className() == _VIEW3D_CLASS:
+                    return sub
+            except Exception:
+                continue
+        return None
+
+    def _activate3DView(self, mdi):
         """Make a 3D view the active window. True if one is now active.
 
         The Snapper needs an ACTIVE 3D view, and the library panel is itself
@@ -1034,10 +1053,19 @@ class PartsLibraryPanel(QtGui.QWidget):
         suite uses the identical call), and letting it create a view when
         the document has none is friendlier than refusing to place."""
         try:
-            FreeCADGui.activateView("Gui::View3DInventor", True)
+            FreeCADGui.activateView(_VIEW3D_CLASS, True)
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
                 "ArchPlus: cannot activate a 3D view: %s\n" % (exc,))
+
+        # activateView makes the view current as far as FreeCAD is
+        # concerned, but the library panel is itself an MDI sub-window and
+        # keeps the on-screen tab - so raise the 3D view's tab too, or the
+        # user has to click it by hand before they can pick a point.
+        subWindow = self._find3DSubWindow(mdi) if mdi is not None else None
+        if subWindow is not None:
+            mdi.setActiveSubWindow(subWindow)
+
         try:
             # Ask the view object itself, which is where getSceneGraph
             # actually lives.
@@ -1063,7 +1091,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         mainWindow = FreeCADGui.getMainWindow()
         mdi = mainWindow.findChild(QtGui.QMdiArea)
         librarySubWindow = self.parentWidget()
-        if not self._activate3DView():
+        if not self._activate3DView(mdi):
             FreeCAD.Console.PrintError(
                 "ArchPlus: no 3D view is open - open a document with a 3D "
                 "view before placing a library part.\n")
@@ -1091,6 +1119,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # never even started when there is no document/3D view). Degrade to
         # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
+        trackerCentre = None
         try:
             shape = partslib_geometry.build_shape(resolved, entry["dir"])
             metrics = partslib_geometry.measure(shape)
@@ -1098,6 +1127,14 @@ class PartsLibraryPanel(QtGui.QWidget):
             tracker.length(metrics["Width"])
             tracker.width(metrics["Depth"])
             tracker.height(metrics["Height"])
+            # boxTracker.pos() sets the CENTRE of the ghost box (it moves an
+            # SoCube, which straddles its own origin), but a part's origin
+            # is its bounding box's minimum corner. Without this offset the
+            # ghost previews a spot half a sofa away from where the part
+            # actually lands.
+            trackerCentre = FreeCAD.Vector(metrics["Width"] / 2.0,
+                                           metrics["Depth"] / 2.0,
+                                           metrics["Height"] / 2.0)
             tracker.on()
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
@@ -1127,7 +1164,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                 preview = partslib_placement.partPlacement(
                     point, state["face"], host, offset)
                 tracker.setRotation(preview.Rotation)
-                tracker.pos(preview.Base)
+                tracker.pos(preview.multVec(trackerCentre))
 
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
