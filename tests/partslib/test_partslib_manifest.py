@@ -1,4 +1,4 @@
-import partslib_manifest as pm
+from partslib import manifest as pm
 
 FACETS = {
     "function": {"label": "Function", "multi": False,

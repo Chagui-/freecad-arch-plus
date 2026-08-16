@@ -1,7 +1,7 @@
 import ast
 import inspect
 
-import partslib_theme as pt
+from partslib import theme as pt
 
 
 def test_core_module_does_not_import_freecad_at_module_scope():
@@ -23,7 +23,7 @@ def test_core_module_does_not_import_freecad_at_module_scope():
         for name in names:
             assert not any(name == b or name.startswith(b + ".")
                             for b in banned), \
-                "module-scope import of %r in partslib_theme" % (name,)
+                "module-scope import of %r in partslib.theme" % (name,)
 
 
 def test_real_user_config_theme_and_stylesheet_both_named_dark():
