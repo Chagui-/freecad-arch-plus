@@ -19,9 +19,9 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(os.path.dirname(__file__))     # repo root, for Resources/
+_DIR = os.path.dirname(__file__)     # tools/doors/, for resources/
 
-ICON = os.path.join(_DIR, "Resources", "icons", "DoorsPlus.svg")
+ICON = os.path.join(_DIR, "resources", "icons", "DoorsPlus.svg")
 
 # ---------------------------------------------------------------------------
 # Spec persistence
@@ -665,7 +665,7 @@ class DoorsPlusTaskPanel:
     def _refImage(self, name, size):
         lbl = QtGui.QLabel()
         lbl.setAlignment(QtCore.Qt.AlignCenter)
-        path = os.path.join(_DIR, "Resources", "icons", name + ".svg")
+        path = os.path.join(_DIR, "resources", "icons", name + ".svg")
         if os.path.exists(path):
             lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
         return lbl
