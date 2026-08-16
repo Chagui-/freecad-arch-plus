@@ -27,6 +27,9 @@ change: same commands, same toolbar, same tests (relocated, not rewritten).
 ```
 ArchPlus/
   InitGui.py
+  stairsplus_object.py   (compat shim only — re-exports from stairs/object.py)
+  doorsplus_object.py    (compat shim only — re-exports from doors/object.py)
+  windowsplus_object.py  (compat shim only — re-exports from windows/object.py)
   stairs/    __init__.py  gui.py  object.py
   doors/     __init__.py  gui.py  object.py
   windows/   __init__.py  gui.py  object.py
@@ -77,7 +80,15 @@ calls it.
 - **Stairs/Doors/Windows** (no tool-local data folder): `_DIR =
   os.path.dirname(__file__)` becomes `_DIR =
   os.path.dirname(os.path.dirname(__file__))` — one level up, back to repo
-  root, so `Resources/icons/...` paths keep resolving.
+  root, so `Resources/icons/...` paths keep resolving. This applies to all
+  three `_gui.py` files (module-level `_DIR`, used for `ICON` and a
+  `_refImage`/`_setRefImage` dimension-reference-icon helper) and to
+  `stairsplus_object.py`'s `_ViewProviderStairsPlus.getIcon()`, which computes
+  `os.path.dirname(__file__)` **inline** inside the method rather than as a
+  module constant — same one-level-up fix, just not from a shared `_DIR`
+  name. `doorsplus_object.py` and `windowsplus_object.py` need **no** path fix
+  at all: their `getIcon()` methods return FreeCAD's built-in `Arch_rc` Qt
+  resource paths (`:/icons/Arch_Window_Tree.svg`), not filesystem paths.
 - **Parts Library** (has a tool-local data folder, `library/`, moving
   *with* it): needs **two** separate bases, because `Resources/` (shared,
   stays at root) and `library/` (tool-local, moves into `partslib/`) are no
@@ -136,9 +147,74 @@ icon_dir = os.path.join(_ROOT, "Resources", "icons", "facets")  # was derived fr
 ## Rollout order
 
 1. **Parts Library** (pilot — hardest case: 8 modules + a subpackage + a
-   tool-local data folder + the `_DIR`/`_ROOT` split).
+   tool-local data folder + the `_DIR`/`_ROOT` split). **Done** — merged via
+   the `partslib-folder-refactor` branch (this branch); 162/162 tests green;
+   manual FreeCAD smoke test confirmed working.
 2. Verify: `uv run --with pytest --no-project pytest tests/ -q` green, then
    open FreeCAD and confirm the toolbar/panel/placement still work.
 3. Repeat the same recipe for Stairs, Doors, Windows (each is just 2 files
    with no local data folder, so the `_DIR` fix is a single line each — these
-   should go fast once the pattern is proven).
+   should go fast once the pattern is proven). Continues on this same branch
+   rather than a fresh one, per the user's choice.
+
+## Addendum: backward compatibility for Stairs/Doors/Windows (Parts Library did not need this)
+
+Parts Library was new enough (landed 3 commits before this refactor) that no
+real saved `.FCStd` documents referenced it, so the pilot didn't need to
+address this. Stairs/Doors/Windows are different: they've existed since near
+the start of this repo's history, and the user confirmed real project files
+exist that place these objects and are still opened/edited.
+
+**The problem:** each tool's `_object.py` defines two classes assigned as a
+document object's `Proxy`/`ViewObject.Proxy` (`_StairsPlus` /
+`_ViewProviderStairsPlus` for Stairs; `_Window` / `_ViewProviderWindow`,
+independently, for both Doors and Windows — same class names, different
+modules, since `ArchWindow.py` was copied once per tool per the README).
+FreeCAD's `App::PropertyPythonObject` persists a scripted object's Proxy via
+Python's standard pickle protocol, which records the class by
+**module path + qualified name** (e.g. `stairsplus_object._StairsPlus`), not
+by file location. Moving the module breaks that lookup: on reopen, FreeCAD
+cannot import `stairsplus_object` (it no longer exists), the Proxy fails to
+reconstruct, and that object loses its custom recompute/double-click-to-edit/
+icon behavior. The cached `obj.Shape` still renders (FreeCAD persists the
+shape itself separately), so nothing looks broken until the user tries to
+edit the object — a silent, delayed failure, which is the worst kind for a
+backward-compatibility break.
+
+**Decision (confirmed with the user, since real files exist): keep a thin
+compatibility shim at each old flat module path.** Each shim's only job is
+re-exporting the exact two classes FreeCAD's pickler will ask for, from
+their new home:
+
+```python
+# stairsplus_object.py (repo root — DO NOT DELETE)
+#
+# Backward-compatibility shim. Documents saved before the per-tool-folder
+# reorganization pickle their Stairs object's Proxy by this exact module
+# path ("stairsplus_object._StairsPlus" / "_ViewProviderStairsPlus").
+# Python's unpickler resolves the class via plain `getattr(import(module),
+# name)`, regardless of that class's own __module__ attribute — so this
+# shim only needs to keep existing and keep exposing these two names for
+# as long as any such document might still be opened. The real
+# implementation lives in stairs/object.py now.
+from stairs.object import _StairsPlus, _ViewProviderStairsPlus  # noqa: F401
+```
+
+Only `_object.py` needs a shim — `_gui.py` modules hold Command classes
+(registered by string name via `FreeCADGui.addCommand`) and Task panel
+classes (transient UI, built on demand), neither of which FreeCAD ever
+pickles into a document. Doors and Windows each get their own shim
+(`doorsplus_object.py` re-exporting from `doors.object`, `windowsplus_object.py`
+re-exporting from `windows.object`) — the shared class names (`_Window`,
+`_ViewProviderWindow`) stay distinct because they resolve through two
+different module names, exactly as they already do today (the two tools'
+existing `_Window` classes are already separate classes under separate
+module names, before this refactor).
+
+**Cost if this decision is later found wrong:** none expected — this is
+strictly additive (three small permanent files, never imported by new code,
+only by the unpickler for old documents) and costs nothing at runtime for
+anyone opening a post-refactor document. If a shim class's implementation
+ever needs to diverge from `stairs/object.py`'s real class for some future
+reason, that would be a sign the shim has outlived its purpose and the
+compatibility contract needs revisiting — not expected any time soon.
