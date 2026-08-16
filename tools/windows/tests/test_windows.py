@@ -5,7 +5,7 @@
 
 import types
 
-from windows import gui as wg
+from tools.windows import gui as wg
 from conftest import FakeObj, FakeCombo, FakeNum, FakeCheck, quantity, fake_base
 
 

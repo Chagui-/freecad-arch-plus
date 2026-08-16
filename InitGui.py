@@ -38,7 +38,7 @@ def _injectIntoBIM():
         # FreeCAD has already put this add-on folder on sys.path.
         import stairs.gui       # noqa: F401
         import tools.doors.gui  # noqa: F401
-        import windows.gui      # noqa: F401
+        import tools.windows.gui  # noqa: F401
         import partslib.gui     # noqa: F401
         workbench.appendToolbar(toolbar, commands)
         workbench.appendMenu(toolbar, commands)
