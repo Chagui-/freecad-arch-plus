@@ -12,7 +12,8 @@
   "params": {
     "Width": { "type": "Length", "default": 400 },
     "Depth": { "type": "Length", "default": 350 },
-    "Height": { "type": "Length", "default": 500 }
+    "Height": { "type": "Length", "default": 500 },
+    "DrawerCount": { "type": "Integer", "default": 2 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "variants": [

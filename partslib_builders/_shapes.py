@@ -93,6 +93,73 @@ def tapered_leg(height, bottom_radius, top_radius):
     return Part.makeCone(bottom_radius, top_radius, height)
 
 
+def cut_box(shape, x, y, z, length, width, height):
+    """Subtract an axis-aligned box at (x, y, z). `shape` on failure.
+
+    The workhorse behind every recess, reveal and groove below: one box
+    subtraction is about as robust as an OCC boolean gets, so details that
+    could have been fillets or sweeps are cut instead wherever the result
+    reads the same."""
+    import Part
+
+    if length <= 0 or width <= 0 or height <= 0:
+        return shape
+    notch = Part.makeBox(length, width, height)
+    notch.translate(vector(x, y, z))
+    try:
+        return shape.cut(notch)
+    except Exception:
+        return shape
+
+
+def cushion(length, width, height, radius=None, edge=None):
+    """A rounded box softened along BOTH its top and bottom edge loops.
+
+    A seat or back cushion is pillowed on every side, not just the top -
+    softening only the top leaves it reading as a slab with a rounded lip."""
+    if radius is None:
+        radius = min(length, width) * 0.12
+    if edge is None:
+        edge = min(height * 0.35, radius * 0.8)
+    box = rounded_box(length, width, height, radius=radius)
+    box = soften_top(box, edge)
+    return soften_top(box, edge, z=0)
+
+
+def bar(length, radius, along="x"):
+    """A cylinder lying along an axis, starting at the origin.
+
+    Used for handles and stretchers, where a thin round rod reads as
+    hardware or joinery and a thin box just reads as another block."""
+    import Part
+
+    axis = {"x": vector(1, 0, 0),
+            "y": vector(0, 1, 0)}.get(along, vector(0, 0, 1))
+    return Part.makeCylinder(radius, length, vector(0, 0, 0), axis)
+
+
+def panel_reveal(shape, x, z, panel_width, panel_height, groove=6.0,
+                 depth=8.0, face_depth=0.0):
+    """Cut a rectangular groove outline into a cabinet's front (-Y) face.
+
+    Four thin cuts, not a recessed pocket: the outline alone is what makes
+    a flat slab read as a framed door or drawer front, and it costs four
+    box subtractions instead of a pocket's larger cut through the middle of
+    the carcass."""
+    if panel_width <= 2 * groove or panel_height <= 2 * groove:
+        return shape
+    y = face_depth - 1.0
+    thickness = depth + 1.0
+    # Left and right stiles, then top and bottom rails.
+    shape = cut_box(shape, x, y, z, groove, thickness, panel_height)
+    shape = cut_box(shape, x + panel_width - groove, y, z,
+                    groove, thickness, panel_height)
+    shape = cut_box(shape, x, y, z, panel_width, thickness, groove)
+    shape = cut_box(shape, x, y, z + panel_height - groove,
+                    panel_width, thickness, groove)
+    return shape
+
+
 def toe_kick(shape, width, depth, kick_height=15.0, kick_depth=40.0,
              margin=30.0):
     """Cut a shallow recess into the bottom-front of a cabinet carcass.

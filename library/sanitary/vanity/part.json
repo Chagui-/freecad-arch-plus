@@ -16,7 +16,8 @@
     "BasinWidth": { "type": "Length", "default": 300 },
     "BasinDepth": { "type": "Length", "default": 300 },
     "BasinRecess": { "type": "Length", "default": 120 },
-    "BacksplashHeight": { "type": "Length", "default": 100 }
+    "BacksplashHeight": { "type": "Length", "default": 100 },
+    "DoorCount": { "type": "Integer", "default": 2 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "variants": [

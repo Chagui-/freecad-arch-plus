@@ -14,7 +14,8 @@
     "Depth": { "type": "Length", "default": 700 },
     "Height": { "type": "Length", "default": 750 },
     "TopThickness": { "type": "Length", "default": 30 },
-    "LegRadius": { "type": "Length", "default": 30 }
+    "LegRadius": { "type": "Length", "default": 30 },
+    "ApronHeight": { "type": "Length", "default": 70 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "variants": [
