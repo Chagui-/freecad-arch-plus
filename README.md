@@ -354,7 +354,7 @@ render:
 uv run --with pytest --no-project pytest tests/ -q
 ```
 
-`tests/test_library_content.py` scans the real shipped library, so a
+`tests/partslib/test_library_content.py` scans the real shipped library, so a
 malformed manifest, an unknown facet value, an unresolvable builder symbol,
 an unknown placement host or a facet icon missing from disk all fail here
 rather than reaching a user as an empty panel.
