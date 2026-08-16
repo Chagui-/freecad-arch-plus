@@ -21,6 +21,7 @@ from PySide import QtGui, QtCore
 _DIR = os.path.dirname(__file__)     # tools/doors/, for resources/
 
 ICON = os.path.join(_DIR, "resources", "icons", "DoorsPlus.svg")
+_ICON_DIR = os.path.join(_DIR, "resources", "icons")
 
 # ---------------------------------------------------------------------------
 # Spec persistence
@@ -30,6 +31,7 @@ ICON = os.path.join(_DIR, "resources", "icons", "DoorsPlus.svg")
 # are persisted on the object as a hidden JSON string so they can be restored
 # when the object is edited.
 from common.spec import SPEC_PROP, storeSpec, readSpec  # noqa: F401
+from common import widgets
 
 # ---------------------------------------------------------------------------
 # Door type → preset mapping
@@ -609,39 +611,18 @@ class DoorsPlusTaskPanel:
 
     # ---- widget helpers ---------------------------------------------------
     def _len(self, default):
-        try:
-            w = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
-            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(default)))
-            return w
-        except Exception:
-            w = QtGui.QDoubleSpinBox()
-            w.setRange(0, 1_000_000)
-            w.setDecimals(1)
-            w.setSuffix(" mm")
-            w.setValue(default)
-            return w
+        return widgets.length_input(default)
 
     @staticmethod
     def _mm(w):
-        try:
-            return float(w.property("value").Value)
-        except Exception:
-            return float(w.value())
+        return widgets.mm(w)
 
     @staticmethod
     def _setmm(w, mm):
-        try:
-            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(mm)))
-        except Exception:
-            w.setValue(float(mm))
+        widgets.set_mm(w, mm)
 
     def _refImage(self, name, size):
-        lbl = QtGui.QLabel()
-        lbl.setAlignment(QtCore.Qt.AlignCenter)
-        path = os.path.join(_DIR, "resources", "icons", name + ".svg")
-        if os.path.exists(path):
-            lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
-        return lbl
+        return widgets.ref_image(_ICON_DIR, name, size)
 
     def _collect(self):
         return dict(

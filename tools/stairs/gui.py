@@ -14,9 +14,12 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
+from common import widgets
+
 _DIR = os.path.dirname(__file__)     # tools/stairs/, for resources/
 
 ICON = os.path.join(_DIR, "resources", "icons", "StairsPlus.svg")
+_ICON_DIR = os.path.join(_DIR, "resources", "icons")
 
 
 # ---------------------------------------------------------------------------
@@ -237,37 +240,15 @@ class StairsPlusTaskPanel:
 
     # --- widget helpers ----------------------------------------------------
     def _len(self, default):
-        """A unit-aware length input. Gui::QuantitySpinBox shows/parses values
-        in the user's configured unit schema (mm, cm, inch, ...) while storing
-        the value internally in mm. Falls back to a plain mm spinbox if the
-        FreeCAD widget can't be created (e.g. no GUI)."""
-        try:
-            w = FreeCADGui.UiLoader().createWidget("Gui::QuantitySpinBox")
-            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(default)))
-            return w
-        except Exception:
-            w = QtGui.QDoubleSpinBox()
-            w.setRange(0, 1_000_000)
-            w.setDecimals(1)
-            w.setSuffix(" mm")
-            w.setValue(default)
-            return w
+        return widgets.length_input(default)
 
     @staticmethod
     def _mm(w):
-        """Read a length widget's value in millimetres (FreeCAD's base unit)."""
-        try:
-            return float(w.property("value").Value)   # Gui::QuantitySpinBox
-        except Exception:
-            return float(w.value())                    # plain QDoubleSpinBox
+        return widgets.mm(w)
 
     @staticmethod
     def _setmm(w, mm):
-        """Set a length widget from a value in millimetres."""
-        try:
-            w.setProperty("value", FreeCAD.Units.Quantity("%.6f mm" % float(mm)))
-        except Exception:
-            w.setValue(float(mm))
+        widgets.set_mm(w, mm)
 
     def _isTurn(self):
         return self.flight.currentText() in self._turnFlights
@@ -304,19 +285,10 @@ class StairsPlusTaskPanel:
         )
 
     def _refImage(self, name, size):
-        """A centered QLabel holding a reference SVG (or empty if missing)."""
-        lbl = QtGui.QLabel()
-        lbl.setAlignment(QtCore.Qt.AlignCenter)
-        self._setRefImage(lbl, name, size)
-        return lbl
+        return widgets.ref_image(_ICON_DIR, name, size)
 
     def _setRefImage(self, lbl, name, size):
-        """Set (or clear) a reference SVG on an existing label."""
-        path = os.path.join(_DIR, "resources", "icons", name + ".svg")
-        if os.path.exists(path):
-            lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
-        else:
-            lbl.clear()
+        widgets.set_ref_image(lbl, _ICON_DIR, name, size)
 
     def _setRow(self, label, field, visible):
         """Show/hide a form row (label + field). Uses Qt's setRowVisible when
