@@ -6,7 +6,7 @@
 
 import types
 
-import stairsplus_gui as sg
+from stairs import gui as sg
 from conftest import FakeCombo, FakeNum, FakeCheck, quantity
 
 _TURN = ("HalfTurnLeft", "HalfTurnRight")
