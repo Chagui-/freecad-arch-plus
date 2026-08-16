@@ -92,12 +92,27 @@ _BACKGROUND = (1.0, 1.0, 1.0)
 # left corner. Only the direction matters; viewAll sets the distance.
 _VIEW_POSITION = (-1.0, -1.0, 1.0)
 
-# Direction the light TRAVELS, so it arrives from the same top-front-left
-# side as the camera and every visible face is lit. Deliberately not
-# parallel to the view: the unequal components grade the three visible
-# faces (top brightest, then front, then left) so the part reads as a
-# solid instead of a flat silhouette.
-_LIGHT_DIRECTION = (0.4, 0.7, -1.0)
+# Three-point rig, as (direction the light TRAVELS, intensity). The three
+# faces an isometric shows are the top (0, 0, 1), the front (0, -1, 0) and
+# the left (-1, 0, 0); a face's brightness is -dot(normal, direction), so
+# these are chosen to land at roughly 0.9 / 0.6 / 0.5 respectively - a
+# clear "lit from above" reading with enough falloff to tell the vertical
+# faces apart.
+_LIGHTS = (
+    # KEY: essentially straight down, leaning only slightly toward the
+    # camera's front-left. Z dominates the other two components, which is
+    # what makes the top face unambiguously the brightest.
+    ((0.3, 0.4, -1.0), 0.85),
+    # FILL: low and from the front left, lifting the two vertical faces
+    # that the key light only grazes. Without it they crush to near black,
+    # which is what the old single overhead light did.
+    ((0.7, 0.7, -0.2), 0.40),
+    # RIM: from above and behind. It arrives BEHIND the front and left
+    # faces, so it adds nothing there and cannot flatten the gradation the
+    # other two establish - it only catches the far edge of curved
+    # surfaces, separating a bowl or a leg from the white background.
+    ((-0.6, -0.8, -0.3), 0.25),
+)
 
 # JPEG quality for saved thumbnails. These are flat-shaded renders on a
 # solid white ground - no photographic gradients for JPEG's DCT to smear -
@@ -265,14 +280,23 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
         timer.mark("tessellate")
 
         root = coin.SoSeparator()
-        light = coin.SoDirectionalLight()
-        light.direction = coin.SbVec3f(*_LIGHT_DIRECTION)
-        root.addChild(light)
+        # CAMERA FIRST, then lights, then geometry - the order FreeCAD's own
+        # CAM ImageBuilder uses. A light traversed ahead of the camera is
+        # resolved before the viewing transform exists, so its direction
+        # ends up interpreted in eye space: it then rides along with the
+        # camera instead of staying put in the world, and an overhead light
+        # reads as coming from the side.
+        #
         # Orthographic, not perspective: an isometric view IS a parallel
         # projection, and it also keeps a 2m wardrobe and a 400mm
         # nightstand looking like the same kind of drawing.
         camera = coin.SoOrthographicCamera()
         root.addChild(camera)
+        for direction, intensity in _LIGHTS:
+            light = coin.SoDirectionalLight()
+            light.direction = coin.SbVec3f(*direction)
+            light.intensity = intensity
+            root.addChild(light)
         root.addChild(node)
 
         region = coin.SbViewportRegion(size, size)
