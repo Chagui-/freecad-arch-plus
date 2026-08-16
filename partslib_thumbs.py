@@ -85,6 +85,20 @@ THUMBNAIL_FILENAME = "thumbnail.jpg"
 THUMBNAIL_SIZE = 256
 _BACKGROUND = (1.0, 1.0, 1.0)
 
+# Where the camera sits relative to the part, for a top-left-front
+# isometric. Parts are built to the Arch convention - X wide, Y deep with
+# the back at +Y, Z up - so -X is the left side, -Y is the front, and +Z is
+# above: the camera looks down the (1, 1, -1) diagonal at the part's front
+# left corner. Only the direction matters; viewAll sets the distance.
+_VIEW_POSITION = (-1.0, -1.0, 1.0)
+
+# Direction the light TRAVELS, so it arrives from the same top-front-left
+# side as the camera and every visible face is lit. Deliberately not
+# parallel to the view: the unequal components grade the three visible
+# faces (top brightest, then front, then left) so the part reads as a
+# solid instead of a flat silhouette.
+_LIGHT_DIRECTION = (0.4, 0.7, -1.0)
+
 # JPEG quality for saved thumbnails. These are flat-shaded renders on a
 # solid white ground - no photographic gradients for JPEG's DCT to smear -
 # so 92 is visually lossless here while staying well under a committed
@@ -251,12 +265,24 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
         timer.mark("tessellate")
 
         root = coin.SoSeparator()
-        root.addChild(coin.SoDirectionalLight())
-        camera = coin.SoPerspectiveCamera()
+        light = coin.SoDirectionalLight()
+        light.direction = coin.SbVec3f(*_LIGHT_DIRECTION)
+        root.addChild(light)
+        # Orthographic, not perspective: an isometric view IS a parallel
+        # projection, and it also keeps a 2m wardrobe and a 400mm
+        # nightstand looking like the same kind of drawing.
+        camera = coin.SoOrthographicCamera()
         root.addChild(camera)
         root.addChild(node)
 
         region = coin.SbViewportRegion(size, size)
+        # Only the DIRECTION from position to target matters here: pointAt
+        # sets the orientation, then viewAll slides the camera back along
+        # that same direction until the whole part fits. So aiming at the
+        # origin is fine even though a part's own origin is the corner of
+        # its bounding box rather than its centre.
+        camera.position = coin.SbVec3f(*_VIEW_POSITION)
+        camera.pointAt(coin.SbVec3f(0.0, 0.0, 0.0), coin.SbVec3f(0.0, 0.0, 1.0))
         camera.viewAll(root, region)
 
         renderer = coin.SoOffscreenRenderer(region)
