@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Correction added during Task 2's review (before Task 3 was dispatched):**
+> each tool's `_object.py` has a **reverse** lazy import of its sibling
+> `_gui.py` — used by the ViewProvider's `doubleClicked()`/`setEdit()` (to
+> reopen the Task panel) and, for Doors/Windows, its "Reposition" context-menu
+> command — that the original Task 1/2/3 text below did not account for
+> (the plan's original investigation only checked the gui→object direction).
+> Task 1 (Stairs) and Task 2 (Doors) needed a fix-round for this after their
+> initial implementation; Task 3 (Windows) below has been corrected with an
+> explicit Step 5a so it doesn't repeat the mistake. See the ledger's
+> "Mid-plan finding" entry for the full story.
+
 **Goal:** Move Stairs, Doors, and Windows — each currently two root-level
 files (`*_gui.py` + `*_object.py`) — into their own `stairs/`, `doors/`,
 `windows/` packages, completing the "one folder per tool" reorganization
@@ -169,9 +180,48 @@ to:
         return os.path.join(os.path.dirname(os.path.dirname(__file__)),
                             "Resources", "icons", "StairsPlus.svg")
 ```
-(This file has no module-level `_DIR` and no cross-module `stairsplus_*`
-imports to fix — this one inline path is its only path-resolution
-dependency.)
+(This file has no module-level `_DIR`. It DOES have one cross-module
+`stairsplus_gui` import, fixed in Step 5a below — the original text here
+incorrectly claimed there was none.)
+
+- [ ] **Step 5a: Fix the reverse lazy import — `stairs/object.py` importing `stairsplus_gui`**
+
+*(Added as a correction after Task 1 originally shipped without it — see
+the plan header's correction note.)* `_ViewProviderStairsPlus.doubleClicked()`
+lazily imports the sibling GUI module to reopen the Task panel on
+double-click. This is the same pattern as the `_gui.py` → `_object.py`
+imports fixed in Step 4, just in the opposite direction. Change:
+```python
+    def doubleClicked(self, vobj):
+        "Reopen the StairsPlus configuration panel to edit this object"
+
+        import FreeCADGui
+
+        # Don't stack panels if one is already open.
+        if FreeCADGui.Control.activeDialog():
+            return False
+        import stairsplus_gui
+        FreeCADGui.Control.showDialog(
+            stairsplus_gui.StairsPlusTaskPanel(vobj.Object))
+        return True
+```
+to:
+```python
+    def doubleClicked(self, vobj):
+        "Reopen the StairsPlus configuration panel to edit this object"
+
+        import FreeCADGui
+
+        # Don't stack panels if one is already open.
+        if FreeCADGui.Control.activeDialog():
+            return False
+        from . import gui as stairsplus_gui
+        FreeCADGui.Control.showDialog(
+            stairsplus_gui.StairsPlusTaskPanel(vobj.Object))
+        return True
+```
+(Only the one `import stairsplus_gui` line changes — same local name, so
+the two lines below it are untouched.)
 
 - [ ] **Step 6: Create the compatibility shim at the old `stairsplus_object.py` path**
 
@@ -336,13 +386,52 @@ Find each by its surrounding function:
 | the panel's `_startPreview()` | `import doorsplus_object` | `from . import object as doorsplus_object` |
 | the panel's accept/commit path (creates the door via `makeWindow`) | `import doorsplus_object` | `from . import object as doorsplus_object` |
 
-- [ ] **Step 5: `doors/object.py` needs no path fix**
+- [ ] **Step 5: `doors/object.py` needs no path fix, but DOES need an import fix (see Step 5a)**
 
 Confirm (don't guess): this file's `_ViewProviderWindow.getIcon()` returns
 FreeCAD's built-in `Arch_rc` Qt resource paths (e.g.
 `":/icons/Arch_Window_Tree.svg"`), not a filesystem path — there is no
-`_DIR`, no `Resources/` reference, and no cross-module `doorsplus_*` import
-anywhere in this file. Nothing to change here.
+`_DIR`, no `Resources/` reference in this file. There IS a cross-module
+import to fix, though — two sites, handled in Step 5a below.
+
+- [ ] **Step 5a: Fix the reverse lazy imports — `doors/object.py` importing `doorsplus_gui`**
+
+*(Added as a correction after this task originally shipped without it —
+see the plan header's correction note.)* Two sites in
+`_ViewProviderWindow` lazily import the sibling GUI module — one to reopen
+the Task panel (double-click / native Edit), one for the "Reposition (pick
+point)" context-menu command. Same pattern as the `_gui.py` → `_object.py`
+imports fixed in Step 4, just in the opposite direction.
+
+In `_openDoorsPlusPanel()`, change:
+```python
+        try:
+            import doorsplus_gui
+            FreeCADGui.Control.showDialog(doorsplus_gui.DoorsPlusTaskPanel(obj))
+            return True
+```
+to:
+```python
+        try:
+            from . import gui as doorsplus_gui
+            FreeCADGui.Control.showDialog(doorsplus_gui.DoorsPlusTaskPanel(obj))
+            return True
+```
+
+In `repositionDoor()`, change:
+```python
+        try:
+            import doorsplus_gui
+            doorsplus_gui.repositionDoor(self.Object)
+```
+to:
+```python
+        try:
+            from . import gui as doorsplus_gui
+            doorsplus_gui.repositionDoor(self.Object)
+```
+(Only the `import doorsplus_gui` line changes at each site — same local
+name, so nothing else on either site needs touching.)
 
 - [ ] **Step 6: Create the compatibility shim at the old `doorsplus_object.py` path**
 
@@ -493,11 +582,52 @@ name. Find each by its surrounding function:
 | the panel's `_startPreview()` | `import windowsplus_object` | `from . import object as windowsplus_object` |
 | the panel's accept/commit path (creates the window via `makeWindow`) | `import windowsplus_object` | `from . import object as windowsplus_object` |
 
-- [ ] **Step 5: `windows/object.py` needs no path fix**
+- [ ] **Step 5: `windows/object.py` needs no path fix, but DOES need an import fix (see Step 5a)**
 
 Same as Doors (Task 2 Step 5): this file's `_ViewProviderWindow.getIcon()`
-uses `Arch_rc` Qt resource paths, no filesystem `_DIR`. Confirm and move on
-— nothing to change.
+uses `Arch_rc` Qt resource paths, no filesystem `_DIR`. There IS a
+cross-module import to fix, though — two sites, handled in Step 5a below
+(this mirrors Doors exactly; Doors needed a post-hoc fix round for the
+identical pattern — see the plan header's correction note — Windows gets
+it correctly the first time).
+
+- [ ] **Step 5a: Fix the reverse lazy imports — `windows/object.py` importing `windowsplus_gui`**
+
+Two sites in `_ViewProviderWindow` lazily import the sibling GUI module —
+one to reopen the Task panel (double-click / native Edit), one for the
+"Reposition (pick point)" context-menu command. Same pattern as the
+`_gui.py` → `_object.py` imports fixed in Step 4, just in the opposite
+direction.
+
+In `_openWindowsPlusPanel()`, change:
+```python
+        try:
+            import windowsplus_gui
+            FreeCADGui.Control.showDialog(windowsplus_gui.WindowsPlusTaskPanel(obj))
+            return True
+```
+to:
+```python
+        try:
+            from . import gui as windowsplus_gui
+            FreeCADGui.Control.showDialog(windowsplus_gui.WindowsPlusTaskPanel(obj))
+            return True
+```
+
+In `repositionWindow()`, change:
+```python
+        try:
+            import windowsplus_gui
+            windowsplus_gui.repositionWindow(self.Object)
+```
+to:
+```python
+        try:
+            from . import gui as windowsplus_gui
+            windowsplus_gui.repositionWindow(self.Object)
+```
+(Only the `import windowsplus_gui` line changes at each site — same local
+name, so nothing else on either site needs touching.)
 
 - [ ] **Step 6: Create the compatibility shim at the old `windowsplus_object.py` path**
 
