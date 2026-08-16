@@ -2820,8 +2820,8 @@ class _ViewProviderStairsPlus(ArchComponent.ViewProviderComponent):
 
         import os
 
-        return os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                            "Resources", "icons", "StairsPlus.svg")
+        return os.path.join(os.path.dirname(__file__),
+                            "resources", "icons", "StairsPlus.svg")
 
     def claimChildren(self):
         "Define which objects will appear as children in the tree view"

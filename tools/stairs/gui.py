@@ -14,9 +14,9 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(os.path.dirname(__file__))     # repo root, for Resources/
+_DIR = os.path.dirname(__file__)     # tools/stairs/, for resources/
 
-ICON = os.path.join(_DIR, "Resources", "icons", "StairsPlus.svg")
+ICON = os.path.join(_DIR, "resources", "icons", "StairsPlus.svg")
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ class StairsPlusTaskPanel:
 
     def _setRefImage(self, lbl, name, size):
         """Set (or clear) a reference SVG on an existing label."""
-        path = os.path.join(_DIR, "Resources", "icons", name + ".svg")
+        path = os.path.join(_DIR, "resources", "icons", name + ".svg")
         if os.path.exists(path):
             lbl.setPixmap(QtGui.QIcon(path).pixmap(size))
         else:
