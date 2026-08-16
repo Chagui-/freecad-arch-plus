@@ -160,6 +160,43 @@ def cut_box(shape, x, y, z, length, width, height):
         return shape
 
 
+def cut_boxes(shape, boxes):
+    """Subtract several axis-aligned boxes in ONE boolean.
+
+    `boxes` is an iterable of (x, y, z, length, width, height).
+
+    Cutting N boxes one at a time costs N booleans against a solid whose
+    face count grows with every one of them. Cutting a single compound of
+    all N costs one, and OCC is happy to take a compound as the tool. A
+    drawer chest went from 20 cuts to 1 this way, which was most of the
+    second-plus it took to build.
+
+    Falls back to cutting one at a time if the compound cut is refused, so
+    a kernel that dislikes a particular compound degrades to the old cost
+    rather than to a missing part."""
+    import Part
+
+    tools = []
+    for x, y, z, length, width, height in boxes:
+        if length <= 0 or width <= 0 or height <= 0:
+            continue
+        box = Part.makeBox(length, width, height)
+        box.translate(vector(x, y, z))
+        tools.append(box)
+    if not tools:
+        return shape
+    try:
+        return shape.cut(Part.makeCompound(tools))
+    except Exception:
+        result = shape
+        for tool in tools:
+            try:
+                result = result.cut(tool)
+            except Exception:
+                pass
+        return result
+
+
 def cushion(length, width, height, radius=None, edge=None):
     """A rounded box softened along BOTH its top and bottom edge loops.
 
@@ -186,26 +223,39 @@ def bar(length, radius, along="x"):
     return Part.makeCylinder(radius, length, vector(0, 0, 0), axis)
 
 
+def panel_reveal_boxes(x, z, panel_width, panel_height, groove=6.0,
+                       depth=8.0, face_depth=0.0):
+    """The four groove boxes that outline one door or drawer front.
+
+    Returned rather than cut, so a caller with several fronts to mark can
+    gather every panel's boxes and subtract the lot in a single boolean -
+    see cut_boxes(). A chest of drawers has five fronts, which is twenty
+    boxes, which is one cut instead of twenty."""
+    if panel_width <= 2 * groove or panel_height <= 2 * groove:
+        return []
+    y = face_depth - 1.0
+    thickness = depth + 1.0
+    return [
+        # Left and right stiles, then top and bottom rails.
+        (x, y, z, groove, thickness, panel_height),
+        (x + panel_width - groove, y, z, groove, thickness, panel_height),
+        (x, y, z, panel_width, thickness, groove),
+        (x, y, z + panel_height - groove, panel_width, thickness, groove),
+    ]
+
+
 def panel_reveal(shape, x, z, panel_width, panel_height, groove=6.0,
                  depth=8.0, face_depth=0.0):
     """Cut a rectangular groove outline into a cabinet's front (-Y) face.
 
-    Four thin cuts, not a recessed pocket: the outline alone is what makes
-    a flat slab read as a framed door or drawer front, and it costs four
-    box subtractions instead of a pocket's larger cut through the middle of
-    the carcass."""
-    if panel_width <= 2 * groove or panel_height <= 2 * groove:
-        return shape
-    y = face_depth - 1.0
-    thickness = depth + 1.0
-    # Left and right stiles, then top and bottom rails.
-    shape = cut_box(shape, x, y, z, groove, thickness, panel_height)
-    shape = cut_box(shape, x + panel_width - groove, y, z,
-                    groove, thickness, panel_height)
-    shape = cut_box(shape, x, y, z, panel_width, thickness, groove)
-    shape = cut_box(shape, x, y, z + panel_height - groove,
-                    panel_width, thickness, groove)
-    return shape
+    An outline, not a recessed pocket: the four thin grooves alone are what
+    make a flat slab read as a framed door or drawer front, without a
+    pocket's larger cut through the middle of the carcass.
+
+    Convenience wrapper for a caller with exactly one panel. Anything
+    marking several should collect panel_reveal_boxes() and cut once."""
+    return cut_boxes(shape, panel_reveal_boxes(
+        x, z, panel_width, panel_height, groove, depth, face_depth))
 
 
 def toe_kick(shape, width, depth, kick_height=15.0, kick_depth=40.0,

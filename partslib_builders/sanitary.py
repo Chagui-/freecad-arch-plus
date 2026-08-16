@@ -241,16 +241,19 @@ def vanity(params, assets, ctx):
                            kick_depth=min(50, depth * 0.15))
 
     door_width = carcass_width / door_count
-    for i in range(1, door_count):
-        carcass = sh.cut_box(carcass, i * door_width - 2.0, -1.0, kick_height,
-                             4.0, 7.0, carcass_height - kick_height)
     margin = min(35.0, door_width * 0.12)
+    grooves = [
+        (i * door_width - 2.0, -1.0, kick_height,
+         4.0, 7.0, carcass_height - kick_height)
+        for i in range(1, door_count)
+    ]
     for i in range(door_count):
-        carcass = sh.panel_reveal(
-            carcass, i * door_width + margin, kick_height + margin,
+        grooves.extend(sh.panel_reveal_boxes(
+            i * door_width + margin, kick_height + margin,
             door_width - 2 * margin,
             carcass_height - kick_height - 2 * margin,
-            groove=6.0, depth=8.0)
+            groove=6.0, depth=8.0))
+    carcass = sh.cut_boxes(carcass, grooves)
     # Inset both sides and at the front, flush at the back against the wall.
     carcass = sh.place(carcass, overhang, overhang, 0)
 

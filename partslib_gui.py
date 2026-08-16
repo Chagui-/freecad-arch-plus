@@ -278,6 +278,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._categoryColumns = 0
         self._filterRoom = None
         self._filterElement = None
+        # Cleared when the user cancels the thumbnail build, so the cards
+        # do not quietly go on rendering the rest inline. Reset by refresh.
+        self._renderThumbnails = True
         self._buildUi()
         self.refresh()
 
@@ -477,6 +480,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         import partslib_geometry
 
         timer = _Timer("refreshing the parts library")
+        # Reopening (or explicitly refreshing) is the user asking again, so
+        # a cancelled thumbnail build gets another go.
+        self._renderThumbnails = True
         # A rescan is the user saying "re-read the library", so remembered
         # shapes go too - params are in the cache key, but an edited builder
         # or asset file is not.
@@ -751,11 +757,18 @@ class PartsLibraryPanel(QtGui.QWidget):
         reappears - covering both "clear the search" and "the library
         gained its first part"."""
         self.grid.clear()
+        entries = sorted(self._filteredEntries(), key=lambda e: e["name"])
+        # Render anything missing FIRST, with a progress dialog, so the
+        # count is known up front instead of discovered as the grid fills.
+        # After this pass every card is a plain file read; on any open
+        # after the first, nothing is pending and this returns instantly.
+        if self._renderThumbnails:
+            self._prerenderThumbnails(entries)
         # No per-card timing here: a card is only ever slow because of the
         # thumbnail behind it, and ensure_thumbnail already reports that -
         # naming the part and where its time went - for the parts that
         # actually were slow.
-        for entry in sorted(self._filteredEntries(), key=lambda e: e["name"]):
+        for entry in entries:
             item = QtGui.QListWidgetItem()
             item.setData(QtCore.Qt.UserRole, entry["id"])
             card = self._makePartCard(entry)
@@ -810,7 +823,8 @@ class PartsLibraryPanel(QtGui.QWidget):
             # later open is back to a plain file read. Never raises: any
             # failure (no committed manifest, no GL context) returns None
             # and the card is still shown, just without an icon.
-            thumbPath = self._ensureGridThumbnail(entry) or thumbPath
+            if self._renderThumbnails:
+                thumbPath = self._ensureGridThumbnail(entry) or thumbPath
         if os.path.exists(thumbPath):
             pixmap = QtGui.QPixmap(thumbPath)
             if not pixmap.isNull():
@@ -838,6 +852,63 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.addWidget(variants)
 
         return card
+
+    # Below this many missing thumbnails, a dialog is more disruptive than
+    # the wait it reports on.
+    PROGRESS_THRESHOLD = 3
+
+    def _prerenderThumbnails(self, entries):
+        """Render every missing thumbnail up front, showing progress.
+
+        Without this the first open of a fresh clone freezes FreeCAD
+        outright: each card renders its own thumbnail inline, on the main
+        thread, with nothing on screen to say why. Rendering cannot move
+        off the main thread - the offscreen renderer needs the GL context
+        that lives there - so the honest fix is to say what is happening
+        and let the user stop it.
+
+        Doing it as a separate pass BEFORE any card is built is what makes
+        the count meaningful: the total is known before the first render
+        rather than discovered as the grid fills.
+
+        Cancelling sets `_renderThumbnails` False, which stops the cards
+        rendering the rest inline behind the dialog's back - otherwise
+        "Cancel" would only dismiss the dialog and leave the freeze."""
+        pending = []
+        for entry in entries:
+            path = partslib_thumbs.thumbnail_path(entry["dir"])
+            if (not os.path.exists(path)
+                    and not partslib_thumbs.render_failed_before(path)):
+                pending.append(entry)
+        if len(pending) < self.PROGRESS_THRESHOLD:
+            return
+
+        dialog = QtGui.QProgressDialog(
+            "Building thumbnails…", "Cancel", 0, len(pending),
+            FreeCADGui.getMainWindow())
+        dialog.setWindowTitle("ArchPlus Parts Library")
+        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+        # Show immediately: the whole point is that the UI is about to be
+        # busy for a while, so Qt's default "wait and see" defeats it.
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(True)
+        dialog.setValue(0)
+
+        for index, entry in enumerate(pending):
+            if dialog.wasCanceled():
+                self._renderThumbnails = False
+                FreeCAD.Console.PrintMessage(
+                    "ArchPlus: stopped building thumbnails at %d of %d; the "
+                    "rest will render next time the library is opened.\n"
+                    % (index, len(pending)))
+                break
+            dialog.setLabelText("Building thumbnails: %d of %d\n%s"
+                                % (index + 1, len(pending), entry["name"]))
+            dialog.setValue(index)
+            QtGui.QApplication.processEvents()
+            self._ensureGridThumbnail(entry)
+        dialog.setValue(len(pending))
+        dialog.close()
 
     def _ensureGridThumbnail(self, entry):
         """Render a fallback thumbnail for `entry`'s default variant.

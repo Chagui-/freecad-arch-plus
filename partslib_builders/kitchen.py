@@ -38,15 +38,19 @@ def _doors(shape, width, height, door_count, base_z, margin=None,
     door_width = width / door_count
     if margin is None:
         margin = min(40.0, door_width * 0.12)
-    for i in range(1, door_count):
-        shape = sh.cut_box(shape, i * door_width - seam / 2.0, -1.0, base_z,
-                           seam, 8.0, height - base_z)
+    # Seams between doors plus the reveal around each, subtracted together:
+    # an 800mm two-door unit is nine boxes and one boolean.
+    boxes = [
+        (i * door_width - seam / 2.0, -1.0, base_z,
+         seam, 8.0, height - base_z)
+        for i in range(1, door_count)
+    ]
     for i in range(door_count):
-        shape = sh.panel_reveal(shape, i * door_width + margin, base_z + margin,
-                                door_width - 2 * margin,
-                                height - base_z - 2 * margin,
-                                groove=groove, depth=8.0)
-    return shape
+        boxes.extend(sh.panel_reveal_boxes(
+            i * door_width + margin, base_z + margin,
+            door_width - 2 * margin, height - base_z - 2 * margin,
+            groove=groove, depth=8.0))
+    return sh.cut_boxes(shape, boxes)
 
 
 def _pulls(width, height, door_count, base_z, y, vertical=True):
@@ -130,18 +134,21 @@ def oven_cabinet(params, assets, ctx):
     # Recess the whole oven front rather than outlining it: an appliance
     # front is proud of the door line, not flush with it, and the recess is
     # what puts a shadow round all four sides.
-    box = sh.cut_box(box, inset, -1.0, oven_z + inset,
-                     width - 2 * inset, 12.0, oven_height - 2 * inset)
-    # Control strip across the top of the oven, and its door line.
-    box = sh.cut_box(box, inset, -1.0, carcass_height - inset - 70.0,
-                     width - 2 * inset, 16.0, 6.0)
-
+    boxes = [
+        (inset, -1.0, oven_z + inset,
+         width - 2 * inset, 12.0, oven_height - 2 * inset),
+        # Control strip across the top of the oven, and its door line.
+        (inset, -1.0, carcass_height - inset - 70.0,
+         width - 2 * inset, 16.0, 6.0),
+    ]
     drawer_zone = oven_z - kick_height
     if drawer_zone > 0:
         margin = min(16.0, width * 0.03)
-        box = sh.panel_reveal(box, margin, kick_height + margin,
-                              width - 2 * margin, drawer_zone - 2 * margin,
-                              groove=5.0, depth=7.0)
+        boxes.extend(sh.panel_reveal_boxes(
+            margin, kick_height + margin,
+            width - 2 * margin, drawer_zone - 2 * margin,
+            groove=5.0, depth=7.0))
+    box = sh.cut_boxes(box, boxes)
     box = sh.place(box, 0, overhang, 0)
 
     top = sh.rounded_box(width, depth, worktop, radius=6)

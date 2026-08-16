@@ -154,16 +154,18 @@ def desk(params, assets, ctx):
         drawer_height = zone / drawer_count
         margin = min(16.0, pedestal_width * 0.05)
         pull_length = pedestal_width * 0.42
+        grooves = []
         for i in range(drawer_count):
             z = kick + i * drawer_height
-            pedestal = sh.panel_reveal(
-                pedestal, margin, z + margin * 0.4,
+            grooves.extend(sh.panel_reveal_boxes(
+                margin, z + margin * 0.4,
                 pedestal_width - 2 * margin, drawer_height - margin * 0.8,
-                groove=5.0, depth=7.0)
+                groove=5.0, depth=7.0))
             pulls.append(sh.place(
                 sh.bar(pull_length, 6.0, along="x"),
                 width - pedestal_width + (pedestal_width - pull_length) / 2.0,
                 setback, kick + (i + 0.5) * drawer_height))
+        pedestal = sh.cut_boxes(pedestal, grooves)
     pedestal = sh.place(pedestal, width - pedestal_width, setback, 0)
 
     # Modesty panel across the knee hole, set well back from the front.
@@ -361,13 +363,15 @@ def nightstand(params, assets, ctx):
     if drawer_count > 0 and drawer_zone > 0:
         drawer_height = drawer_zone / drawer_count
         margin = min(18.0, width * 0.05)
+        grooves = []
         for i in range(drawer_count):
             z = kick_top + i * drawer_height
-            carcass = sh.panel_reveal(
-                carcass, margin, z + margin * 0.4,
+            grooves.extend(sh.panel_reveal_boxes(
+                margin, z + margin * 0.4,
                 width - 2 * overhang - 2 * margin,
                 drawer_height - margin * 0.8,
-                groove=5.0, depth=7.0)
+                groove=5.0, depth=7.0))
+        carcass = sh.cut_boxes(carcass, grooves)
     # Inset on both sides and at the front; flush at the back, the way a
     # cabinet stands against a wall.
     carcass = sh.place(carcass, overhang, overhang, 0)
@@ -418,16 +422,20 @@ def wardrobe(params, assets, ctx):
 
     # Seams between doors, then a recessed outline on each door face.
     door_width = carcass_width / door_count
-    for i in range(1, door_count):
-        carcass = sh.cut_box(carcass, i * door_width - 2.5, -1.0, kick_height,
-                             5.0, 8.0, carcass_height - kick_height)
     margin = min(45.0, door_width * 0.12)
+    # Seams between doors and the reveal around each: all one boolean.
+    grooves = [
+        (i * door_width - 2.5, -1.0, kick_height,
+         5.0, 8.0, carcass_height - kick_height)
+        for i in range(1, door_count)
+    ]
     for i in range(door_count):
-        carcass = sh.panel_reveal(
-            carcass, i * door_width + margin, kick_height + margin,
+        grooves.extend(sh.panel_reveal_boxes(
+            i * door_width + margin, kick_height + margin,
             door_width - 2 * margin,
             carcass_height - kick_height - 2 * margin,
-            groove=8.0, depth=10.0)
+            groove=8.0, depth=10.0))
+    carcass = sh.cut_boxes(carcass, grooves)
     carcass = sh.place(carcass, overhang, overhang, 0)
 
     cornice = sh.rounded_box(width, depth, cornice_height, radius=10)
@@ -748,30 +756,35 @@ def chest_of_drawers(params, assets, ctx):
     rows = drawer_count + 1
     zone = carcass_height - plinth_height
     pulls = []
+    # Every drawer front's grooves are gathered and subtracted in ONE
+    # boolean at the end - five fronts is twenty boxes, and cutting them
+    # one at a time was most of this part's build time.
+    grooves = []
     if rows > 0 and zone > 0:
         row_height = zone / rows
         # Top row: two half-width drawers side by side.
         half = carcass_width / 2.0
         for i in range(2):
-            box = sh.panel_reveal(
-                box, i * half + margin,
+            grooves.extend(sh.panel_reveal_boxes(
+                i * half + margin,
                 plinth_height + (rows - 1) * row_height + margin,
                 half - 2 * margin, row_height - 2 * margin,
-                groove=5.0, depth=7.0)
+                groove=5.0, depth=7.0))
             pulls.append(sh.place(
                 sh.bar(half * 0.34, 6.0, along="x"),
                 overhang + i * half + half * 0.33, overhang,
                 plinth_height + (rows - 0.5) * row_height))
         # Full-width rows beneath.
         for i in range(drawer_count):
-            box = sh.panel_reveal(
-                box, margin, plinth_height + i * row_height + margin,
+            grooves.extend(sh.panel_reveal_boxes(
+                margin, plinth_height + i * row_height + margin,
                 carcass_width - 2 * margin, row_height - 2 * margin,
-                groove=5.0, depth=7.0)
+                groove=5.0, depth=7.0))
             pulls.append(sh.place(
                 sh.bar(carcass_width * 0.28, 6.0, along="x"),
                 overhang + carcass_width * 0.36, overhang,
                 plinth_height + (i + 0.5) * row_height))
+    box = sh.cut_boxes(box, grooves)
     box = sh.place(box, overhang, overhang, 0)
 
     top = sh.rounded_box(width, depth, top_thickness, radius=8)
@@ -831,11 +844,14 @@ def media_unit(params, assets, ctx):
 
     # Doors on the two end cupboards.
     margin = min(30.0, door_width * 0.1)
+    grooves = []
     for x in (0.0, width - door_width):
-        box = sh.panel_reveal(box, x + margin, plinth_height + margin,
-                              door_width - 2 * margin,
-                              carcass_height - plinth_height - 2 * margin,
-                              groove=5.0, depth=7.0)
+        grooves.extend(sh.panel_reveal_boxes(
+            x + margin, plinth_height + margin,
+            door_width - 2 * margin,
+            carcass_height - plinth_height - 2 * margin,
+            groove=5.0, depth=7.0))
+    box = sh.cut_boxes(box, grooves)
     box = sh.toe_kick(box, width, carcass_depth, kick_height=plinth_height,
                       kick_depth=min(18.0, depth * 0.04),
                       margin=min(20.0, width * 0.02))
