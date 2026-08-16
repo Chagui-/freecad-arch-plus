@@ -17,12 +17,12 @@
 import json
 import os
 
-import partslib_geometry
-import partslib_index
-import partslib_manifest
+from partslib import geometry as partslib_geometry
+from partslib import index as partslib_index
+from partslib import manifest as partslib_manifest
 
-LIBRARY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library")
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LIBRARY_DIR = os.path.join(_ROOT, "partslib", "library")
 
 
 def _scan():
@@ -97,8 +97,7 @@ def test_every_facet_icon_referenced_exists_on_disk():
     # missing renders as a blank card in the category grid with nothing in
     # the console to say why. Four element icons shipped missing exactly
     # this way before the catalogue had parts to surface them.
-    icon_dir = os.path.join(os.path.dirname(LIBRARY_DIR),
-                            "Resources", "icons", "facets")
+    icon_dir = os.path.join(_ROOT, "Resources", "icons", "facets")
     facets = _scan()["facets"]
     missing = []
     for facet, spec in facets.items():
@@ -110,7 +109,7 @@ def test_every_facet_icon_referenced_exists_on_disk():
 
 
 def test_every_placement_host_is_a_known_host():
-    import partslib_placement
+    from partslib import placement as partslib_placement
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
         for label in partslib_manifest.variant_labels(manifest):

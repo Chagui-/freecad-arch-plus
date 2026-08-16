@@ -1,6 +1,6 @@
 import pytest
 
-import partslib_geometry as pg
+from partslib import geometry as pg
 
 
 @pytest.mark.parametrize("symbol", [
@@ -9,7 +9,7 @@ import partslib_geometry as pg
     "asset.single.extra",         # too many parts
     "../evil.run",                # path traversal
     "/abs/path.run",              # absolute path
-    "partslib_builders.asset.single",  # package prefix not allowed
+    "partslib.builders.asset.single",  # package prefix not allowed
 ])
 def test_malformed_builder_symbols_are_rejected(symbol):
     with pytest.raises(ValueError):

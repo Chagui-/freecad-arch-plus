@@ -9,16 +9,12 @@
 
 import math
 import os
-import sys
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-# Make sibling modules (stairsplus_object) importable.
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(os.path.dirname(__file__))     # repo root, for Resources/
 
 ICON = os.path.join(_DIR, "Resources", "icons", "StairsPlus.svg")
 
@@ -72,7 +68,7 @@ def makeStairsPlus(width=1000.0, height=3000.0, length=4000.0,
                    align="Left", structure="Massive",
                    structureThickness=150.0, stringerWidth=120.0):
     """Create a _StairsPlus object configured with the given values."""
-    import stairsplus_object
+    from . import object as stairsplus_object
 
     if FreeCAD.ActiveDocument is None:
         FreeCAD.newDocument()
@@ -98,7 +94,7 @@ class StairsPlusTaskPanel:
         self._building = True          # suppress live updates during widget setup
 
         # Turn flights, sourced from the engine so there's one list to maintain.
-        import stairsplus_object
+        from . import object as stairsplus_object
         self._turnFlights = tuple(stairsplus_object.TURN_INFO)
         self._quarterFlights = tuple(
             f for f, (ang, _s) in stairsplus_object.TURN_INFO.items()
@@ -390,7 +386,7 @@ class StairsPlusTaskPanel:
 
     # --- live preview ------------------------------------------------------
     def _startPreview(self):
-        import stairsplus_object
+        from . import object as stairsplus_object
         if FreeCAD.ActiveDocument is None:
             FreeCAD.newDocument()
         doc = FreeCAD.ActiveDocument

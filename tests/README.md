@@ -7,12 +7,12 @@ the geometry builders run against a stub kernel.
 
 One test file per tool:
 
-- **`test_windows.py`** / **`test_doors.py`** — `WindowParts`/`DoorParts`
-  geometry generation (frame + glass, hinged sashes, **sliding uses a slide
-  mode not an arc**, double sashes, round = two concentric circles), plus the
-  edit round-trip below.
-- **`test_stairs.py`** — the edit round-trip, including the non-trivial
-  break/turn reconstruction in `_loadFromObject`.
+- **`tests/windows/test_windows.py`** / **`tests/doors/test_doors.py`** —
+  `WindowParts`/`DoorParts` geometry generation (frame + glass, hinged
+  sashes, **sliding uses a slide mode not an arc**, double sashes, round =
+  two concentric circles), plus the edit round-trip below.
+- **`tests/stairs/test_stairs.py`** — the edit round-trip, including the
+  non-trivial break/turn reconstruction in `_loadFromObject`.
 
 ## The edit round-trip
 
@@ -28,7 +28,7 @@ style, shape) must survive an edit. Windows and doors persist a JSON spec on
 the object; stairs round-trips through native ArchStairs properties.
 
 Geometry that needs the real kernel (the actual solid built by
-`windowsplus_object` / `doorsplus_object`) is out of scope here — verify that
+`windows.object` / `doors.object`) is out of scope here — verify that
 in FreeCAD.
 
 ## Running

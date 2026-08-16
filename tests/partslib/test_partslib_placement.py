@@ -1,6 +1,6 @@
 import pytest
 
-import partslib_placement as pp
+from partslib import placement as pp
 
 
 def test_missing_placement_block_defaults_to_free():

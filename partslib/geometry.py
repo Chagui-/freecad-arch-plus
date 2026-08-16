@@ -10,15 +10,10 @@
 import importlib
 import os
 import re
-import sys
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+from . import manifest as partslib_manifest
 
-import partslib_manifest
-
-BUILDER_PACKAGE = "partslib_builders"
+BUILDER_PACKAGE = "partslib.builders"
 CACHE_DIRNAME = ".cache"
 
 _SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
@@ -27,7 +22,7 @@ _SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 def resolve_builder(symbol):
     """Turn a "module.function" symbol into a callable.
 
-    Only names inside the partslib_builders package resolve. Anything
+    Only names inside the partslib.builders package resolve. Anything
     path-like, dotted deeper than one level, or absent raises ValueError."""
     if not isinstance(symbol, str) or not _SYMBOL_RE.match(symbol):
         raise ValueError("invalid builder symbol %r" % (symbol,))

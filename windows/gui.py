@@ -17,15 +17,12 @@
 import json
 import math
 import os
-import sys
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(os.path.dirname(__file__))     # repo root, for Resources/
 
 ICON = os.path.join(_DIR, "Resources", "icons", "WindowsPlus.svg")
 
@@ -459,7 +456,7 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
                frameWidth=50.0, sashThk=45.0,
                frameDepth=100.0, swingSide="Left", swingDir="Inward"):
     """Create a _Window-based window object with the given parameters."""
-    import windowsplus_object
+    from . import object as windowsplus_object
 
     if FreeCAD.ActiveDocument is None:
         FreeCAD.newDocument()
@@ -920,7 +917,7 @@ class WindowsPlusTaskPanel:
 
     # ---- live preview -----------------------------------------------------
     def _startPreview(self):
-        import windowsplus_object
+        from . import object as windowsplus_object
 
         if FreeCAD.ActiveDocument is None:
             FreeCAD.newDocument()
@@ -1335,7 +1332,7 @@ class WindowsPlusCommand:
         sketch.Placement = pl
         doc.recompute()
 
-        import windowsplus_object
+        from . import object as windowsplus_object
         window = windowsplus_object.makeWindow(sketch, self.width, self.height,
                                                 wp_list, name="Window")
         if window is None:

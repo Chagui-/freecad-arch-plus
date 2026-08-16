@@ -2,8 +2,8 @@ import sys
 
 import pytest
 
-import partslib_geometry as pg
-import partslib_thumbs as pt
+from partslib import geometry as pg
+from partslib import thumbs as pt
 
 
 @pytest.fixture(autouse=True)

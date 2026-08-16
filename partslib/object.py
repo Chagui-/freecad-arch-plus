@@ -15,18 +15,16 @@
 # "Reload from library" command.
 
 import os
-import sys
 
 import FreeCAD
 import ArchComponent
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(__file__)     # partslib/ itself
+_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
-import partslib_geometry
-import partslib_index
-import partslib_manifest
+from . import geometry as partslib_geometry
+from . import index as partslib_index
+from . import manifest as partslib_manifest
 
 PROP_PART_ID = "PartId"
 PROP_VARIANT = "Variant"
@@ -264,8 +262,8 @@ class _LibraryPart(ArchComponent.Component):
         document, including Variant - so this must not react while
         "Restore" is in obj.State, or opening a file would silently rebuild
         from whatever the library currently contains, exactly what this
-        module's cache semantics forbid. Same guard as doorsplus_object.py
-        and windowsplus_object.py.
+        module's cache semantics forbid. Same guard as doors/object.py
+        and windows/object.py.
 
         Variants are different products (design spec Sec 5.3): switching
         Variant deliberately discards any hand-edited Parameter values by
@@ -291,7 +289,7 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         vobj.Proxy = self
 
     def getIcon(self):
-        return os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
+        return os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
 
     def setEdit(self, vobj, mode):
         return False

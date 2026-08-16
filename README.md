@@ -13,9 +13,10 @@ built-in tools. The Parts Library is different in kind: it is a content
 library and browser rather than a modified copy of a native Arch module,
 inserting single lightweight objects built from bundled part definitions.
 
-<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
+<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
 
 ## Features (Stairs)
+
 
 - **Configuration dialog** (Task panel) with **live preview** — the stair
   renders in the 3D view as you change values, and updates as you edit.
@@ -27,11 +28,12 @@ inserting single lightweight objects built from bundled part definitions.
   steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
   square footprint. Set the turn to a single step for a flat landing instead.
 
-| Configuration dialog | Comfort note & options |
-| --- | --- |
-| <img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="280"> | <img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="280"> |
+<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="100">
 
-<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="360">
+### Configuration dialog
+
+<img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="250">
+<img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="250">
 
 ## Features (Doors)
 
@@ -58,11 +60,13 @@ inserting single lightweight objects built from bundled part definitions.
   **Reposition**: pick a new spot; the door re-orients to the wall face you
   point at, re-snaps to the floor, and re-cuts the host wall.
 
-| Configuration dialog | Opening & panel options |
-| --- | --- |
-| <img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="280"> | <img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="280"> |
+<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100">
 
-<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="360">
+### Configuration dialog
+
+<img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="250">
+<img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="250">
+
 
 ## Features (Windows)
 
@@ -100,11 +104,11 @@ inserting single lightweight objects built from bundled part definitions.
 
 ArchPlus ships a starter catalogue of 31 parametric parts across Kitchen,
 Dining Room, Bedroom, Living Room, Bath Room and Office,
-alongside the faceted vocabulary (`library/facets.json`) and the
+alongside the faceted vocabulary (`partslib/library/facets.json`) and the
 browser/placement machinery. Parts are floor-, wall- or free-hosted, so
 wall cabinets, mirrors and curtains position against a wall the way a
 door does.
-Add further part folders under `library/` (each with its own `part.json`
+Add further part folders under `partslib/library/` (each with its own `part.json`
 manifest, validated against that vocabulary) to extend it; an empty result
 set (e.g. after a search with no matches) shows a plain "nothing here yet"
 message instead of a blank void.
@@ -170,7 +174,7 @@ BIM workbench → **ArchPlus** toolbar:
 
 ## Adding parts to the library
 
-A part is a folder under `library/` containing a `part.json` manifest. The
+A part is a folder under `partslib/library/` containing a `part.json` manifest. The
 scan walks the whole tree, so the intermediate folders (`furniture/`,
 `kitchen/`, `sanitary/`, `fittings/`) are grouping for humans only — nothing
 reads them. Parts are found by their manifest, and grouped in the browser by
@@ -190,7 +194,7 @@ a manufacturer's download, or something too organic to describe in code.
 
 ### 1. Write the manifest
 
-`library/furniture/my-stool/part.json`:
+`partslib/library/furniture/my-stool/part.json`:
 
 ```json
 {
@@ -215,7 +219,7 @@ a manufacturer's download, or something too organic to describe in code.
 
 - `schema`, `id`, `name`, `facets` and `geometry` are required; the rest are
   optional. `id` must be a lowercase slug and unique across the library.
-- Every facet value must already exist in `library/facets.json` — an unknown
+- Every facet value must already exist in `partslib/library/facets.json` — an unknown
   one is a hard error, not a silent pass. `room` is multi-valued (a list);
   `function` and `element` take a single string.
 - `params` become editable properties on the placed object. Types:
@@ -235,7 +239,7 @@ Drop the file in the part's own folder and point the manifest at the stock
 `asset.single` builder. No Python, no new module:
 
 ```
-library/sanitary/geberit-icon/
+partslib/library/sanitary/geberit-icon/
   part.json
   geberit-icon.step        # or .brep — as downloaded
   .cache/                  # generated on first load, gitignored
@@ -283,13 +287,13 @@ content. Expect to be the first to shake it out.
 ### 2b. Write a builder (parametric geometry)
 
 Manifests reference geometry by symbol only — `"module.function"`, resolved
-inside `partslib_builders/`. A manifest can never name a path or an import
+inside `partslib/builders/`. A manifest can never name a path or an import
 target outside that package, which is what stops a manifest from executing
 arbitrary code. Adding a new module there is enough; there is no registry to
 update.
 
 ```python
-# partslib_builders/furniture.py
+# partslib/builders/furniture.py
 from . import _shapes as sh
 
 def bar_stool(params, assets, ctx):
@@ -354,7 +358,7 @@ render:
 uv run --with pytest --no-project pytest tests/ -q
 ```
 
-`tests/test_library_content.py` scans the real shipped library, so a
+`tests/partslib/test_library_content.py` scans the real shipped library, so a
 malformed manifest, an unknown facet value, an unresolvable builder symbol,
 an unknown placement host or a facet icon missing from disk all fail here
 rather than reaching a user as an empty panel.
@@ -381,7 +385,7 @@ that survives into the model a consultant receives.
 3. the `ifcType` on its `function` facet value,
 4. `"Building Element Proxy"`.
 
-So in practice you set it **once per element** in `library/facets.json` and
+So in practice you set it **once per element** in `partslib/library/facets.json` and
 never think about it again. Override on the part only when one element covers
 two IFC types — a browse category like "Bathtubs & Showers" grouping an
 `IfcSanitaryTerminal` with something else.
@@ -408,7 +412,7 @@ free to disagree with the geometry.
 ### Adding a new facet value
 
 To use a room, function or element the vocabulary doesn't have yet, add it
-to `library/facets.json` *and* drop a matching 24×24 line-art SVG into
+to `partslib/library/facets.json` *and* drop a matching 24×24 line-art SVG into
 `Resources/icons/facets/` using `stroke="currentColor"` so it works in both
 themes. A test asserts every referenced icon exists — a missing one renders
 as a blank card with nothing in the console to explain why.

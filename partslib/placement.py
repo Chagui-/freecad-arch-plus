@@ -9,7 +9,7 @@
 # usually turns expensive.
 #
 # The orientation half is a generalisation of _doorPlacement in
-# doorsplus_gui.py, which already solves picked-face orientation and base-Z
+# doors/gui.py, which already solves picked-face orientation and base-Z
 # snapping. A part's own origin is normalised at build time
 # (partslib_geometry._Context.normalize), so nothing here needs to know about
 # a vendor asset's arbitrary origin.

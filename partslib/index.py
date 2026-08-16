@@ -10,7 +10,7 @@
 import json
 import os
 
-import partslib_manifest as pm
+from . import manifest as pm
 
 FACETS_FILENAME = "facets.json"
 MANIFEST_FILENAME = "part.json"

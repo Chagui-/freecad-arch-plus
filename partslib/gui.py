@@ -21,19 +21,17 @@
 
 import os
 import re
-import sys
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(__file__)     # partslib/ itself
+_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
-import partslib_index
-import partslib_theme
-import partslib_thumbs
+from . import index as partslib_index
+from . import theme as partslib_theme
+from . import thumbs as partslib_thumbs
 
 # partslib_object is imported lazily, inside the functions that need it
 # (refresh(), _onPlace()) rather than here at module scope. It imports
@@ -42,10 +40,10 @@ import partslib_thumbs
 # except that only prints to the Report view - if ArchComponent were not yet
 # importable at that point, the import would raise, appendToolbar() would
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
-# Matches windowsplus_gui.py's lazy `import windowsplus_object`.
+# Matches windows/gui.py's lazy `import windowsplus_object`.
 
-ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
-_FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
+ICON = os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
+_FACET_ICON_DIR = os.path.join(_ROOT, "Resources", "icons", "facets")
 
 # Qt class name of FreeCAD's 3D view, used both to ask Gui.activateView for
 # one and to find its MDI sub-window.
@@ -475,9 +473,9 @@ class PartsLibraryPanel(QtGui.QWidget):
     # -- data ------------------------------------------------------------
     def refresh(self):
         """Rescan the library and rebuild both screens."""
-        import partslib_object
+        from . import object as partslib_object
 
-        import partslib_geometry
+        from . import geometry as partslib_geometry
 
         timer = _Timer("refreshing the parts library")
         # Reopening (or explicitly refreshing) is the user asking again, so
@@ -547,7 +545,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         _onPlace(): importing it at module scope pulls in ArchComponent
         during the BIM workbench's Initialize() and previously took out the
         whole toolbar."""
-        import partslib_object
+        from . import object as partslib_object
 
         layout = self.categoriesEmptyState.layout()
         if layout is None:
@@ -918,7 +916,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         pane - the grid is not variant-specific. Must never raise: a bad
         manifest or a failed render must still leave the entry's card
         visible by name, just with no icon."""
-        import partslib_manifest
+        from . import manifest as partslib_manifest
 
         try:
             manifest = partslib_manifest.load_manifest(entry["path"])
@@ -1059,7 +1057,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     def _resolvedSelection(self):
         """(entry, resolved manifest) for the current selection, or None."""
-        import partslib_manifest
+        from . import manifest as partslib_manifest
 
         entry = self.currentEntry()
         if entry is None:
@@ -1070,7 +1068,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     def _refreshPreview(self):
         """Build the selected variant and show it with its measurements."""
-        import partslib_geometry
+        from . import geometry as partslib_geometry
 
         selection = self._resolvedSelection()
         if selection is None:
@@ -1195,7 +1193,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         This used to scan mdi.subWindowList() for a sub-window whose widget
         had a `getSceneGraph` attribute, borrowing the duck-type check
-        doorsplus_gui.py applies to the active window. It could never match:
+        doors/gui.py applies to the active window. It could never match:
         getSceneGraph lives on FreeCAD's View3DInventorPy - the object Gui
         hands back as ActiveView - and NOT on the QWidget that PySide
         returns from QMdiSubWindow.widget(), where PySide only knows the Qt
@@ -1255,9 +1253,9 @@ class PartsLibraryPanel(QtGui.QWidget):
                 "view before placing a library part.\n")
             return
 
-        import partslib_geometry
-        import partslib_object
-        import partslib_placement
+        from . import geometry as partslib_geometry
+        from . import object as partslib_object
+        from . import placement as partslib_placement
         import draftguitools.gui_trackers as DraftTrackers
 
         selection = self._resolvedSelection()
@@ -1275,7 +1273,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         repeat = self.repeatCheck.isChecked()
 
         # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
-        # doorsplus_gui.py:887): a rough box preview of the part's footprint
+        # doors/gui.py:887): a rough box preview of the part's footprint
         # that follows the cursor while picking, sized from the built
         # shape's measured bounding box. It stays ON across every repeat of
         # the placement loop below and is finalized EXACTLY ONCE, when the
@@ -1310,7 +1308,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
         # back on click, exactly as repositionDoor does
-        # (doorsplus_gui.py:922-934).
+        # (doors/gui.py:922-934).
         doc = FreeCAD.ActiveDocument
         state = {"face": None, "placed": False}
 
@@ -1444,7 +1442,7 @@ class PartsLibraryCommand:
 
     def IsActive(self):
         # Browsing the catalogue never needs a document - only placing does,
-        # and _onPlace handles that case itself (stairsplus_gui.py:488
+        # and _onPlace handles that case itself (stairs/gui.py:488
         # follows the same permissive pattern).
         return True
 
