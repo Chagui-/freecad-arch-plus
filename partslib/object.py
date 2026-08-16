@@ -15,18 +15,16 @@
 # "Reload from library" command.
 
 import os
-import sys
 
 import FreeCAD
 import ArchComponent
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(__file__)     # partslib/ itself
+_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
-import partslib_geometry
-import partslib_index
-import partslib_manifest
+from . import geometry as partslib_geometry
+from . import index as partslib_index
+from . import manifest as partslib_manifest
 
 PROP_PART_ID = "PartId"
 PROP_VARIANT = "Variant"
@@ -291,7 +289,7 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         vobj.Proxy = self
 
     def getIcon(self):
-        return os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
+        return os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
 
     def setEdit(self, vobj, mode):
         return False

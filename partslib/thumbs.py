@@ -358,7 +358,7 @@ def ensure_thumbnail(entry, resolved):
     step (real Part booleans/fillets) is exactly the expensive half of this,
     so a part already known to fail must skip it entirely, not just skip
     the render call."""
-    import partslib_geometry
+    from . import geometry as partslib_geometry
 
     path = thumbnail_path(entry["dir"])
     if os.path.exists(path):

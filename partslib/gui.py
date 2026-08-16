@@ -21,19 +21,17 @@
 
 import os
 import re
-import sys
 
 import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(__file__)
-if _DIR not in sys.path:
-    sys.path.append(_DIR)
+_DIR = os.path.dirname(__file__)     # partslib/ itself
+_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
-import partslib_index
-import partslib_theme
-import partslib_thumbs
+from . import index as partslib_index
+from . import theme as partslib_theme
+from . import thumbs as partslib_thumbs
 
 # partslib_object is imported lazily, inside the functions that need it
 # (refresh(), _onPlace()) rather than here at module scope. It imports
@@ -44,8 +42,8 @@ import partslib_thumbs
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
 # Matches windowsplus_gui.py's lazy `import windowsplus_object`.
 
-ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
-_FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
+ICON = os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
+_FACET_ICON_DIR = os.path.join(_ROOT, "Resources", "icons", "facets")
 
 # Qt class name of FreeCAD's 3D view, used both to ask Gui.activateView for
 # one and to find its MDI sub-window.
@@ -475,9 +473,9 @@ class PartsLibraryPanel(QtGui.QWidget):
     # -- data ------------------------------------------------------------
     def refresh(self):
         """Rescan the library and rebuild both screens."""
-        import partslib_object
+        from . import object as partslib_object
 
-        import partslib_geometry
+        from . import geometry as partslib_geometry
 
         timer = _Timer("refreshing the parts library")
         # Reopening (or explicitly refreshing) is the user asking again, so
@@ -547,7 +545,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         _onPlace(): importing it at module scope pulls in ArchComponent
         during the BIM workbench's Initialize() and previously took out the
         whole toolbar."""
-        import partslib_object
+        from . import object as partslib_object
 
         layout = self.categoriesEmptyState.layout()
         if layout is None:
@@ -918,7 +916,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         pane - the grid is not variant-specific. Must never raise: a bad
         manifest or a failed render must still leave the entry's card
         visible by name, just with no icon."""
-        import partslib_manifest
+        from . import manifest as partslib_manifest
 
         try:
             manifest = partslib_manifest.load_manifest(entry["path"])
@@ -1059,7 +1057,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     def _resolvedSelection(self):
         """(entry, resolved manifest) for the current selection, or None."""
-        import partslib_manifest
+        from . import manifest as partslib_manifest
 
         entry = self.currentEntry()
         if entry is None:
@@ -1070,7 +1068,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     def _refreshPreview(self):
         """Build the selected variant and show it with its measurements."""
-        import partslib_geometry
+        from . import geometry as partslib_geometry
 
         selection = self._resolvedSelection()
         if selection is None:
@@ -1255,9 +1253,9 @@ class PartsLibraryPanel(QtGui.QWidget):
                 "view before placing a library part.\n")
             return
 
-        import partslib_geometry
-        import partslib_object
-        import partslib_placement
+        from . import geometry as partslib_geometry
+        from . import object as partslib_object
+        from . import placement as partslib_placement
         import draftguitools.gui_trackers as DraftTrackers
 
         selection = self._resolvedSelection()
