@@ -28,7 +28,7 @@ style, shape) must survive an edit. Windows and doors persist a JSON spec on
 the object; stairs round-trips through native ArchStairs properties.
 
 Geometry that needs the real kernel (the actual solid built by
-`windowsplus_object` / `doorsplus_object`) is out of scope here — verify that
+`windows.object` / `doors.object`) is out of scope here — verify that
 in FreeCAD.
 
 ## Running
