@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Verifies the REAL bundled seed library (library/ at the repo root), not a
+# Verifies the REAL bundled seed library (tools/partslib/library/), not a
 # tmp_path fixture. A malformed shipped manifest would otherwise reach a user
 # as a silently empty panel with a console error nobody reads, so this test
 # is the headless substitute for eyeballing the panel inside FreeCAD.
@@ -17,12 +17,12 @@
 import json
 import os
 
-from partslib import geometry as partslib_geometry
-from partslib import index as partslib_index
-from partslib import manifest as partslib_manifest
+from tools.partslib import geometry as partslib_geometry
+from tools.partslib import index as partslib_index
+from tools.partslib import manifest as partslib_manifest
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LIBRARY_DIR = os.path.join(_ROOT, "partslib", "library")
+_PARTSLIB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LIBRARY_DIR = os.path.join(_PARTSLIB, "library")
 
 
 def _scan():
@@ -97,7 +97,7 @@ def test_every_facet_icon_referenced_exists_on_disk():
     # missing renders as a blank card in the category grid with nothing in
     # the console to say why. Four element icons shipped missing exactly
     # this way before the catalogue had parts to surface them.
-    icon_dir = os.path.join(_ROOT, "Resources", "icons", "facets")
+    icon_dir = os.path.join(_PARTSLIB, "resources", "icons", "facets")
     facets = _scan()["facets"]
     missing = []
     for facet, spec in facets.items():
@@ -109,7 +109,7 @@ def test_every_facet_icon_referenced_exists_on_disk():
 
 
 def test_every_placement_host_is_a_known_host():
-    from partslib import placement as partslib_placement
+    from tools.partslib import placement as partslib_placement
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
         for label in partslib_manifest.variant_labels(manifest):

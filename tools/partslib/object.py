@@ -20,7 +20,6 @@ import FreeCAD
 import ArchComponent
 
 _DIR = os.path.dirname(__file__)     # partslib/ itself
-_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
 from . import geometry as partslib_geometry
 from . import index as partslib_index
@@ -289,7 +288,7 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         vobj.Proxy = self
 
     def getIcon(self):
-        return os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
+        return os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
 
     def setEdit(self, vobj, mode):
         return False

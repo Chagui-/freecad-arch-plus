@@ -1,6 +1,6 @@
 import pytest
 
-from partslib import geometry as pg
+from tools.partslib import geometry as pg
 
 
 @pytest.mark.parametrize("symbol", [

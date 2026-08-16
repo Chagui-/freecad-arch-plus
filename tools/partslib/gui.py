@@ -27,7 +27,6 @@ import FreeCADGui
 from PySide import QtGui, QtCore
 
 _DIR = os.path.dirname(__file__)     # partslib/ itself
-_ROOT = os.path.dirname(_DIR)        # repo root, for the shared Resources/
 
 from . import index as partslib_index
 from . import theme as partslib_theme
@@ -42,8 +41,8 @@ from . import thumbs as partslib_thumbs
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
 # Matches windows/gui.py's lazy `import windowsplus_object`.
 
-ICON = os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
-_FACET_ICON_DIR = os.path.join(_ROOT, "Resources", "icons", "facets")
+ICON = os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
+_FACET_ICON_DIR = os.path.join(_DIR, "resources", "icons", "facets")
 
 # Qt class name of FreeCAD's 3D view, used both to ask Gui.activateView for
 # one and to find its MDI sub-window.
@@ -500,7 +499,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         timer.report("%d parts" % (len(self._entries),))
 
     def _facetIconPath(self, iconName):
-        """Resolve a bare facet icon filename under Resources/icons/facets/.
+        """Resolve a bare facet icon filename under resources/icons/facets/.
 
         A missing file must degrade to no icon, never an error."""
         if not iconName:

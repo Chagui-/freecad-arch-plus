@@ -1,7 +1,7 @@
 import json
 import os
 
-from partslib import index as px
+from tools.partslib import index as px
 
 FACETS = {
     "function": {"multi": False, "values": {"Sanitary": {}, "Seating": {}}},

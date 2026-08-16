@@ -1,7 +1,7 @@
 import ast
 import inspect
 
-from partslib import theme as pt
+from tools.partslib import theme as pt
 
 
 def test_core_module_does_not_import_freecad_at_module_scope():
