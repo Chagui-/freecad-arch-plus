@@ -2850,7 +2850,7 @@ class _ViewProviderStairsPlus(ArchComponent.ViewProviderComponent):
         # Don't stack panels if one is already open.
         if FreeCADGui.Control.activeDialog():
             return False
-        import stairsplus_gui
+        from . import gui as stairsplus_gui
         FreeCADGui.Control.showDialog(
             stairsplus_gui.StairsPlusTaskPanel(vobj.Object))
         return True
