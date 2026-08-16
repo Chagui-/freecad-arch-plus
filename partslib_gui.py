@@ -1013,15 +1013,38 @@ class PartsLibraryPanel(QtGui.QWidget):
                 % (entry["id"], label, exc))
             return None
 
-    def _findSceneGraphSubWindow(self, mdi):
-        """The MDI sub-window whose widget is a real 3D view - the same
-        `getSceneGraph` attribute check doorsplus_gui.py:992 already uses to
-        detect one, just applied across every open sub-window instead of
-        only the active one."""
-        for sub in mdi.subWindowList():
-            if hasattr(sub.widget(), "getSceneGraph"):
-                return sub
-        return None
+    def _activate3DView(self):
+        """Make a 3D view the active window. True if one is now active.
+
+        The Snapper needs an ACTIVE 3D view, and the library panel is itself
+        an MDI sub-window - so simply opening the library deactivates
+        whatever 3D view the user was looking at.
+
+        This used to scan mdi.subWindowList() for a sub-window whose widget
+        had a `getSceneGraph` attribute, borrowing the duck-type check
+        doorsplus_gui.py applies to the active window. It could never match:
+        getSceneGraph lives on FreeCAD's View3DInventorPy - the object Gui
+        hands back as ActiveView - and NOT on the QWidget that PySide
+        returns from QMdiSubWindow.widget(), where PySide only knows the Qt
+        base class. The check was being asked of an object that had no way
+        to answer it, so placing a part always reported "no 3D view is
+        open" even with one open right beside the panel.
+
+        Gui.activateView is FreeCAD's own API for this (its PartDesign test
+        suite uses the identical call), and letting it create a view when
+        the document has none is friendlier than refusing to place."""
+        try:
+            FreeCADGui.activateView("Gui::View3DInventor", True)
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot activate a 3D view: %s\n" % (exc,))
+        try:
+            # Ask the view object itself, which is where getSceneGraph
+            # actually lives.
+            return hasattr(FreeCADGui.ActiveDocument.ActiveView,
+                           "getSceneGraph")
+        except Exception:
+            return False
 
     def _onPlace(self, *args):
         """Activate a 3D view, pick a point, place the part, and repeat.
@@ -1039,15 +1062,12 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         mainWindow = FreeCADGui.getMainWindow()
         mdi = mainWindow.findChild(QtGui.QMdiArea)
-        sceneSubWindow = self._findSceneGraphSubWindow(mdi) if mdi else None
-        if sceneSubWindow is None:
+        librarySubWindow = self.parentWidget()
+        if not self._activate3DView():
             FreeCAD.Console.PrintError(
                 "ArchPlus: no 3D view is open - open a document with a 3D "
                 "view before placing a library part.\n")
             return
-
-        librarySubWindow = self.parentWidget()
-        mdi.setActiveSubWindow(sceneSubWindow)
 
         import partslib_geometry
         import partslib_object
@@ -1144,7 +1164,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                     # library tab they started from.
                     if tracker is not None:
                         tracker.finalize()
-                    if librarySubWindow is not None:
+                    if mdi is not None and librarySubWindow is not None:
                         mdi.setActiveSubWindow(librarySubWindow)
 
         FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
