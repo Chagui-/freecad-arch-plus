@@ -1,30 +1,51 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # Furniture builders - pure generation, no assets. Every shape is boxes and
-# cone-frustum legs composed via the helpers in _shapes.py: rounded corners,
-# softened cushion-like top edges, tapered legs, a toe-kick recess on case
-# goods. This is deliberately primitive massing, not sculpted furniture - the
-# goal is a floor-plan/BIM-usable block that reads as "table" or "wardrobe"
+# square posts composed via the helpers in _shapes.py: rounded corners,
+# softened cushion edges, panel reveals, a toe-kick recess on case goods.
+# This is deliberately primitive massing, not sculpted furniture - the goal
+# is a floor-plan/BIM-usable block that reads as "table" or "wardrobe"
 # rather than "box", not a showroom model.
 #
-# `table()` is reused by three manifests (dining table, coffee table, desk) -
-# one builder serving several catalogue entries is the reuse the design spec
-# calls out (Sec 6.1/6.4): the parts differ in their default dimensions and
-# metadata, not in their geometry family.
+# Two rules learned from looking at the renders rather than the code:
+#
+# 1. SQUARE, NOT ROUND. Legs and posts are square section. A 36mm cylinder
+#    renders as a single line with no shading to read, so a chair built on
+#    turned legs came out looking like wire under a floating plank.
+#
+# 2. SOLID, NOT SCATTERED. Where a real object is one soft mass - a sofa -
+#    it is modelled as one mass with seams cut into it, not as separate
+#    floating pieces. Building a sofa's cushions as individual solids with
+#    air around them made it read worse, not better.
+#
+# `table()` is reused by two manifests (dining table, coffee table) - one
+# builder serving several catalogue entries is the reuse the design spec
+# calls out (Sec 6.1/6.4): those parts differ in their default dimensions
+# and metadata, not in their geometry family. A desk is NOT among them; it
+# has a knee hole, a pedestal and a modesty panel, so it gets `desk()`.
 
 from . import _shapes as sh
 
 
 def table(params, assets, ctx):
-    """A rectangular top on 4 tapered legs, tied by an apron frame.
+    """A rectangular top on 4 square legs, tied by an apron frame.
 
     Params: Width, Depth, Height, TopThickness, LegRadius, ApronHeight,
-    ApronThickness, ApronInset (mm).
+    ApronThickness, ApronInset, ShelfHeight (mm).
+
+    Legs are square posts, not turned cylinders: a thin cylinder renders as
+    a wire at thumbnail size, while a square post of the same nominal size
+    keeps a lit face and a shadowed one. `LegRadius` still drives the size
+    (it is the half-width of the post) so existing manifests need no edit.
 
     The apron is what separates a table from a slab on sticks. It is built
     as four rails rather than one solid block: a block under the top just
     reads as a thicker top, whereas an open frame leaves the daylight
-    between the legs that the eye actually uses to read the shape."""
+    between the legs that the eye actually uses to read the shape.
+
+    `ShelfHeight` adds a lower shelf between the legs when non-zero - the
+    detail that most distinguishes a coffee table from a scaled-down dining
+    table, which is otherwise the same object."""
     width = float(params.get("Width", 1600))
     depth = float(params.get("Depth", 900))
     height = float(params.get("Height", 750))
@@ -36,50 +57,140 @@ def table(params, assets, ctx):
                        leg_height * 0.35)
     apron_thickness = float(params.get("ApronThickness", 22))
     apron_inset = float(params.get("ApronInset", 45))
+    shelf_height = float(params.get("ShelfHeight", 0))
 
     top = sh.rounded_box(width, depth, top_thickness, radius=20)
     top = sh.soften_top(top, 5)
     top = sh.soften_top(top, 3, z=0)
     top = sh.place(top, 0, 0, leg_height)
 
-    inset_x = min(leg_radius * 1.4 + 20, width / 2.0 - 5)
-    inset_y = min(leg_radius * 1.4 + 20, depth / 2.0 - 5)
+    leg_size = leg_radius * 2.0
+    inset = min(apron_inset, width / 2.0 - leg_size, depth / 2.0 - leg_size)
+    inset = max(inset, 0.0)
     legs = [
-        sh.place(sh.tapered_leg(leg_height, leg_radius * 0.65, leg_radius),
-                  x, y, 0)
-        for x, y in ((inset_x, inset_y), (width - inset_x, inset_y),
-                     (inset_x, depth - inset_y),
-                     (width - inset_x, depth - inset_y))
+        sh.place(sh.square_leg(leg_height, leg_size), x, y, 0)
+        for x, y in ((inset, inset),
+                     (width - inset - leg_size, inset),
+                     (inset, depth - inset - leg_size),
+                     (width - inset - leg_size, depth - inset - leg_size))
     ]
 
     rails = []
     apron_z = leg_height - apron_height
-    rail_length = width - 2 * apron_inset
-    rail_depth = depth - 2 * apron_inset
+    rail_length = width - 2 * inset
+    rail_depth = depth - 2 * inset
     if apron_height > 0 and rail_length > 0 and rail_depth > 0:
-        for y in (apron_inset, depth - apron_inset - apron_thickness):
+        for y in (inset, depth - inset - apron_thickness):
             rails.append(sh.place(
                 sh.rounded_box(rail_length, apron_thickness, apron_height),
-                apron_inset, y, apron_z))
-        for x in (apron_inset, width - apron_inset - apron_thickness):
+                inset, y, apron_z))
+        for x in (inset, width - inset - apron_thickness):
             rails.append(sh.place(
                 sh.rounded_box(apron_thickness, rail_depth, apron_height),
-                x, apron_inset, apron_z))
+                x, inset, apron_z))
 
-    return sh.fuse_all([top] + legs + rails)
+    shelf = []
+    if shelf_height > 0 and rail_length > 0 and rail_depth > 0:
+        shelf_thickness = min(22.0, top_thickness * 0.8)
+        shelf.append(sh.place(
+            sh.rounded_box(rail_length, rail_depth, shelf_thickness,
+                           radius=10),
+            inset, inset, min(shelf_height, leg_height - shelf_thickness)))
+
+    return sh.fuse_all([top] + legs + rails + shelf)
+
+
+def desk(params, assets, ctx):
+    """An office desk: a top carried by a drawer pedestal at one end and a
+    panel end at the other, closed at the back by a modesty panel.
+
+    Params: Width, Depth, Height, TopThickness, PedestalWidth,
+    PanelThickness (mm), DrawerCount (integer).
+
+    Deliberately NOT `table()` with different numbers. A desk you sit at to
+    work is a different object from a dining table: it has a knee hole with
+    something solid either side of it, storage on one side, and a screen
+    across the back. Four legs and an apron is the one arrangement it never
+    has."""
+    width = float(params.get("Width", 1400))
+    depth = float(params.get("Depth", 700))
+    height = float(params.get("Height", 750))
+    top_thickness = min(float(params.get("TopThickness", 30)), height - 10)
+    pedestal_width = float(params.get("PedestalWidth", 400))
+    panel_thickness = float(params.get("PanelThickness", 30))
+    drawer_count = max(int(params.get("DrawerCount", 3)), 0)
+
+    under_height = max(height - top_thickness, 10.0)
+    pedestal_width = min(pedestal_width, width * 0.4)
+    # Both supports are set back from the front edge, so the top overhangs
+    # them and the desk does not read as a solid block.
+    setback = min(30.0, depth * 0.05)
+    support_depth = depth - setback
+    kick = min(60.0, under_height * 0.09)
+
+    top = sh.rounded_box(width, depth, top_thickness, radius=12)
+    top = sh.soften_top(top, 5)
+    top = sh.soften_top(top, 4, z=0)
+    top = sh.place(top, 0, 0, under_height)
+
+    # Panel end (left): a solid gable, the way a desk actually stands.
+    panel = sh.rounded_box(panel_thickness, support_depth, under_height,
+                           radius=4)
+    panel = sh.toe_kick(panel, panel_thickness, support_depth,
+                         kick_height=kick, kick_depth=min(20.0, depth * 0.03),
+                         margin=0.0)
+    panel = sh.place(panel, 0, setback, 0)
+
+    # Pedestal (right): a carcass of drawers.
+    pedestal = sh.rounded_box(pedestal_width, support_depth, under_height,
+                              radius=6)
+    pedestal = sh.toe_kick(pedestal, pedestal_width, support_depth,
+                            kick_height=kick,
+                            kick_depth=min(25.0, depth * 0.04),
+                            margin=min(15.0, pedestal_width * 0.05))
+    pulls = []
+    if drawer_count > 0:
+        zone = under_height - kick
+        drawer_height = zone / drawer_count
+        margin = min(16.0, pedestal_width * 0.05)
+        pull_length = pedestal_width * 0.42
+        for i in range(drawer_count):
+            z = kick + i * drawer_height
+            pedestal = sh.panel_reveal(
+                pedestal, margin, z + margin * 0.4,
+                pedestal_width - 2 * margin, drawer_height - margin * 0.8,
+                groove=5.0, depth=7.0)
+            pulls.append(sh.place(
+                sh.bar(pull_length, 6.0, along="x"),
+                width - pedestal_width + (pedestal_width - pull_length) / 2.0,
+                setback, kick + (i + 0.5) * drawer_height))
+    pedestal = sh.place(pedestal, width - pedestal_width, setback, 0)
+
+    # Modesty panel across the knee hole, set well back from the front.
+    knee_width = width - panel_thickness - pedestal_width
+    modesty = []
+    if knee_width > 0:
+        modesty_height = under_height * 0.55
+        modesty.append(sh.place(
+            sh.rounded_box(knee_width, panel_thickness * 0.6,
+                           modesty_height, radius=3),
+            panel_thickness, depth - panel_thickness * 0.6,
+            under_height - modesty_height))
+
+    return sh.fuse_all([top, panel, pedestal] + modesty + pulls)
 
 
 def chair(params, assets, ctx):
-    """A ladder-back dining chair: cushioned seat, two rear posts carrying a
-    top rail and a mid rail, four legs and an H-stretcher.
+    """A dining chair: cushioned seat on four square legs, the rear pair
+    running up as back posts carrying two broad rails.
 
     Params: Width, Depth, SeatHeight, SeatThickness, BackHeight,
     BackThickness, LegRadius (mm).
 
-    The backrest is a frame, not a slab. Rear legs run all the way up to
-    become the back posts - which is both how the joinery actually works and
-    what gives the silhouette its open, unmistakably chair-shaped gap
-    between seat and top rail."""
+    Everything here is square section and deliberately chunky. The first
+    version used thin cylindrical legs and a thin-slatted back, and it
+    rendered as a wire frame under a floating plank - at thumbnail size a
+    round leg 36 mm across is a single line with no shading to read."""
     width = float(params.get("Width", 450))
     depth = float(params.get("Depth", 450))
     seat_height = float(params.get("SeatHeight", 450))
@@ -89,60 +200,65 @@ def chair(params, assets, ctx):
     leg_radius = float(params.get("LegRadius", 18))
 
     seat_top = seat_height + seat_thickness
-    post_width = min(back_thickness, leg_radius * 2.4)
-    inset_x = min(leg_radius * 1.6 + 15, width / 2.0 - 5)
-    inset_y = min(leg_radius * 1.6 + 15, depth / 2.0 - 5)
+    # Posts are sized off LegRadius but made substantial: the first attempt
+    # used thin cylinders and the chair rendered as a wire frame under a
+    # floating plank. A square post of the same nominal size holds its own
+    # against the seat slab.
+    post = max(leg_radius * 2.2, 34.0)
+    inset = min(12.0, width * 0.04)
+
+    # Legs sit just inside the seat's own footprint, so the seat reads as
+    # resting ON the frame rather than hovering over four separate sticks.
+    front_y = inset
+    rear_y = depth - inset - post
+    left_x = inset
+    right_x = width - inset - post
+
+    front_legs = [
+        sh.place(sh.square_leg(seat_height, post), x, front_y, 0)
+        for x in (left_x, right_x)
+    ]
+    # Rear legs run the full height and become the back posts.
+    posts = [
+        sh.place(sh.square_leg(seat_top + back_height, post), x, rear_y, 0)
+        for x in (left_x, right_x)
+    ]
 
     seat = sh.cushion(width, depth, seat_thickness,
-                      radius=min(18, width * 0.06), edge=seat_thickness * 0.3)
+                      radius=min(18, width * 0.05),
+                      edge=seat_thickness * 0.28)
     seat = sh.place(seat, 0, 0, seat_height)
 
-    # Front legs stop at the seat; rear legs continue as the back posts.
-    front_legs = [
-        sh.place(sh.tapered_leg(seat_height, leg_radius * 0.65, leg_radius),
-                  x, inset_y, 0)
-        for x in (inset_x, width - inset_x)
-    ]
-    post_x = [inset_x - post_width / 2.0, width - inset_x - post_width / 2.0]
-    post_y = depth - inset_y - post_width / 2.0
-    posts = [
-        sh.place(sh.rounded_box(post_width, post_width,
-                                 seat_top + back_height, radius=4),
-                  x, post_y, 0)
-        for x in post_x
-    ]
-
-    # Rails span between the posts: a top rail at the head and a mid rail
-    # low enough to leave the gap that reads as a ladder back.
-    rail_span = width - 2 * inset_x + post_width
-    rail_x = post_x[0]
-    rail_thickness = max(post_width * 0.7, 12.0)
-    top_rail_height = max(back_height * 0.22, 40.0)
+    # Two broad rails, not thin slats - at thumbnail size a wide rail with
+    # a gap under it reads as a chair back, while thin slats disappear.
+    rail_span = right_x + post - left_x
+    rail_thickness = max(back_thickness * 0.65, post * 0.8)
+    rail_y = rear_y + (post - rail_thickness) / 2.0
+    top_rail_height = max(back_height * 0.30, 70.0)
+    mid_rail_height = top_rail_height * 0.72
     rails = [
-        sh.place(sh.cushion(rail_span, rail_thickness, top_rail_height,
-                            radius=8, edge=6),
-                  rail_x, post_y + (post_width - rail_thickness) / 2.0,
-                  seat_top + back_height - top_rail_height),
-        sh.place(sh.rounded_box(rail_span, rail_thickness,
-                                 top_rail_height * 0.6, radius=6),
-                  rail_x, post_y + (post_width - rail_thickness) / 2.0,
-                  seat_top + back_height * 0.42),
+        sh.place(sh.rounded_box(rail_span, rail_thickness, top_rail_height,
+                                 radius=8),
+                  left_x, rail_y, seat_top + back_height - top_rail_height),
+        sh.place(sh.rounded_box(rail_span, rail_thickness, mid_rail_height,
+                                 radius=8),
+                  left_x, rail_y, seat_top + back_height * 0.30),
     ]
 
-    # H-stretcher: a rod down each side, tied by one across the middle.
-    stretcher_z = seat_height * 0.28
-    stretcher_radius = max(leg_radius * 0.45, 5.0)
-    side_length = depth - 2 * inset_y
+    # Side stretchers only, square section to match the legs. The old
+    # cylindrical H-stretcher added a third kind of line to a shape that
+    # only needs one.
+    stretcher_z = seat_height * 0.26
+    stretcher_size = max(post * 0.6, 16.0)
+    stretcher_length = rear_y + post - front_y
     stretchers = [
-        sh.place(sh.bar(side_length, stretcher_radius, along="y"),
-                  x, inset_y, stretcher_z)
-        for x in (inset_x, width - inset_x)
+        sh.place(sh.rounded_box(stretcher_size, stretcher_length,
+                                 stretcher_size, radius=3),
+                  x + (post - stretcher_size) / 2.0, front_y, stretcher_z)
+        for x in (left_x, right_x)
     ]
-    stretchers.append(sh.place(
-        sh.bar(width - 2 * inset_x, stretcher_radius, along="x"),
-        inset_x, depth / 2.0, stretcher_z))
 
-    return sh.fuse_all([seat] + front_legs + posts + rails + stretchers)
+    return sh.fuse_all(front_legs + posts + [seat] + rails + stretchers)
 
 
 def bed(params, assets, ctx):
@@ -334,16 +450,19 @@ def wardrobe(params, assets, ctx):
 
 
 def sofa(params, assets, ctx):
-    """A sofa with separate seat and back cushions, rolled arms and feet.
+    """A sofa: solid base, back and arms, with cushion divisions cut in.
 
     Params: Width, Depth, SeatHeight, BackHeight, BackThickness, ArmWidth,
     ArmHeight (mm), SeatCount (integer).
 
-    Cushions are the whole point of this one. A sofa's silhouette is
-    read from the gaps - between the cushions, under the arms, above the
-    seat - so the geometry here is deliberately several separate pieces
-    with air between them rather than one fused mass. The frame is dropped
-    to a plinth on feet so the sofa does not look poured onto the floor."""
+    This is deliberately close to simple massing. An earlier version built
+    the cushions as separate floating solids with air around them, and it
+    read worse, not better: the seat cushions flattened into loose tiles
+    and the heavily-filleted arms turned into sausages laid on a slab. A
+    sofa is a large soft mass, so the mass is modelled solid and the
+    cushions are suggested by seams cut into it - the same trick the
+    wardrobe uses for its doors. Only the feet are separate, because
+    lifting the frame off the floor is what stops it looking poured."""
     width = float(params.get("Width", 1900))
     depth = float(params.get("Depth", 900))
     seat_height = float(params.get("SeatHeight", 420))
@@ -354,73 +473,59 @@ def sofa(params, assets, ctx):
     seat_count = max(int(params.get("SeatCount", 2)), 1)
 
     inner_width = max(width - 2 * arm_width, 100.0)
-    foot_height = min(70.0, seat_height * 0.18)
-    foot_radius = min(28.0, arm_width * 0.16)
-    # The frame's own top, below the seat cushions that sit on it. The
-    # cushion then makes up exactly the difference, so the top of the seat
-    # lands on SeatHeight rather than somewhere above it.
-    deck_height = seat_height * 0.55
-    cushion_height = max(seat_height - foot_height - deck_height, 60.0)
-    seat_top = foot_height + deck_height + cushion_height
-    back_top = seat_top + back_height
+    foot_height = min(55.0, seat_height * 0.13)
+    foot_size = min(60.0, arm_width * 0.32)
 
     parts = []
 
-    # Feet, then the plinth/frame they carry.
-    for x, y in ((arm_width * 0.5, depth * 0.08),
-                 (width - arm_width * 0.5, depth * 0.08),
-                 (arm_width * 0.5, depth * 0.92),
-                 (width - arm_width * 0.5, depth * 0.92)):
-        parts.append(sh.place(
-            sh.tapered_leg(foot_height, foot_radius * 0.7, foot_radius),
-            x, y, 0))
+    # Feet at the four corners, inset so a shadow gap shows under the frame.
+    for x, y in ((arm_width * 0.25, depth * 0.06),
+                 (width - arm_width * 0.25 - foot_size, depth * 0.06),
+                 (arm_width * 0.25, depth * 0.94 - foot_size),
+                 (width - arm_width * 0.25 - foot_size,
+                  depth * 0.94 - foot_size)):
+        parts.append(sh.place(sh.square_leg(foot_height, foot_size), x, y, 0))
 
-    frame = sh.rounded_box(width, depth, deck_height, radius=25)
-    parts.append(sh.place(frame, 0, 0, foot_height))
+    # Seat base: one solid block, softened on top the way the original did.
+    base = sh.rounded_box(width, depth, seat_height - foot_height, radius=25)
+    base = sh.soften_top(base, 14)
+    base = sh.place(base, 0, 0, foot_height)
+    parts.append(base)
 
-    # Rolled arms: a strong top fillet is what turns a slab into an arm.
-    arm_depth = depth
+    # Arms: a modest top fillet, roughly a fifth of the arm width. The
+    # previous 0.42 was almost half the width, which rounded the top into
+    # a near-semicircle - hence the sausage.
     for x in (0.0, width - arm_width):
-        arm = sh.rounded_box(arm_width, arm_depth,
-                             arm_height - foot_height, radius=arm_width * 0.35)
-        arm = sh.soften_top(arm, arm_width * 0.42)
+        arm = sh.rounded_box(arm_width, depth, arm_height - foot_height,
+                             radius=arm_width * 0.22)
+        arm = sh.soften_top(arm, arm_width * 0.20)
         parts.append(sh.place(arm, x, 0, foot_height))
 
-    # Back: a frame panel running the full height of the back, so the back
-    # cushions have something to lean against rather than floating above
-    # the arms.
-    back = sh.rounded_box(inner_width, back_thickness * 0.45,
-                          back_top - foot_height, radius=18)
-    back = sh.soften_top(back, 14)
-    parts.append(sh.place(back, arm_width,
-                          depth - back_thickness * 0.45, foot_height))
+    # Back: a solid block between the arms, sitting on the seat.
+    back = sh.rounded_box(inner_width, back_thickness, back_height, radius=20)
+    back = sh.soften_top(back, 16)
+    back = sh.place(back, arm_width, depth - back_thickness, seat_height)
+    parts.append(back)
 
-    # Seat cushions across the width, with a visible gap between each.
-    gap = min(18.0, inner_width * 0.012)
-    seat_span = inner_width - gap * (seat_count - 1)
-    seat_width = seat_span / seat_count
-    seat_depth = depth - back_thickness
-    for i in range(seat_count):
-        parts.append(sh.place(
-            sh.cushion(seat_width, seat_depth, cushion_height,
-                       radius=min(seat_width, seat_depth) * 0.09,
-                       edge=cushion_height * 0.32),
-            arm_width + i * (seat_width + gap), 0,
-            foot_height + deck_height))
+    sofa_body = sh.fuse_all(parts)
 
-    # Back cushions, one per seat, leaning on the back panel.
-    back_cushion_height = back_height
-    back_cushion_depth = back_thickness * 0.55
-    back_cushion_z = seat_top
-    for i in range(seat_count):
-        parts.append(sh.place(
-            sh.cushion(seat_width, back_cushion_depth, back_cushion_height,
-                       radius=min(seat_width, back_cushion_depth) * 0.16,
-                       edge=back_cushion_depth * 0.38),
-            arm_width + i * (seat_width + gap),
-            depth - back_thickness, back_cushion_z))
+    # Cushion seams, cut into the assembled mass: one groove per division
+    # across the seat, carried up the face of the back, plus a groove along
+    # the front where the seat cushions meet the frame.
+    seam = min(14.0, inner_width * 0.008)
+    seat_span = inner_width / seat_count
+    seat_front = depth - back_thickness
+    for i in range(1, seat_count):
+        x = arm_width + i * seat_span - seam / 2.0
+        sofa_body = sh.cut_box(sofa_body, x, -1.0, seat_height - 22.0,
+                               seam, seat_front + 1.0, 40.0)
+        sofa_body = sh.cut_box(sofa_body, x,
+                               depth - back_thickness - 1.0,
+                               seat_height, seam, 18.0, back_height * 0.92)
+    sofa_body = sh.cut_box(sofa_body, arm_width, seat_front - seam,
+                           seat_height - 22.0, inner_width, seam, 40.0)
 
-    return sh.fuse_all(parts)
+    return sofa_body
 
 
 def bookcase(params, assets, ctx):

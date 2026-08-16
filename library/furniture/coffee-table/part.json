@@ -15,7 +15,8 @@
     "Height": { "type": "Length", "default": 450 },
     "TopThickness": { "type": "Length", "default": 30 },
     "LegRadius": { "type": "Length", "default": 30 },
-    "ApronHeight": { "type": "Length", "default": 70 }
+    "ApronHeight": { "type": "Length", "default": 55 },
+    "ShelfHeight": { "type": "Length", "default": 120 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "variants": [

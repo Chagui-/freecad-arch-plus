@@ -83,6 +83,18 @@ def soften_top(shape, radius, z=None):
     return safe_fillet(shape, radius, _edges_at_z(shape, top_z))
 
 
+def square_leg(height, size, chamfer=None):
+    """A square-section leg standing on the floor, corners eased.
+
+    Square legs read better than turned ones at thumbnail size and in a
+    plan drawing: a thin cylinder renders as a wire, while a square post of
+    the same nominal size keeps a visible face and a shadowed face. The
+    small chamfer stops it looking like raw stock."""
+    if chamfer is None:
+        chamfer = min(size * 0.12, 6.0)
+    return rounded_box(size, size, height, radius=chamfer)
+
+
 def tapered_leg(height, bottom_radius, top_radius):
     """A cone frustum standing on the floor (z=0 to z=height).
 

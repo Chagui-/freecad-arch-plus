@@ -17,8 +17,8 @@ parametric parts across five rooms (Dining Room, Bedroom, Living Room, Bath
 Room, Office) — see the table below — plus two new builder modules
 (`partslib_builders/furniture.py`, `partslib_builders/sanitary.py`) and a
 shared geometry-massing helper (`partslib_builders/_shapes.py`: rounded
-corners, tapered legs, softened cushion edges, toe-kick recesses, oval
-basin/bowl scaling).
+corners, square legs, softened cushion edges, panel reveals, toe-kick
+recesses, oval basin scaling).
 
 **None of this geometry has been built in a real FreeCAD process.** There is
 no FreeCAD available in this development environment, so the only

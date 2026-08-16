@@ -11,11 +11,12 @@
   },
   "params": {
     "BowlWidth": { "type": "Length", "default": 380 },
-    "BowlDepth": { "type": "Length", "default": 480 },
+    "BowlDepth": { "type": "Length", "default": 700 },
     "BowlHeight": { "type": "Length", "default": 400 },
-    "TankWidth": { "type": "Length", "default": 380 },
-    "TankDepth": { "type": "Length", "default": 150 },
-    "TankHeight": { "type": "Length", "default": 350 }
+    "TankWidth": { "type": "Length", "default": 370 },
+    "TankDepth": { "type": "Length", "default": 200 },
+    "TankHeight": { "type": "Length", "default": 400 },
+    "SeatThickness": { "type": "Length", "default": 45 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "geometry": { "builder": "sanitary.toilet" }

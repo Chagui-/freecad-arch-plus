@@ -2,8 +2,8 @@
   "schema": 1,
   "id": "desk",
   "name": "Desk",
-  "description": "Parametric rectangular desk on 4 tapered legs.",
-  "keywords": ["desk", "office", "table", "parametric"],
+  "description": "Parametric office desk with a drawer pedestal, a panel end and a modesty panel.",
+  "keywords": ["desk", "office", "workstation", "pedestal", "drawers", "parametric"],
   "facets": {
     "function": "Surface",
     "element": "Desk",
@@ -14,13 +14,14 @@
     "Depth": { "type": "Length", "default": 700 },
     "Height": { "type": "Length", "default": 750 },
     "TopThickness": { "type": "Length", "default": 30 },
-    "LegRadius": { "type": "Length", "default": 30 },
-    "ApronHeight": { "type": "Length", "default": 70 }
+    "PedestalWidth": { "type": "Length", "default": 400 },
+    "PanelThickness": { "type": "Length", "default": 30 },
+    "DrawerCount": { "type": "Integer", "default": 3 }
   },
   "placement": { "host": "floor", "offset": 0 },
   "variants": [
     { "label": "1200 mm", "params": { "Width": { "type": "Length", "default": 1200 } } },
     { "label": "1400 mm", "params": { "Width": { "type": "Length", "default": 1400 } } }
   ],
-  "geometry": { "builder": "furniture.table" }
+  "geometry": { "builder": "furniture.desk" }
 }

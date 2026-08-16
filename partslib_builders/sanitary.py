@@ -9,15 +9,15 @@ from . import _shapes as sh
 
 
 def toilet(params, assets, ctx):
-    """A close-coupled WC: an oval bowl under a closed seat, with a cistern,
-    an overhanging lid and a flush button.
+    """A close-coupled back-to-wall WC: a D-shaped pan under a closed seat,
+    with a full-height cistern, a flat lid and a recessed flush button.
 
     Params: BowlWidth, BowlDepth, BowlHeight, TankWidth, TankDepth,
     TankHeight, SeatThickness (mm). Ships as a single common size - see the
     manifest.
 
-    Note the total height is BowlHeight + TankHeight as before; the seat
-    sits within the bowl/tank junction rather than adding to it."""
+    Total height is BowlHeight + TankHeight; the seat sits within the
+    bowl/cistern junction rather than adding to it."""
     import Part
 
     bowl_width = float(params.get("BowlWidth", 380))
@@ -29,58 +29,61 @@ def toilet(params, assets, ctx):
 
     seat_thickness = float(params.get("SeatThickness", 45))
 
-    top_radius = bowl_width / 2.0
-    base_radius = top_radius * 0.6
-    bowl = Part.makeCone(base_radius, top_radius, bowl_height)
-    # Deliberately NOT soften_top()'d here. oval() below runs the cone
-    # through transformGeometry, so the bowl is already a BSpline surface -
-    # by far the most expensive thing in this library to tessellate for a
-    # thumbnail. (The dominant cost turned out to be the mesh tolerance, now
-    # fixed in partslib_thumbs._tessellation_for; filleting the rim first
-    # only piles a scaled blend surface on top of that.) A sharp rim is
-    # invisible at thumbnail size and irrelevant on a blueprint, so this is
-    # the one edge in the library that stays sharp. The tank below is a
-    # plain box, never non-uniformly scaled, and still gets its rim
-    # softened.
+    # The bowl is a D-shaped pan: square across the back where the cistern
+    # meets it, strongly rounded at the front. A rounded box whose corner
+    # radius approaches half the width gives exactly that plan, and the
+    # squared-off back is hidden behind the cistern anyway.
     #
-    # The cone (and its top rim edge) is centred on the origin; scaling Y
-    # gives it an oval footprint, then place() recentres it onto the part's
-    # own footprint at (bowl_width/2, bowl_depth/2).
-    bowl = sh.oval(bowl, 1.0, bowl_depth / bowl_width)
-    bowl = sh.place(bowl, bowl_width / 2.0, bowl_depth / 2.0, 0)
+    # This replaces a cone run through a non-uniform scale. That was wrong
+    # twice over: a circular cone is not the shape of any modern WC pan,
+    # and transformGeometry turned it into a BSpline surface that at one
+    # point cost 17 seconds to tessellate for a thumbnail. There is now no
+    # non-uniformly scaled geometry in this part at all.
+    bowl = sh.rounded_box(bowl_width, bowl_depth, bowl_height,
+                          radius=bowl_width * 0.46)
+    # Eased foot, so the pan meets the floor the way a moulded one does
+    # rather than sitting on a hard edge.
+    bowl = sh.soften_top(bowl, min(22.0, bowl_height * 0.06), z=0)
 
-    # Closed seat and lid: one oval slab slightly proud of the rim. Built
-    # the same way as the bowl - scaled cylinder, never filleted - for the
-    # same tessellation reason, and deliberately NOT cut into a ring: two
-    # non-uniformly scaled solids meeting in a boolean is exactly the kind
-    # of surface that made this part cost 17 seconds before.
-    seat = Part.makeCylinder(top_radius, seat_thickness)
-    seat = sh.oval(seat, 1.0, bowl_depth / bowl_width)
-    seat = sh.place(seat, bowl_width / 2.0, bowl_depth / 2.0, bowl_height)
+    # Closed seat and lid: a slab following the pan's own outline, inset a
+    # touch so its edge casts a line against the pan below. It stops at the
+    # cistern's front face rather than running under it.
+    seat_inset = min(6.0, bowl_width * 0.02)
+    seat_width = bowl_width - 2 * seat_inset
+    seat_depth = max(bowl_depth - tank_depth - seat_inset, 10.0)
+    seat = sh.rounded_box(seat_width, seat_depth, seat_thickness,
+                          radius=seat_width * 0.46)
+    seat = sh.soften_top(seat, seat_thickness * 0.42)
+    seat = sh.place(seat, seat_inset, seat_inset, bowl_height)
 
+    # Cistern: a tall slab sitting on the back of the pan, its front face
+    # rising clear of the seat.
     tank_lid_height = min(30.0, tank_height * 0.09)
     tank_body_height = tank_height - tank_lid_height
-    tank = sh.rounded_box(tank_width, tank_depth, tank_body_height, radius=15)
-    tank = sh.place(tank, (bowl_width - tank_width) / 2.0, bowl_depth,
-                     bowl_height)
+    tank_x = (bowl_width - tank_width) / 2.0
+    tank_y = bowl_depth - tank_depth
+    tank = sh.rounded_box(tank_width, tank_depth, tank_body_height,
+                          radius=min(20.0, tank_width * 0.06))
+    tank = sh.place(tank, tank_x, tank_y, bowl_height)
 
-    # The lid overhangs the cistern at the FRONT only - which is both where
-    # a real cistern lid projects and the one direction that does not push
-    # the part past the BowlWidth/TankDepth the catalogue advertises.
-    lid_overhang = min(12.0, tank_depth * 0.08)
-    lid = sh.rounded_box(tank_width, tank_depth + lid_overhang,
-                         tank_lid_height, radius=12)
-    lid = sh.soften_top(lid, tank_lid_height * 0.35)
-    lid = sh.place(lid, (bowl_width - tank_width) / 2.0,
-                    bowl_depth - lid_overhang,
-                    bowl_height + tank_body_height)
+    lid = sh.rounded_box(tank_width, tank_depth, tank_lid_height,
+                         radius=min(20.0, tank_width * 0.06))
+    lid = sh.soften_top(lid, tank_lid_height * 0.4)
+    lid = sh.place(lid, tank_x, tank_y, bowl_height + tank_body_height)
 
-    button = Part.makeCylinder(min(28.0, tank_width * 0.09), 6.0)
+    body = sh.fuse_all([bowl, seat, tank, lid])
+
+    # Flush button, recessed into the lid rather than standing proud - on
+    # the reference it reads as a dark oval sunk into the ceramic.
+    button = Part.makeCylinder(min(30.0, tank_width * 0.09), 12.0)
     button = sh.place(button, bowl_width / 2.0,
-                       bowl_depth + tank_depth * 0.45,
-                       bowl_height + tank_height)
-
-    return sh.fuse_all([bowl, seat, tank, lid, button])
+                       tank_y + tank_depth * 0.5,
+                       bowl_height + tank_height - 6.0)
+    try:
+        body = body.cut(button)
+    except Exception:
+        pass
+    return body
 
 
 def bathtub(params, assets, ctx):
@@ -183,9 +186,14 @@ def shower_base(params, assets, ctx):
 
     tray = sh.soften_top(tray, min(12.0, rim * 0.3))
 
-    waste = Part.makeCylinder(min(45.0, inner_width * 0.06),
-                              height * 0.6)
-    waste = sh.place(waste, width / 2.0, depth / 2.0,
+    # Waste at the back-left corner of the recess, not the middle: a
+    # centre drain is a wet-room detail, whereas a tray drains to one end
+    # so the floor can fall towards it and the trap can reach a wall.
+    waste_radius = min(45.0, inner_width * 0.06)
+    waste = Part.makeCylinder(waste_radius, height * 0.6)
+    waste = sh.place(waste,
+                      rim + inner_width * 0.16,
+                      depth - rim - inner_depth * 0.16,
                       height - recess_height - height * 0.3)
     try:
         tray = tray.cut(waste)
