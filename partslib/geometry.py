@@ -22,7 +22,7 @@ _SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 def resolve_builder(symbol):
     """Turn a "module.function" symbol into a callable.
 
-    Only names inside the partslib_builders package resolve. Anything
+    Only names inside the partslib.builders package resolve. Anything
     path-like, dotted deeper than one level, or absent raises ValueError."""
     if not isinstance(symbol, str) or not _SYMBOL_RE.match(symbol):
         raise ValueError("invalid builder symbol %r" % (symbol,))

@@ -40,7 +40,7 @@ from . import thumbs as partslib_thumbs
 # except that only prints to the Report view - if ArchComponent were not yet
 # importable at that point, the import would raise, appendToolbar() would
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
-# Matches windowsplus_gui.py's lazy `import windowsplus_object`.
+# Matches windows/gui.py's lazy `import windowsplus_object`.
 
 ICON = os.path.join(_ROOT, "Resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_ROOT, "Resources", "icons", "facets")
@@ -1193,7 +1193,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         This used to scan mdi.subWindowList() for a sub-window whose widget
         had a `getSceneGraph` attribute, borrowing the duck-type check
-        doorsplus_gui.py applies to the active window. It could never match:
+        doors/gui.py applies to the active window. It could never match:
         getSceneGraph lives on FreeCAD's View3DInventorPy - the object Gui
         hands back as ActiveView - and NOT on the QWidget that PySide
         returns from QMdiSubWindow.widget(), where PySide only knows the Qt
@@ -1273,7 +1273,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         repeat = self.repeatCheck.isChecked()
 
         # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
-        # doorsplus_gui.py:887): a rough box preview of the part's footprint
+        # doors/gui.py:887): a rough box preview of the part's footprint
         # that follows the cursor while picking, sized from the built
         # shape's measured bounding box. It stays ON across every repeat of
         # the placement loop below and is finalized EXACTLY ONCE, when the
@@ -1308,7 +1308,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
         # back on click, exactly as repositionDoor does
-        # (doorsplus_gui.py:922-934).
+        # (doors/gui.py:922-934).
         doc = FreeCAD.ActiveDocument
         state = {"face": None, "placed": False}
 
@@ -1442,7 +1442,7 @@ class PartsLibraryCommand:
 
     def IsActive(self):
         # Browsing the catalogue never needs a document - only placing does,
-        # and _onPlace handles that case itself (stairsplus_gui.py:488
+        # and _onPlace handles that case itself (stairs/gui.py:488
         # follows the same permissive pattern).
         return True
 

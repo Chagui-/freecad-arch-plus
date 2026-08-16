@@ -262,8 +262,8 @@ class _LibraryPart(ArchComponent.Component):
         document, including Variant - so this must not react while
         "Restore" is in obj.State, or opening a file would silently rebuild
         from whatever the library currently contains, exactly what this
-        module's cache semantics forbid. Same guard as doorsplus_object.py
-        and windowsplus_object.py.
+        module's cache semantics forbid. Same guard as doors/object.py
+        and windows/object.py.
 
         Variants are different products (design spec Sec 5.3): switching
         Variant deliberately discards any hand-edited Parameter values by

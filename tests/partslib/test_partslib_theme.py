@@ -5,7 +5,7 @@ from partslib import theme as pt
 
 
 def test_core_module_does_not_import_freecad_at_module_scope():
-    # partslib_theme legitimately needs FreeCAD to read the live theme, but
+    # partslib.theme legitimately needs FreeCAD to read the live theme, but
     # that import must live inside read_is_dark_theme(), not at module
     # scope, so is_dark_theme_name() stays importable/testable with no
     # FreeCAD on the path. Walk only the module's TOP-LEVEL statements

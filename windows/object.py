@@ -31,7 +31,7 @@ __title__ = "WindowsPlus object"
 __author__ = "Yorik van Havre, Andres"
 __url__ = "https://www.freecad.org"
 
-## @package windowsplus_object
+## @package windows.object
 #  \brief The WindowsPlus object (a modifiable copy of Arch Window)
 #
 #  This module is a renamed copy of FreeCAD's ArchWindow so the window
