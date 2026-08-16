@@ -397,6 +397,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.placeButton.clicked.connect(self._onPlace)
         layout.addWidget(self.placeButton)
 
+        # Repeat placement is OPT-IN. "Place in 3D view" reads as placing
+        # one part, so staying armed and dropping another on the next click
+        # is a surprise for anyone who did not ask for it - and an easy one
+        # to trigger by accident.
+        self.repeatCheck = QtGui.QCheckBox("Keep placing until Esc")
+        self.repeatCheck.setChecked(False)
+        self.repeatCheck.setToolTip(
+            "Stay armed after placing, so each click drops another copy. "
+            "Press Esc to stop.")
+        layout.addWidget(self.repeatCheck)
+
     def _makePreviewWidget(self):
         """Build the live 3D preview widget if possible, else a static image
         label - FIX 1 of the bug-fix round.
@@ -1075,7 +1086,11 @@ class PartsLibraryPanel(QtGui.QWidget):
             return False
 
     def _onPlace(self, *args):
-        """Activate a 3D view, pick a point, place the part, and repeat.
+        """Activate a 3D view, pick a point, and place the part.
+
+        One click places one part. Ticking "Keep placing until Esc" instead
+        stays armed after each placement, so every click drops another copy
+        of the same part until the user cancels.
 
         The Snapper needs an ACTIVE 3D view, so this first finds and
         activates one (browsing the catalogue never needs a document - see
@@ -1109,14 +1124,21 @@ class PartsLibraryPanel(QtGui.QWidget):
         host = partslib_placement.host_of(resolved)
         offset = partslib_placement.offset_of(resolved)
         variant = self._currentVariantLabel() or entry["variants"][0]
+        # Read once, up front: the checkbox lives on the library tab, which
+        # is not even the active window while picking, so a mid-session
+        # change of mind is not something the user can express anyway - and
+        # this way the loop cannot be re-armed by a widget that has since
+        # been destroyed.
+        repeat = self.repeatCheck.isChecked()
 
         # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
         # doorsplus_gui.py:887): a rough box preview of the part's footprint
         # that follows the cursor while picking, sized from the built
         # shape's measured bounding box. It stays ON across every repeat of
         # the placement loop below and is finalized EXACTLY ONCE, when the
-        # loop ends (Esc, an exception, or - see the early returns above -
-        # never even started when there is no document/3D view). Degrade to
+        # loop ends (a single placement with repeat off, Esc, an exception,
+        # or - see the early returns above - never even started when there
+        # is no document/3D view). Degrade to
         # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
         trackerCentre = None
@@ -1147,7 +1169,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # back on click, exactly as repositionDoor does
         # (doorsplus_gui.py:922-934).
         doc = FreeCAD.ActiveDocument
-        state = {"face": None}
+        state = {"face": None, "placed": False}
 
         def moved(point, info):
             if info and "Face" in info.get("Component", ""):
@@ -1169,9 +1191,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
             again = False
+            state["placed"] = False
             try:
                 if point is None:
-                    return  # Esc/cancel - end the repeat-placement loop
+                    return  # Esc/cancel - end the placement loop
                 placement = partslib_placement.partPlacement(
                     point, state["face"], host, offset)
                 doc.openTransaction("Place library part")
@@ -1180,13 +1203,14 @@ class PartsLibraryPanel(QtGui.QWidget):
                         entry, self._facets, variant=variant,
                         placement=placement)
                     doc.commitTransaction()
+                    state["placed"] = True
                 except Exception as exc:
                     doc.abortTransaction()
                     FreeCAD.Console.PrintError(
                         "ArchPlus: cannot place %s: %s\n"
                         % (entry["id"], exc))
                 doc.recompute()
-                again = True
+                again = repeat
             finally:
                 if again:
                     # REPEAT PLACEMENT: re-arm for another pick so the user
@@ -1196,12 +1220,19 @@ class PartsLibraryPanel(QtGui.QWidget):
                     FreeCADGui.Snapper.getPoint(
                         callback=placed, movecallback=moved)
                 else:
-                    # Loop end - Esc, or an exception above: finalize the
-                    # tracker exactly once and return the user to the
-                    # library tab they started from.
+                    # End of the session - Esc, an exception above, or a
+                    # single placement with repeat off. Finalize the tracker
+                    # exactly once.
                     if tracker is not None:
                         tracker.finalize()
-                    if mdi is not None and librarySubWindow is not None:
+                    # Go back to the library only when nothing was placed.
+                    # Having just dropped a part, the user wants to SEE it,
+                    # and yanking them to the library tab hides the thing
+                    # they asked for - but a cancel means "I'm done here",
+                    # so return them where they started.
+                    if not state["placed"] \
+                            and mdi is not None \
+                            and librarySubWindow is not None:
                         mdi.setActiveSubWindow(librarySubWindow)
 
         FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
