@@ -122,8 +122,9 @@ def _makeDoorGeometry(spec):
     Returns (sketch, windowParts).
     """
 
-    import Part
     import Sketcher
+
+    from common import geometry as archplus_geometry
 
     w = spec["width"]
     h = spec["height"]
@@ -155,25 +156,13 @@ def _makeDoorGeometry(spec):
 
     # --- Helper: add a rectangle to the sketch ---
     def _rect(p1, p2, p3, p4):
-        idx = s.GeometryCount
-        s.addGeometry(Part.LineSegment(p1, p2))
-        s.addGeometry(Part.LineSegment(p2, p3))
-        s.addGeometry(Part.LineSegment(p3, p4))
-        s.addGeometry(Part.LineSegment(p4, p1))
-        s.addConstraint(Sketcher.Constraint("Coincident", idx, 2, idx + 1, 1))
-        s.addConstraint(Sketcher.Constraint("Coincident", idx + 1, 2, idx + 2, 1))
-        s.addConstraint(Sketcher.Constraint("Coincident", idx + 2, 2, idx + 3, 1))
-        s.addConstraint(Sketcher.Constraint("Coincident", idx + 3, 2, idx, 1))
-        s.addConstraint(Sketcher.Constraint("Horizontal", idx))
-        s.addConstraint(Sketcher.Constraint("Horizontal", idx + 2))
-        s.addConstraint(Sketcher.Constraint("Vertical", idx + 1))
-        s.addConstraint(Sketcher.Constraint("Vertical", idx + 3))
+        archplus_geometry.add_rect(s, p1, p2, p3, p4)
 
     def _addFrame(outer_p1, outer_p2, outer_p3, outer_p4,
                   inner_p1, inner_p2, inner_p3, inner_p4):
         """Add outer+inner rectangles forming a frame."""
-        _rect(outer_p1, outer_p2, outer_p3, outer_p4)
-        _rect(inner_p1, inner_p2, inner_p3, inner_p4)
+        archplus_geometry.add_frame(s, outer_p1, outer_p2, outer_p3, outer_p4,
+                                    inner_p1, inner_p2, inner_p3, inner_p4)
 
     # --- Build the outer frame (3-sided: left, right, top; bottom flush) ---
     # Outer rectangle
