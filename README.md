@@ -176,6 +176,18 @@ scan walks the whole tree, so the intermediate folders (`furniture/`,
 reads them. Parts are found by their manifest, and grouped in the browser by
 the **facets** they declare.
 
+There are two ways to give a part its geometry, and only one of them involves
+writing code:
+
+| | Geometry from | Write Python? | Parametric |
+| --- | --- | :-: | :-: |
+| **Model file** | a `.step`/`.brep` you drop in the folder | no | no — fixed geometry |
+| **Builder** | a Python function that computes the shape | yes | yes — any size |
+
+Everything in the shipped library is a builder, because a generated cabinet
+can be any width. Reach for a model file when the geometry is fixed anyway —
+a manufacturer's download, or something too organic to describe in code.
+
 ### 1. Write the manifest
 
 `library/furniture/my-stool/part.json`:
@@ -217,7 +229,58 @@ the **facets** they declare.
   with two hosts. Parts with one variant show no variant control, two show
   chips, three or more show a dropdown.
 
-### 2. Write the builder
+### 2a. Geometry from a model file (no code)
+
+Drop the file in the part's own folder and point the manifest at the stock
+`asset.single` builder. No Python, no new module:
+
+```
+library/sanitary/geberit-icon/
+  part.json
+  geberit-icon.step        # or .brep — as downloaded
+  .cache/                  # generated on first load, gitignored
+```
+
+```json
+"geometry": {
+  "builder": "asset.single",
+  "assets": { "body": "geberit-icon.step" },
+  "transform": { "rotate": [90, 0, 0], "anchor": "back-bottom-center" }
+}
+```
+
+- `assets` maps a name to a file **inside the part's own folder**. An absolute
+  path, or one containing `..`, is rejected — a manifest is data and must not
+  be able to reach arbitrary files.
+- `asset.single` expects the name `body`. That is its whole contract.
+- A `.step` is parsed once and cached beside it as `.cache/<name>.brep`;
+  later loads read the cache, which skips STEP translation entirely. The
+  cache is gitignored and regenerates itself, so never commit it.
+
+`transform` is what makes a vendor file usable. Downloads arrive at whatever
+origin and orientation the vendor chose, and the browser measures `W × D × H`
+from the built shape — so an un-normalised part reports nonsense and lands in
+the wrong place:
+
+- `unitScale` — multiply if the file is not in millimetres.
+- `rotate` — `[x, y, z]` degrees, applied after scaling. Get the part to
+  ArchPlus axes: X width, Y depth with the back at +Y, Z up.
+- `anchor` — moves a named point of the bounding box to the origin, applied
+  last. One of `origin`, `center`, `bottom-center`, `top-center`,
+  `back-bottom-center`, `front-bottom-center`, `back-center`, `front-center`.
+  A floor-standing part wants `bottom-center`; something that hangs flat on a
+  wall wants `back-bottom-center`.
+
+Normalisation happens once, at build time, which is why placement never has
+to know anything about a file's internal quirks.
+
+Two honest caveats. Reading a shape this way discards per-solid colours and
+product names from a STEP assembly — set one material on the part instead.
+And **nothing in the shipped library uses this path yet**: all 31 parts are
+builders, so this route is exercised by the test suite but not by real
+content. Expect to be the first to shake it out.
+
+### 2b. Write a builder (parametric geometry)
 
 Manifests reference geometry by symbol only — `"module.function"`, resolved
 inside `partslib_builders/`. A manifest can never name a path or an import
@@ -247,10 +310,22 @@ headless test suite can import the module without FreeCAD present.
 already falls back to a sharp edge rather than aborting the build when OCC
 refuses.
 
+The two routes are not exclusive. `assets` is handed to every builder, so a
+builder can generate the parametric part and load a fixed one for the rest —
+a carcass computed from `params`, with a purchased handle fused on:
+
+```python
+def cabinet_with_handle(params, assets, ctx):
+    carcass = sh.rounded_box(params["Width"], params["Depth"], params["Height"])
+    handle = assets.shape("handle")        # from the manifest's assets map
+    return sh.fuse_all([carcass, sh.place(handle, x=..., y=..., z=...)])
+```
+
 ### 3. Conventions that matter
 
-These are not style preferences — each one came from something looking wrong
-in a render:
+These apply to builders — a model file is whatever the vendor drew. They are
+not style preferences; each one came from something looking wrong in a
+render:
 
 - **Axes.** X is width, Y is depth with the *back* at +Y, Z is up. Build
   from the origin so the part's minimum corner is (0, 0, 0); placement puts
@@ -291,6 +366,44 @@ The first open renders a thumbnail per part (with a progress dialog) and
 caches it as `thumbnail.jpg` beside the manifest; commit that so a fresh
 clone opens to a populated grid. Delete it to force a re-render after
 changing geometry.
+
+### IFC metadata
+
+A placed part is an `ArchComponent`, so it carries `Description`, `IfcType`
+and `IfcProperties` — and `IfcProperties` round-trips into IFC property sets
+on export. This is the difference between a decorative block and something
+that survives into the model a consultant receives.
+
+`IfcType` is resolved in this order, first hit wins:
+
+1. an explicit `"ifcType"` on the part,
+2. the `ifcType` on the part's `element` facet value,
+3. the `ifcType` on its `function` facet value,
+4. `"Building Element Proxy"`.
+
+So in practice you set it **once per element** in `library/facets.json` and
+never think about it again. Override on the part only when one element covers
+two IFC types — a browse category like "Bathtubs & Showers" grouping an
+`IfcSanitaryTerminal` with something else.
+
+`ifcProperties` is a flat map whose values encode the property set, the IFC
+type and the value, separated by double semicolons:
+
+```json
+"ifcProperties": {
+  "Manufacturer":   "Pset_ManufacturerTypeInformation;;IfcLabel;;Geberit",
+  "ModelReference": "Pset_ManufacturerTypeInformation;;IfcLabel;;204060"
+}
+```
+
+`"Pset;;IfcType;;Value"`. A variant may override individual keys, which is
+how three sizes of one product each carry their own order code while sharing
+everything else. Get the encoding wrong and the property is dropped silently
+on export rather than raising — so check a real export before trusting it.
+
+Dimensions do **not** belong here. Width, depth and height are measured from
+the built shape, so a hand-typed dimension would be a second source of truth
+free to disagree with the geometry.
 
 ### Adding a new facet value
 
