@@ -14,7 +14,6 @@
 # because they sit in a wall opening with a sill, unlike doors which sit on the
 # floor and use a 3-sided frame.
 
-import json
 import math
 import os
 
@@ -54,33 +53,7 @@ def _shapeIsRound(spec):
 # settings (operation, frame width/depth, swing, sash position, shape) are
 # persisted on the object as a hidden JSON string so they can be restored when
 # the object is edited.
-SPEC_PROP = "ArchPlusSpec"
-
-
-def storeSpec(obj, spec):
-    """Persist the ArchPlus creation spec on the object as JSON."""
-    if obj is None:
-        return
-    if not hasattr(obj, SPEC_PROP):
-        obj.addProperty("App::PropertyString", SPEC_PROP, "ArchPlus",
-                        "Serialized ArchPlus settings (internal)")
-        try:
-            obj.setEditorMode(SPEC_PROP, 2)   # hidden from the property editor
-        except Exception:
-            pass
-    setattr(obj, SPEC_PROP, json.dumps(spec))
-
-
-def readSpec(obj):
-    """Return the stored ArchPlus spec dict, or None if absent/unreadable."""
-    raw = getattr(obj, SPEC_PROP, "") or ""
-    if not raw:
-        return None
-    try:
-        d = json.loads(raw)
-    except Exception:
-        return None
-    return d if isinstance(d, dict) else None
+from common.spec import SPEC_PROP, storeSpec, readSpec  # noqa: F401
 
 
 def _operationNeedsSash(op):
