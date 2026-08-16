@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "basic-chair",
+  "name": "Basic chair",
+  "description": "Common-size dining chair: seat and backrest on 4 tapered legs.",
+  "keywords": ["chair", "seat", "dining"],
+  "facets": {
+    "function": "Seating",
+    "element": "Chair",
+    "room": ["Dining"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 450 },
+    "Depth": { "type": "Length", "default": 450 },
+    "SeatHeight": { "type": "Length", "default": 450 },
+    "SeatThickness": { "type": "Length", "default": 40 },
+    "BackHeight": { "type": "Length", "default": 450 },
+    "BackThickness": { "type": "Length", "default": 40 },
+    "LegRadius": { "type": "Length", "default": 18 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "geometry": { "builder": "furniture.chair" }
+}

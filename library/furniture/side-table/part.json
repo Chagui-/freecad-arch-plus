@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "id": "side-table",
+  "name": "Side table",
+  "description": "Small occasional table with a lower shelf and a shallow drawer.",
+  "keywords": [
+    "side table",
+    "end table",
+    "lamp table",
+    "occasional",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Surface",
+    "element": "Table",
+    "room": [
+      "Living",
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 450
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 450
+    },
+    "Height": {
+      "type": "Length",
+      "default": 550
+    },
+    "TopThickness": {
+      "type": "Length",
+      "default": 25
+    },
+    "LegSize": {
+      "type": "Length",
+      "default": 45
+    },
+    "ShelfHeight": {
+      "type": "Length",
+      "default": 140
+    },
+    "DrawerHeight": {
+      "type": "Length",
+      "default": 90
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "450 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 450
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 450
+        }
+      }
+    },
+    {
+      "label": "550 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 550
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 500
+        }
+      }
+    }
+  ],
+  "geometry": {
+    "builder": "furniture.side_table"
+  }
+}

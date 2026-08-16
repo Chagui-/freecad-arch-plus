@@ -55,7 +55,7 @@ authoritative.
 ```
 library/sanitary/wc-geberit-icon/
   part.json            manifest — the only authoritative file
-  thumbnail.png        committed; regenerated only if absent
+  thumbnail.jpg        committed; regenerated only if absent
   wc-360.brep          shape asset, converted from vendor STEP
   wc-490.brep
   .cache/              gitignored — parsed/derived artifacts

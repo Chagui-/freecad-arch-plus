@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "single-bed",
+  "name": "Single bed",
+  "description": "105 cm x 2 m mattress with a headboard behind it.",
+  "keywords": ["bed", "single", "bedroom", "mattress"],
+  "facets": {
+    "function": "Sleeping",
+    "element": "Bed",
+    "room": ["Bedroom"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 1050 },
+    "Length": { "type": "Length", "default": 2000 },
+    "MattressHeight": { "type": "Length", "default": 250 },
+    "HeadboardHeight": { "type": "Length", "default": 900 },
+    "HeadboardThickness": { "type": "Length", "default": 60 },
+    "BaseHeight": { "type": "Length", "default": 200 },
+    "PillowCount": { "type": "Integer", "default": 1 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "geometry": { "builder": "furniture.bed" }
+}

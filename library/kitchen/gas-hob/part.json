@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "id": "gas-hob",
+  "name": "Gas hob",
+  "description": "Gas hob to sit on a base cabinet; offset lifts it to worktop height.",
+  "keywords": [
+    "kitchen",
+    "hob",
+    "gas",
+    "cooktop",
+    "burner",
+    "appliance"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Hob",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 520
+    },
+    "PlateThickness": {
+      "type": "Length",
+      "default": 40
+    },
+    "BurnerHeight": {
+      "type": "Length",
+      "default": 25
+    },
+    "BurnerCount": {
+      "type": "Integer",
+      "default": 4
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 860
+  },
+  "variants": [
+    {
+      "label": "4 burner",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 600
+        },
+        "BurnerCount": {
+          "type": "Integer",
+          "default": 4
+        }
+      }
+    },
+    {
+      "label": "5 burner",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 750
+        },
+        "BurnerCount": {
+          "type": "Integer",
+          "default": 5
+        }
+      }
+    }
+  ],
+  "geometry": {
+    "builder": "kitchen.hob"
+  }
+}

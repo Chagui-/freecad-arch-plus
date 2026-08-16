@@ -57,8 +57,19 @@ def partPlacement(point, baseFace, host, offset):
         face = baseFace[0].Shape.Faces[baseFace[1]]
         placement = DraftGeomUtils.placement_from_face(face, vec_z=wp.axis)
     else:
+        # Align the part's own axes to the working plane's, and nothing
+        # more - the same rotation WorkingPlane.get_placement() builds for
+        # itself, and the identity on the default XY plane.
+        #
+        # This deliberately does NOT copy _doorPlacement's
+        # Rotation(wp.u, wp.axis, -wp.v, "XZY"). That maps the object's Y
+        # onto world Z, which is right for a door: a door is a flat sketch
+        # drawn in XY that has to be stood upright in a wall. A library
+        # part is a solid already built upright - X wide, Y deep, Z tall -
+        # so standing it up again tips it onto its face. It laid every part
+        # in the library on its back.
         placement = FreeCAD.Placement()
-        placement.Rotation = FreeCAD.Rotation(wp.u, wp.axis, -wp.v, "XZY")
+        placement.Rotation = FreeCAD.Rotation(wp.u, wp.v, wp.axis, "ZYX")
 
     z = point.z
     if host in _SNAPS_TO_HOST_BASE and baseFace is not None:

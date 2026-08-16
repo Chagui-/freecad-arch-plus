@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "id": "oven-cabinet",
+  "name": "Base cabinet with oven",
+  "description": "Base unit housing a built-in oven, with a drawer beneath it.",
+  "keywords": [
+    "kitchen",
+    "oven",
+    "cabinet",
+    "appliance",
+    "built-in",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Oven",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 900
+    },
+    "WorktopThickness": {
+      "type": "Length",
+      "default": 40
+    },
+    "KickHeight": {
+      "type": "Length",
+      "default": 100
+    },
+    "OvenHeight": {
+      "type": "Length",
+      "default": 590
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {
+    "builder": "kitchen.oven_cabinet"
+  }
+}

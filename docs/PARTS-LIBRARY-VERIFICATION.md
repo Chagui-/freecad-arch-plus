@@ -10,21 +10,78 @@ passed at the time this doc was written, including `tests/test_partslib_theme.py
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
-## The library ships EMPTY
+## The library now ships 31 real parts — PARTLY verified in real FreeCAD
 
-`library/` now contains only `facets.json` (the faceted vocabulary) — no
-parts. The two placeholder parts this checklist was originally written
-against (`base-cabinet`, `wc-demo`) proved the pipeline during development
-and have since been removed now that real content is authored on a separate
-branch. **Every step below that involves placing, previewing, selecting
-variants, or reading parameters off a part (all of Parts B7 onward, C, D, E,
-F, G, I9/B10's thumbnail checks, J, K) cannot run until you have added at
-least one real part under `library/`.** Steps that only exercise the empty
-library itself — A (startup/toolbar), B1/B2 (the categories screen's new
-empty-state message and its library-path hint), B6-as-a-search-with-nothing
-(the results screen's empty-state message) — remain valid as written today.
-The rest of the checklist is not wrong, only dormant: it becomes runnable
-again, unchanged, the moment a part exists.
+`library/` no longer ships empty. The `parts-library-content` branch adds 31
+parametric parts across six rooms (Kitchen, Dining Room, Bedroom, Living
+Room, Bath Room, Office) — see the table below — plus four
+builder modules (`furniture.py`, `sanitary.py`, `kitchen.py`,
+`fittings.py`) and a shared geometry-massing helper
+(`partslib_builders/_shapes.py`: rounded corners, square legs, rolled
+edges, panel reveals, toe-kick recesses, oval basin scaling).
+
+The first 14 parts HAVE now been rendered and reviewed in FreeCAD, and
+several were reworked as a result — see the git history for chair, sofa,
+desk and toilet. The 17 added afterwards (Kitchen, fittings and
+the Living/Bedroom additions) have NOT been seen in FreeCAD yet.
+
+### Wall-hosted parts are new and unproven
+
+Six of the new parts declare `host: wall` — wall cabinet, corner wall
+cabinet, mirror, towel hook, toilet roll holder, curtain — plus the
+television's wall-mounted variants. Until now every shipped part was
+`host: floor`, so `partslib_placement`'s wall branch (including its
+snap-to-host-base logic) has only ever run against synthetic unit-test
+data. **Placing a wall-hosted part against a real Arch wall is the single
+highest-value manual check on this branch.**
+
+Note also that `resolve_variant` now merges `placement`, so a variant can
+change its host — the television relies on this to be floor-hosted on a
+stand and wall-hosted on a bracket.
+
+There is no FreeCAD in the development environment, so automated
+verification stops at: (1) the headless `pytest tests/` suite (manifests
+and facets are well-formed, every `geometry.builder` symbol resolves, every
+variant-label list is non-empty and unique, every declared placement host
+is known, every facet icon exists on disk), and (2) a throwaway script that
+runs every part/variant's builder against a bounding-box-only stand-in for
+`Part`/`FreeCAD` — confirming the Python executes without exceptions and
+that measured `W × D × H` figures match what each manifest advertises, but
+**not** that the real OCC boolean/fillet operations succeed. Every step
+below that involves placing, previewing or measuring a part (B7 onward, C,
+D, E, F, G, I, J, K) needs a human-in-FreeCAD pass. In particular, watch
+for:
+
+- Any `PrintWarning`/`PrintError` from a `makeFillet` or boolean op falling
+  back silently (every fillet in `_shapes.py` is wrapped in a try/except that
+  degrades to a sharp edge on failure — a part that looks "blockier" than
+  intended in the preview is this fallback firing, not a bug to fix blind).
+- The toilet, bathtub, vanity and shower base's oval/recessed geometry
+  (`sanitary.py`) actually resolving to valid solids — these are the parts
+  most likely to hit an OCC edge case (non-uniform scale of a filleted
+  surface, a cut whose cavity clips through more of the shell than intended).
+- The bookcase's open-front shell + shelf dividers (`furniture.bookcase`) —
+  the one part built as a hollow carcass rather than a solid block.
+
+27 facet icon SVGs live under `Resources/icons/facets/` — eyeball that they
+render at both toolbar and list-row sizes in light and dark theme. A test
+now asserts every icon a facet value names actually exists on disk (four
+shipped missing once, rendering as blank cards with nothing in the console
+to explain why), but nothing automated can tell you one looks wrong.
+
+| Room | Parts |
+|---|---|
+| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (4/5 burner) |
+| Dining Room | Dining table (4/6/8-seat), Basic chair |
+| Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
+| Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
+| Bath Room | Toilet, Bathtub, Shower base, Vanity, Shower screen, Towel hook, Toilet roll holder, Mirror |
+| Office | Desk, Bookcase |
+
+Steps that only exercised the empty library in the prior pass (A, B1/B2, the
+empty-state message) remain valid as written but are no longer the
+interesting case — B2 in particular should now show all six rooms above,
+each with its declared elements and counts.
 
 ## The panel is now an MDI tab, not a dock
 
@@ -112,7 +169,7 @@ unaffected by the fallback.
       opens full-window in the MDI area (alongside any open document tabs),
       showing the **categories** screen: a card per room.
 - [ ] **B2 (category screen).** Only rooms that actually contain a part are
-      shown — with the seed library this is `Bathroom`, `Cloakroom`,
+      shown — with the seed library this is `Bathroom`,
       `Kitchen`, `Office` (not every room in `library/facets.json`'s
       vocabulary — a room with zero parts, e.g. `Bedroom`, must not be
       drawn at all). Each visible room card shows its icon (where
@@ -132,7 +189,7 @@ unaffected by the fallback.
       to the categories screen.
 - [ ] **B5 (multi-valued room facet).** From the categories screen, confirm
       **the WC (demo) part's element row/count appears under both the
-      `Bathroom` and `Cloakroom` room cards** — this is the multi-valued
+      `Bathroom` and `Bedroom` room cards** — this is the multi-valued
       `room` facet working, matching `category_tree`'s "one part counted
       once per room it belongs to" behaviour.
 - [ ] **B6 (search).** From a results screen, type `toilet` in the search
@@ -166,14 +223,14 @@ unaffected by the fallback.
       correctly (light cards, dark text) — this is the same code path,
       not a separate dark-only fix.
 - [ ] **B10 (fix round — on-demand thumbnail fallback).** Neither seed part
-      ships a committed `thumbnail.png`, so this exercises the fallback by
+      ships a committed `thumbnail.jpg`, so this exercises the fallback by
       default. Before opening the panel this session, confirm (in a file
       browser, or `os.path.exists` in the Python console against each
       part's own directory) that neither `base-cabinet`'s nor
-      `wc-demo`'s folder under `library/` yet contains a `thumbnail.png`.
+      `wc-demo`'s folder under `library/` yet contains a `thumbnail.jpg`.
       Open the panel and drill in to view both cards: they still show their
       names even with no icon yet. Close the tab, and confirm each part's
-      folder now contains a freshly-rendered `thumbnail.png`. Reopen the
+      folder now contains a freshly-rendered `thumbnail.jpg`. Reopen the
       panel: both cards now show an icon, read straight from that file (no
       re-render — check the file's mtime is unchanged across the reopen).
 
@@ -383,7 +440,7 @@ print(thumb_path)
       shaded box on white.
 - [ ] **I2.** If it instead prints `False`: `SoOffscreenRenderer` failed on
       this machine's GL/driver setup. This is not a bug to chase down here —
-      note it, because it means committed `thumbnail.png` files become
+      note it, because it means committed `thumbnail.jpg` files become
       mandatory for every future part (fresh offscreen rendering can never
       be relied on on this machine), and that finding should be recorded
       back into the spec.

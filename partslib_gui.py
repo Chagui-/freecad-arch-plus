@@ -47,6 +47,16 @@ import partslib_thumbs
 ICON = os.path.join(_DIR, "Resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_DIR, "Resources", "icons", "facets")
 
+# Qt class name of FreeCAD's 3D view, used both to ask Gui.activateView for
+# one and to find its MDI sub-window.
+_VIEW3D_CLASS = "Gui::View3DInventor"
+
+# Slow-operation reporting for the panel's own phases, sharing the timer
+# and threshold used for thumbnails so the whole feature has one notion of
+# "slow enough to be worth telling the user about". See
+# partslib_thumbs.Timer.
+_Timer = partslib_thumbs.Timer
+
 _THUMB_SIZE = 96
 
 # Target width (px) for a card in the categories/results grids - used to
@@ -143,6 +153,20 @@ _STYLESHEET_TEMPLATE = """
     QPushButton#VariantChip:checked {
         background-color: transparent;
         color: %(accent)s;
+        border: 1px solid %(accent)s;
+    }
+    QLabel#VariantCaption {
+        color: %(text_dim)s;
+        padding-right: 6px;
+    }
+    QComboBox#VariantCombo {
+        background-color: transparent;
+        color: %(text)s;
+        border: 1px solid %(border)s;
+        border-radius: 4px;
+        padding: 2px 6px;
+    }
+    QComboBox#VariantCombo:hover {
         border: 1px solid %(accent)s;
     }
     QPushButton#BreadcrumbSegment {
@@ -254,6 +278,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._categoryColumns = 0
         self._filterRoom = None
         self._filterElement = None
+        # Cleared when the user cancels the thumbnail build, so the cards
+        # do not quietly go on rendering the rest inline. Reset by refresh.
+        self._renderThumbnails = True
         self._buildUi()
         self.refresh()
 
@@ -369,6 +396,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.variantGroup = QtGui.QButtonGroup(self)
         self.variantGroup.setExclusive(True)
         self.variantGroup.buttonToggled.connect(self._onVariantChanged)
+        # Set by _setVariantChips when a part has enough variants to earn a
+        # dropdown instead of chips; None the rest of the time.
+        self.variantCombo = None
 
         self.metrics = QtGui.QLabel("")
         metricsFont = QtGui.QFont("Monospace")
@@ -386,6 +416,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.placeButton.setEnabled(False)
         self.placeButton.clicked.connect(self._onPlace)
         layout.addWidget(self.placeButton)
+
+        # Repeat placement is OPT-IN. "Place in 3D view" reads as placing
+        # one part, so staying armed and dropping another on the next click
+        # is a surprise for anyone who did not ask for it - and an easy one
+        # to trigger by accident.
+        self.repeatCheck = QtGui.QCheckBox("Keep placing until Esc")
+        self.repeatCheck.setChecked(False)
+        self.repeatCheck.setToolTip(
+            "Stay armed after placing, so each click drops another copy. "
+            "Press Esc to stop.")
+        layout.addWidget(self.repeatCheck)
 
     def _makePreviewWidget(self):
         """Build the live 3D preview widget if possible, else a static image
@@ -436,12 +477,29 @@ class PartsLibraryPanel(QtGui.QWidget):
         """Rescan the library and rebuild both screens."""
         import partslib_object
 
+        import partslib_geometry
+
+        timer = _Timer("refreshing the parts library")
+        # Reopening (or explicitly refreshing) is the user asking again, so
+        # a cancelled thumbnail build gets another go.
+        self._renderThumbnails = True
+        # A rescan is the user saying "re-read the library", so remembered
+        # shapes go too - params are in the cache key, but an edited builder
+        # or asset file is not.
+        partslib_geometry.clear_shape_cache()
         index = partslib_object.libraryIndex(force=True)
+        timer.mark("scan")
+
         self._entries = index["entries"]
         self._facets = index["facets"]
+
         self._populateCategories()
         self._updateBreadcrumb()
+        timer.mark("categories")
+
         self._repopulateGrid()
+        timer.mark("grid")
+        timer.report("%d parts" % (len(self._entries),))
 
     def _facetIconPath(self, iconName):
         """Resolve a bare facet icon filename under Resources/icons/facets/.
@@ -699,7 +757,18 @@ class PartsLibraryPanel(QtGui.QWidget):
         reappears - covering both "clear the search" and "the library
         gained its first part"."""
         self.grid.clear()
-        for entry in sorted(self._filteredEntries(), key=lambda e: e["name"]):
+        entries = sorted(self._filteredEntries(), key=lambda e: e["name"])
+        # Render anything missing FIRST, with a progress dialog, so the
+        # count is known up front instead of discovered as the grid fills.
+        # After this pass every card is a plain file read; on any open
+        # after the first, nothing is pending and this returns instantly.
+        if self._renderThumbnails:
+            self._prerenderThumbnails(entries)
+        # No per-card timing here: a card is only ever slow because of the
+        # thumbnail behind it, and ensure_thumbnail already reports that -
+        # naming the part and where its time went - for the parts that
+        # actually were slow.
+        for entry in entries:
             item = QtGui.QListWidgetItem()
             item.setData(QtCore.Qt.UserRole, entry["id"])
             card = self._makePartCard(entry)
@@ -754,7 +823,8 @@ class PartsLibraryPanel(QtGui.QWidget):
             # later open is back to a plain file read. Never raises: any
             # failure (no committed manifest, no GL context) returns None
             # and the card is still shown, just without an icon.
-            thumbPath = self._ensureGridThumbnail(entry) or thumbPath
+            if self._renderThumbnails:
+                thumbPath = self._ensureGridThumbnail(entry) or thumbPath
         if os.path.exists(thumbPath):
             pixmap = QtGui.QPixmap(thumbPath)
             if not pixmap.isNull():
@@ -782,6 +852,63 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.addWidget(variants)
 
         return card
+
+    # Below this many missing thumbnails, a dialog is more disruptive than
+    # the wait it reports on.
+    PROGRESS_THRESHOLD = 3
+
+    def _prerenderThumbnails(self, entries):
+        """Render every missing thumbnail up front, showing progress.
+
+        Without this the first open of a fresh clone freezes FreeCAD
+        outright: each card renders its own thumbnail inline, on the main
+        thread, with nothing on screen to say why. Rendering cannot move
+        off the main thread - the offscreen renderer needs the GL context
+        that lives there - so the honest fix is to say what is happening
+        and let the user stop it.
+
+        Doing it as a separate pass BEFORE any card is built is what makes
+        the count meaningful: the total is known before the first render
+        rather than discovered as the grid fills.
+
+        Cancelling sets `_renderThumbnails` False, which stops the cards
+        rendering the rest inline behind the dialog's back - otherwise
+        "Cancel" would only dismiss the dialog and leave the freeze."""
+        pending = []
+        for entry in entries:
+            path = partslib_thumbs.thumbnail_path(entry["dir"])
+            if (not os.path.exists(path)
+                    and not partslib_thumbs.render_failed_before(path)):
+                pending.append(entry)
+        if len(pending) < self.PROGRESS_THRESHOLD:
+            return
+
+        dialog = QtGui.QProgressDialog(
+            "Building thumbnails…", "Cancel", 0, len(pending),
+            FreeCADGui.getMainWindow())
+        dialog.setWindowTitle("ArchPlus Parts Library")
+        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+        # Show immediately: the whole point is that the UI is about to be
+        # busy for a while, so Qt's default "wait and see" defeats it.
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(True)
+        dialog.setValue(0)
+
+        for index, entry in enumerate(pending):
+            if dialog.wasCanceled():
+                self._renderThumbnails = False
+                FreeCAD.Console.PrintMessage(
+                    "ArchPlus: stopped building thumbnails at %d of %d; the "
+                    "rest will render next time the library is opened.\n"
+                    % (index, len(pending)))
+                break
+            dialog.setLabelText("Building thumbnails: %d of %d\n%s"
+                                % (index + 1, len(pending), entry["name"]))
+            dialog.setValue(index)
+            QtGui.QApplication.processEvents()
+            self._ensureGridThumbnail(entry)
+        dialog.setValue(len(pending))
+        dialog.close()
 
     def _ensureGridThumbnail(self, entry):
         """Render a fallback thumbnail for `entry`'s default variant.
@@ -843,39 +970,88 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._setVariantChips(entry["variants"])
         self._refreshPreview()
 
+    # Above this many variants, chips stop being a good control: they wrap
+    # onto several rows in a narrow sidebar and the labels ("Walk-in
+    # 1200 mm") are long enough that the row stops reading as a row.
+    MAX_VARIANT_CHIPS = 2
+
     def _setVariantChips(self, labels):
-        """Rebuild the variant chip row for the current selection."""
+        """Rebuild the variant control for the current selection.
+
+        Three cases, because one control does not suit all of them:
+
+        - ONE label. A part with no declared variants gets the implicit
+          "Default", and a lone chip reading "Default" is pure noise - it
+          offers no choice and names nothing the user recognises. Show
+          nothing at all.
+        - TWO labels. Chips: both options visible at once, one click to
+          switch.
+        - MORE. A combo box, which stays one line however many there are
+          and however long their labels."""
         for button in list(self.variantGroup.buttons()):
             self.variantGroup.removeButton(button)
             button.setParent(None)
             button.deleteLater()
+        # _clearLayout deletes the widgets, so any surviving reference to
+        # the old combo would be a dangling C++ pointer.
+        self.variantCombo = None
         _clearLayout(self.variantRow)
 
-        for label in labels:
-            chip = QtGui.QPushButton(label)
-            chip.setObjectName("VariantChip")
-            chip.setCheckable(True)
-            chip.setCursor(QtCore.Qt.PointingHandCursor)
-            self.variantGroup.addButton(chip)
-            self.variantRow.addWidget(chip)
-        self.variantRow.addStretch(1)
+        labels = list(labels or [])
+        if len(labels) < 2:
+            return
 
-        buttons = self.variantGroup.buttons()
-        if buttons:
-            buttons[0].blockSignals(True)
-            buttons[0].setChecked(True)
-            buttons[0].blockSignals(False)
+        if len(labels) <= self.MAX_VARIANT_CHIPS:
+            for label in labels:
+                chip = QtGui.QPushButton(label)
+                chip.setObjectName("VariantChip")
+                chip.setCheckable(True)
+                chip.setCursor(QtCore.Qt.PointingHandCursor)
+                self.variantGroup.addButton(chip)
+                self.variantRow.addWidget(chip)
+            self.variantRow.addStretch(1)
+
+            buttons = self.variantGroup.buttons()
+            if buttons:
+                buttons[0].blockSignals(True)
+                buttons[0].setChecked(True)
+                buttons[0].blockSignals(False)
+            return
+
+        caption = QtGui.QLabel("Variant")
+        caption.setObjectName("VariantCaption")
+        self.variantRow.addWidget(caption)
+
+        combo = QtGui.QComboBox()
+        combo.setObjectName("VariantCombo")
+        # Populate before connecting: addItems fires currentIndexChanged,
+        # and rebuilding the preview mid-populate would build the wrong
+        # variant and waste the work.
+        combo.addItems(labels)
+        combo.setCurrentIndex(0)
+        combo.currentIndexChanged.connect(self._onVariantChanged)
+        self.variantRow.addWidget(combo, 1)
+        self.variantCombo = combo
 
     def _currentVariantLabel(self):
+        combo = getattr(self, "variantCombo", None)
+        if combo is not None:
+            try:
+                return combo.currentText() or None
+            except RuntimeError:
+                # Combo destroyed by a rebuild between selection changes.
+                self.variantCombo = None
         for button in self.variantGroup.buttons():
             if button.isChecked():
                 return button.text()
         return None
 
     def _onVariantChanged(self, *args):
-        # buttonToggled(button, checked) fires twice on an exclusive switch
-        # (the old chip going False, the new one going True) - only react
-        # to the "became checked" half.
+        # Serves both controls. buttonToggled(button, checked) fires twice
+        # on an exclusive switch (the old chip going False, the new one
+        # going True) - only react to the "became checked" half.
+        # currentIndexChanged(int) passes a single argument, so the
+        # two-argument test leaves it alone.
         checked = args[1] if len(args) > 1 else True
         if not checked:
             return
@@ -900,11 +1076,13 @@ class PartsLibraryPanel(QtGui.QWidget):
         if selection is None:
             return
         entry, resolved = selection
+        timer = _Timer("previewing %r" % (entry["id"],))
         try:
             shape = partslib_geometry.build_shape(resolved, entry["dir"])
         except Exception as exc:
             self.metrics.setText("Cannot build this part: %s" % exc)
             return
+        timer.mark("build")
 
         metrics = partslib_geometry.measure(shape)
         self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
@@ -922,15 +1100,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         else:
             label = self._currentVariantLabel() or entry["variants"][0]
             self._showStaticPreview(entry, shape, label)
+        timer.mark("preview")
+        timer.report()
 
     def _showStaticPreview(self, entry, shape, label):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
 
-          1. a freshly rendered/cached per-variant PNG at detail (256px)
+          1. a freshly rendered/cached per-variant JPEG at detail (256px)
              resolution;
-          2. the part's committed thumbnail.png (not variant-specific, but
+          2. the part's committed thumbnail.jpg (not variant-specific, but
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
              with no pivy/GL available at all, since it is what stands
@@ -961,15 +1141,28 @@ class PartsLibraryPanel(QtGui.QWidget):
         QPixmap, or None on any failure (a bad cache path, or a renderer
         with no GL context - render_shape already returns False rather than
         raising in that case) so the caller can fall through to the next
-        layer."""
+        layer.
+
+        Checks the shared session failure cache first: on a machine where
+        the renderer can never succeed, re-selecting the same part/variant
+        (or switching Variant back and forth) would otherwise retry the
+        same doomed render every single time - see partslib_thumbs.py's
+        _RENDER_FAILED for the full rationale."""
+        cache_dir = os.path.join(entry["dir"], ".cache")
+        out_path = os.path.join(
+            cache_dir, "%s.jpg" % _sanitizeVariantLabel(label))
         try:
-            cache_dir = os.path.join(entry["dir"], ".cache")
-            out_path = os.path.join(
-                cache_dir, "%s.png" % _sanitizeVariantLabel(label))
-            if not os.path.exists(out_path):
-                if not partslib_thumbs.render_shape(
-                        shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
-                    return None
+            if os.path.exists(out_path):
+                pixmap = QtGui.QPixmap(out_path)
+                return None if pixmap.isNull() else pixmap
+            if partslib_thumbs.render_failed_before(out_path):
+                return None
+            if not partslib_thumbs.render_shape(
+                    shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
+                partslib_thumbs.mark_render_failed(out_path, (
+                    "ArchPlus: cannot render a detail preview for %r (%s); "
+                    "will not retry this session\n" % (entry["id"], label)))
+                return None
             pixmap = QtGui.QPixmap(out_path)
             return None if pixmap.isNull() else pixmap
         except Exception as exc:
@@ -978,18 +1171,69 @@ class PartsLibraryPanel(QtGui.QWidget):
                 % (entry["id"], label, exc))
             return None
 
-    def _findSceneGraphSubWindow(self, mdi):
-        """The MDI sub-window whose widget is a real 3D view - the same
-        `getSceneGraph` attribute check doorsplus_gui.py:992 already uses to
-        detect one, just applied across every open sub-window instead of
-        only the active one."""
+    def _find3DSubWindow(self, mdi):
+        """The MDI sub-window holding a 3D view, or None.
+
+        Matched on the widget's Qt class name: PySide hands back a plain
+        QWidget for a sub-window's widget and knows nothing of FreeCAD's
+        view API, but the widget's metaObject still reports the real C++
+        class underneath."""
         for sub in mdi.subWindowList():
-            if hasattr(sub.widget(), "getSceneGraph"):
-                return sub
+            try:
+                if sub.widget().metaObject().className() == _VIEW3D_CLASS:
+                    return sub
+            except Exception:
+                continue
         return None
 
+    def _activate3DView(self, mdi):
+        """Make a 3D view the active window. True if one is now active.
+
+        The Snapper needs an ACTIVE 3D view, and the library panel is itself
+        an MDI sub-window - so simply opening the library deactivates
+        whatever 3D view the user was looking at.
+
+        This used to scan mdi.subWindowList() for a sub-window whose widget
+        had a `getSceneGraph` attribute, borrowing the duck-type check
+        doorsplus_gui.py applies to the active window. It could never match:
+        getSceneGraph lives on FreeCAD's View3DInventorPy - the object Gui
+        hands back as ActiveView - and NOT on the QWidget that PySide
+        returns from QMdiSubWindow.widget(), where PySide only knows the Qt
+        base class. The check was being asked of an object that had no way
+        to answer it, so placing a part always reported "no 3D view is
+        open" even with one open right beside the panel.
+
+        Gui.activateView is FreeCAD's own API for this (its PartDesign test
+        suite uses the identical call), and letting it create a view when
+        the document has none is friendlier than refusing to place."""
+        try:
+            FreeCADGui.activateView(_VIEW3D_CLASS, True)
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot activate a 3D view: %s\n" % (exc,))
+
+        # activateView makes the view current as far as FreeCAD is
+        # concerned, but the library panel is itself an MDI sub-window and
+        # keeps the on-screen tab - so raise the 3D view's tab too, or the
+        # user has to click it by hand before they can pick a point.
+        subWindow = self._find3DSubWindow(mdi) if mdi is not None else None
+        if subWindow is not None:
+            mdi.setActiveSubWindow(subWindow)
+
+        try:
+            # Ask the view object itself, which is where getSceneGraph
+            # actually lives.
+            return hasattr(FreeCADGui.ActiveDocument.ActiveView,
+                           "getSceneGraph")
+        except Exception:
+            return False
+
     def _onPlace(self, *args):
-        """Activate a 3D view, pick a point, place the part, and repeat.
+        """Activate a 3D view, pick a point, and place the part.
+
+        One click places one part. Ticking "Keep placing until Esc" instead
+        stays armed after each placement, so every click drops another copy
+        of the same part until the user cancels.
 
         The Snapper needs an ACTIVE 3D view, so this first finds and
         activates one (browsing the catalogue never needs a document - see
@@ -1004,15 +1248,12 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         mainWindow = FreeCADGui.getMainWindow()
         mdi = mainWindow.findChild(QtGui.QMdiArea)
-        sceneSubWindow = self._findSceneGraphSubWindow(mdi) if mdi else None
-        if sceneSubWindow is None:
+        librarySubWindow = self.parentWidget()
+        if not self._activate3DView(mdi):
             FreeCAD.Console.PrintError(
                 "ArchPlus: no 3D view is open - open a document with a 3D "
                 "view before placing a library part.\n")
             return
-
-        librarySubWindow = self.parentWidget()
-        mdi.setActiveSubWindow(sceneSubWindow)
 
         import partslib_geometry
         import partslib_object
@@ -1026,16 +1267,24 @@ class PartsLibraryPanel(QtGui.QWidget):
         host = partslib_placement.host_of(resolved)
         offset = partslib_placement.offset_of(resolved)
         variant = self._currentVariantLabel() or entry["variants"][0]
+        # Read once, up front: the checkbox lives on the library tab, which
+        # is not even the active window while picking, so a mid-session
+        # change of mind is not something the user can express anyway - and
+        # this way the loop cannot be re-armed by a widget that has since
+        # been destroyed.
+        repeat = self.repeatCheck.isChecked()
 
         # Ghost tracker (spec Sec 7/8's "_placeTracker pattern",
         # doorsplus_gui.py:887): a rough box preview of the part's footprint
         # that follows the cursor while picking, sized from the built
         # shape's measured bounding box. It stays ON across every repeat of
         # the placement loop below and is finalized EXACTLY ONCE, when the
-        # loop ends (Esc, an exception, or - see the early returns above -
-        # never even started when there is no document/3D view). Degrade to
+        # loop ends (a single placement with repeat off, Esc, an exception,
+        # or - see the early returns above - never even started when there
+        # is no document/3D view). Degrade to
         # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
+        trackerCentre = None
         try:
             shape = partslib_geometry.build_shape(resolved, entry["dir"])
             metrics = partslib_geometry.measure(shape)
@@ -1043,6 +1292,14 @@ class PartsLibraryPanel(QtGui.QWidget):
             tracker.length(metrics["Width"])
             tracker.width(metrics["Depth"])
             tracker.height(metrics["Height"])
+            # boxTracker.pos() sets the CENTRE of the ghost box (it moves an
+            # SoCube, which straddles its own origin), but a part's origin
+            # is its bounding box's minimum corner. Without this offset the
+            # ghost previews a spot half a sofa away from where the part
+            # actually lands.
+            trackerCentre = FreeCAD.Vector(metrics["Width"] / 2.0,
+                                           metrics["Depth"] / 2.0,
+                                           metrics["Height"] / 2.0)
             tracker.on()
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
@@ -1055,7 +1312,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # back on click, exactly as repositionDoor does
         # (doorsplus_gui.py:922-934).
         doc = FreeCAD.ActiveDocument
-        state = {"face": None}
+        state = {"face": None, "placed": False}
 
         def moved(point, info):
             if info and "Face" in info.get("Component", ""):
@@ -1072,14 +1329,15 @@ class PartsLibraryPanel(QtGui.QWidget):
                 preview = partslib_placement.partPlacement(
                     point, state["face"], host, offset)
                 tracker.setRotation(preview.Rotation)
-                tracker.pos(preview.Base)
+                tracker.pos(preview.multVec(trackerCentre))
 
         def placed(point=None, obj=None):
             FreeCADGui.Snapper.off()
             again = False
+            state["placed"] = False
             try:
                 if point is None:
-                    return  # Esc/cancel - end the repeat-placement loop
+                    return  # Esc/cancel - end the placement loop
                 placement = partslib_placement.partPlacement(
                     point, state["face"], host, offset)
                 doc.openTransaction("Place library part")
@@ -1088,13 +1346,14 @@ class PartsLibraryPanel(QtGui.QWidget):
                         entry, self._facets, variant=variant,
                         placement=placement)
                     doc.commitTransaction()
+                    state["placed"] = True
                 except Exception as exc:
                     doc.abortTransaction()
                     FreeCAD.Console.PrintError(
                         "ArchPlus: cannot place %s: %s\n"
                         % (entry["id"], exc))
                 doc.recompute()
-                again = True
+                again = repeat
             finally:
                 if again:
                     # REPEAT PLACEMENT: re-arm for another pick so the user
@@ -1104,12 +1363,19 @@ class PartsLibraryPanel(QtGui.QWidget):
                     FreeCADGui.Snapper.getPoint(
                         callback=placed, movecallback=moved)
                 else:
-                    # Loop end - Esc, or an exception above: finalize the
-                    # tracker exactly once and return the user to the
-                    # library tab they started from.
+                    # End of the session - Esc, an exception above, or a
+                    # single placement with repeat off. Finalize the tracker
+                    # exactly once.
                     if tracker is not None:
                         tracker.finalize()
-                    if librarySubWindow is not None:
+                    # Go back to the library only when nothing was placed.
+                    # Having just dropped a part, the user wants to SEE it,
+                    # and yanking them to the library tab hides the thing
+                    # they asked for - but a cancel means "I'm done here",
+                    # so return them where they started.
+                    if not state["placed"] \
+                            and mdi is not None \
+                            and librarySubWindow is not None:
                         mdi.setActiveSubWindow(librarySubWindow)
 
         FreeCADGui.Snapper.getPoint(callback=placed, movecallback=moved)
@@ -1150,6 +1416,8 @@ def showPanel():
     tool permanently dead - so closing the tab and clicking the toolbar
     button again always yields a working tab."""
     global _panel
+    # Not timed here: opening the panel is only ever slow because of the
+    # refresh() inside it, which reports itself.
     mainWindow = FreeCADGui.getMainWindow()
     if _panel is not None:
         try:

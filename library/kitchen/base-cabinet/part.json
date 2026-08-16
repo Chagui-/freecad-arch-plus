@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "id": "base-cabinet",
+  "name": "Base cabinet",
+  "description": "Floor-standing kitchen unit with a worktop; Height is the finished worktop height.",
+  "keywords": [
+    "kitchen",
+    "cabinet",
+    "unit",
+    "base",
+    "worktop",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 900
+    },
+    "WorktopThickness": {
+      "type": "Length",
+      "default": 40
+    },
+    "KickHeight": {
+      "type": "Length",
+      "default": 100
+    },
+    "DoorCount": {
+      "type": "Integer",
+      "default": 1
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "300 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 300
+        },
+        "DoorCount": {
+          "type": "Integer",
+          "default": 1
+        }
+      }
+    },
+    {
+      "label": "600 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 600
+        },
+        "DoorCount": {
+          "type": "Integer",
+          "default": 1
+        }
+      }
+    },
+    {
+      "label": "800 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 800
+        },
+        "DoorCount": {
+          "type": "Integer",
+          "default": 2
+        }
+      }
+    }
+  ],
+  "geometry": {
+    "builder": "kitchen.base_cabinet"
+  }
+}

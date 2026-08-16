@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "vanity",
+  "name": "Vanity",
+  "description": "Parametric vanity cabinet with an oval countertop basin and a low backsplash.",
+  "keywords": ["vanity", "basin", "sink", "cabinet", "bathroom", "parametric"],
+  "facets": {
+    "function": "Sanitary",
+    "element": "Vanity",
+    "room": ["Bathroom"]
+  },
+  "params": {
+    "Width": { "type": "Length", "default": 600 },
+    "Depth": { "type": "Length", "default": 500 },
+    "Height": { "type": "Length", "default": 850 },
+    "BasinWidth": { "type": "Length", "default": 300 },
+    "BasinDepth": { "type": "Length", "default": 300 },
+    "BasinRecess": { "type": "Length", "default": 120 },
+    "BacksplashHeight": { "type": "Length", "default": 100 },
+    "DoorCount": { "type": "Integer", "default": 2 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "variants": [
+    { "label": "600 mm", "params": {
+        "Width": { "type": "Length", "default": 600 },
+        "BasinWidth": { "type": "Length", "default": 300 } } },
+    { "label": "900 mm", "params": {
+        "Width": { "type": "Length", "default": 900 },
+        "BasinWidth": { "type": "Length", "default": 450 } } }
+  ],
+  "geometry": { "builder": "sanitary.vanity" }
+}

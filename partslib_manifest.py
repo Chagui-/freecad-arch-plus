@@ -200,8 +200,16 @@ def variant_labels(manifest):
 def resolve_variant(manifest, label):
     """Return a manifest-shaped dict with one variant's overrides applied.
 
-    Merges variant-over-part for `geometry.assets`, `params` and
-    `ifcProperties`. The input manifest is never mutated."""
+    Merges variant-over-part for `geometry.assets`, `params`,
+    `ifcProperties` and `placement`. The input manifest is never mutated.
+
+    `placement` is merged per key, so a variant that sets only `host` keeps
+    the part's `offset`. It is in this list because some parts genuinely
+    differ in how they are hosted rather than only in size - a television
+    on a stand is floor-hosted, the same television on a bracket is
+    wall-hosted at a mounting height. Without this, expressing that needs
+    two separate catalogue entries for what a user thinks of as one product
+    with two options."""
     resolved = copy.deepcopy(manifest)
     variants = resolved.pop("variants", None) or []
 
@@ -218,7 +226,7 @@ def resolve_variant(manifest, label):
     if "assets" in variant:
         resolved.setdefault("geometry", {}).setdefault("assets", {}).update(
             variant["assets"])
-    for key in ("params", "ifcProperties"):
+    for key in ("params", "ifcProperties", "placement"):
         if key in variant:
             resolved.setdefault(key, {}).update(variant[key])
     resolved["variantLabel"] = label

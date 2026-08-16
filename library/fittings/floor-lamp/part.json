@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "id": "floor-lamp",
+  "name": "Floor lamp",
+  "description": "Floor lamp with a weighted base, slim stem and conical shade.",
+  "keywords": [
+    "lamp",
+    "floor lamp",
+    "lighting",
+    "living",
+    "bedroom",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Lighting",
+    "element": "Lamp",
+    "room": [
+      "Living",
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Height": {
+      "type": "Length",
+      "default": 1600
+    },
+    "BaseDiameter": {
+      "type": "Length",
+      "default": 300
+    },
+    "StemDiameter": {
+      "type": "Length",
+      "default": 30
+    },
+    "ShadeHeight": {
+      "type": "Length",
+      "default": 320
+    },
+    "ShadeTopDiameter": {
+      "type": "Length",
+      "default": 260
+    },
+    "ShadeBottomDiameter": {
+      "type": "Length",
+      "default": 380
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {
+    "builder": "fittings.floor_lamp"
+  }
+}

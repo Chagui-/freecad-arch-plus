@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Living Room - line-art TV on a stand, single stroke colour (currentColor). See bathroom.svg for the shared style notes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <rect x="4" y="4" width="16" height="10" rx="1"/>
+  <line x1="9" y1="14" x2="9" y2="17"/>
+  <line x1="15" y1="14" x2="15" y2="17"/>
+  <line x1="7" y1="19" x2="17" y2="19"/>
+  <line x1="9" y1="17" x2="9" y2="19"/>
+  <line x1="15" y1="17" x2="15" y2="19"/>
+</svg>
