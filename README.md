@@ -168,6 +168,138 @@ BIM workbench → **ArchPlus** toolbar:
   insert it. Right-click a placed part → **Reload from library** to refresh
   it from its manifest.
 
+## Adding parts to the library
+
+A part is a folder under `library/` containing a `part.json` manifest. The
+scan walks the whole tree, so the intermediate folders (`furniture/`,
+`kitchen/`, `sanitary/`, `fittings/`) are grouping for humans only — nothing
+reads them. Parts are found by their manifest, and grouped in the browser by
+the **facets** they declare.
+
+### 1. Write the manifest
+
+`library/furniture/my-stool/part.json`:
+
+```json
+{
+  "schema": 1,
+  "id": "my-stool",
+  "name": "Bar stool",
+  "description": "Round stool with a footrest ring.",
+  "keywords": ["stool", "bar", "seating"],
+  "facets": {
+    "function": "Seating",
+    "element": "Chair",
+    "room": ["Kitchen", "Dining"]
+  },
+  "params": {
+    "Height": { "type": "Length", "default": 750 },
+    "SeatDiameter": { "type": "Length", "default": 340 }
+  },
+  "placement": { "host": "floor", "offset": 0 },
+  "geometry": { "builder": "furniture.bar_stool" }
+}
+```
+
+- `schema`, `id`, `name`, `facets` and `geometry` are required; the rest are
+  optional. `id` must be a lowercase slug and unique across the library.
+- Every facet value must already exist in `library/facets.json` — an unknown
+  one is a hard error, not a silent pass. `room` is multi-valued (a list);
+  `function` and `element` take a single string.
+- `params` become editable properties on the placed object. Types:
+  `Length`, `Angle`, `Integer`, `Bool`, `String`.
+- `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
+  `offset` is millimetres from that surface — e.g. a wall cabinet uses
+  `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
+- `variants` (optional) is a list of `{"label": ..., "params": {...}}`.
+  A variant may also override `assets`, `ifcProperties` and `placement`, so
+  a TV on a stand and the same TV on a bracket can be one catalogue entry
+  with two hosts. Parts with one variant show no variant control, two show
+  chips, three or more show a dropdown.
+
+### 2. Write the builder
+
+Manifests reference geometry by symbol only — `"module.function"`, resolved
+inside `partslib_builders/`. A manifest can never name a path or an import
+target outside that package, which is what stops a manifest from executing
+arbitrary code. Adding a new module there is enough; there is no registry to
+update.
+
+```python
+# partslib_builders/furniture.py
+from . import _shapes as sh
+
+def bar_stool(params, assets, ctx):
+    """One docstring line, then the params it reads."""
+    height = float(params.get("Height", 750))
+    diameter = float(params.get("SeatDiameter", 340))
+    ...
+    return sh.fuse_all([seat] + legs)      # -> a Part.Shape
+```
+
+The contract is `def build(params, assets, ctx) -> Part.Shape`. Import
+`Part`/`FreeCAD` *inside* the function, never at module scope, so the
+headless test suite can import the module without FreeCAD present.
+
+`_shapes.py` carries the shared massing helpers — `rounded_box`,
+`square_leg`, `roll_top`, `panel_reveal_boxes`, `cut_boxes`, `toe_kick`,
+`bar`, `tube_elbow`, `place`, `fuse_all`. Prefer them: every fillet in there
+already falls back to a sharp edge rather than aborting the build when OCC
+refuses.
+
+### 3. Conventions that matter
+
+These are not style preferences — each one came from something looking wrong
+in a render:
+
+- **Axes.** X is width, Y is depth with the *back* at +Y, Z is up. Build
+  from the origin so the part's minimum corner is (0, 0, 0); placement puts
+  that corner on the picked point.
+- **Measure what you advertise.** The browser shows `W × D × H` measured
+  from the built shape, so a handle or cornice sticking out past the
+  declared `Width` makes the catalogue lie. Build overhangs *inward*: make
+  the top the advertised size and inset the carcass behind it.
+- **Square, not round.** A 36 mm cylinder renders as a single line with no
+  shading at thumbnail size. Legs and posts are square section.
+- **Solid, not scattered.** Where the real object is one soft mass (a sofa),
+  model one mass and *cut* the cushion seams into it. Separate floating
+  cushions read worse.
+- **Don't round a solid's plan corners and its top edge.** The two fillets
+  collide at the corners and leave a picture-frame rim. Use `roll_top` for a
+  roll that runs through.
+- **Batch your cuts.** `cut_boxes()` subtracts a compound in one boolean.
+  Twenty sequential cuts against a growing solid cost real seconds.
+- **Avoid non-uniform scaling.** `oval()` runs a shape through
+  `transformGeometry`, turning it into a BSpline surface that is far more
+  expensive to tessellate — one such surface once cost 17 s per thumbnail.
+
+### 4. Check it
+
+```bash
+uv run --with pytest --no-project pytest tests/ -q
+```
+
+`tests/test_library_content.py` scans the real shipped library, so a
+malformed manifest, an unknown facet value, an unresolvable builder symbol,
+an unknown placement host or a facet icon missing from disk all fail here
+rather than reaching a user as an empty panel.
+
+Then open the Parts Library in FreeCAD and look at it. The test suite runs
+without FreeCAD, so it cannot tell you whether a boolean succeeded, a fillet
+silently fell back, or the thing simply looks wrong — only your eyes can.
+The first open renders a thumbnail per part (with a progress dialog) and
+caches it as `thumbnail.jpg` beside the manifest; commit that so a fresh
+clone opens to a populated grid. Delete it to force a re-render after
+changing geometry.
+
+### Adding a new facet value
+
+To use a room, function or element the vocabulary doesn't have yet, add it
+to `library/facets.json` *and* drop a matching 24×24 line-art SVG into
+`Resources/icons/facets/` using `stroke="currentColor"` so it works in both
+themes. A test asserts every referenced icon exists — a missing one renders
+as a blank card with nothing in the console to explain why.
+
 ## TODO
 
 Stairs:
