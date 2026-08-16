@@ -332,11 +332,16 @@ def shower_screen(params, assets, ctx):
 
 
 def towel_hook(params, assets, ctx):
-    """A wall towel hook: a backplate with a projecting arm turned up at the
-    tip. Wall-hosted.
+    """A wall towel hook: a backplate and a single rod that runs out from
+    the wall and curves upward at the tip. Wall-hosted.
 
-    Params: PlateWidth, PlateHeight, PlateDepth, Projection, ArmDiameter
-    (mm)."""
+    Params: PlateWidth, PlateHeight, PlateDepth, Projection, ArmDiameter,
+    BendRadius (mm).
+
+    The rod is one continuous piece - a straight length plus a real
+    quarter-bend - not two cylinders butted at a right angle. A mitred
+    corner reads as two pipes touching, which is what the first version
+    looked like."""
     import Part
 
     plate_width = float(params.get("PlateWidth", 55))
@@ -344,30 +349,58 @@ def towel_hook(params, assets, ctx):
     plate_depth = float(params.get("PlateDepth", 12))
     projection = float(params.get("Projection", 65))
     arm_diameter = float(params.get("ArmDiameter", 14))
+    bend_radius = float(params.get("BendRadius", 18))
+
+    tube = arm_diameter / 2.0
+    bend_radius = max(bend_radius, tube * 1.2)
+    cx = plate_width / 2.0
+    # The bend's centre of curvature sits directly above where the straight
+    # arm ends, so the arc enters heading -Y and leaves heading +Z. Offset
+    # by the tube radius as well as the bend radius, so the OUTSIDE of the
+    # curve lands on y=0 rather than reaching behind the part's origin.
+    arm_z = plate_height / 2.0
+    centre_y = bend_radius + tube
+    centre_z = arm_z + bend_radius
 
     plate = sh.rounded_box(plate_width, plate_depth, plate_height, radius=8)
     plate = sh.place(plate, 0, projection - plate_depth, 0)
 
-    # Arm runs out from the plate toward the room (-Y).
-    arm = Part.makeCylinder(arm_diameter / 2.0, projection - plate_depth,
-                            sh.vector(0, 0, 0), sh.vector(0, -1, 0))
-    arm = sh.place(arm, plate_width / 2.0, projection - plate_depth,
-                    plate_height * 0.62)
+    arm_length = max(projection - plate_depth - centre_y, tube)
+    arm = Part.makeCylinder(tube, arm_length, sh.vector(0, 0, 0),
+                            sh.vector(0, -1, 0))
+    arm = sh.place(arm, cx, projection - plate_depth, arm_z)
 
-    # Turned-up tip: what makes it a hook rather than a peg.
-    tip = Part.makeCylinder(arm_diameter / 2.0, arm_diameter * 1.6)
-    tip = sh.place(tip, plate_width / 2.0, arm_diameter / 2.0,
-                    plate_height * 0.62)
+    parts = [plate, arm]
+    elbow = sh.tube_elbow(tube, bend_radius)
+    if elbow is not None:
+        # The quarter-bend is built in the XY plane running +X to +Y. One
+        # 180-degree turn about (1, 0, -1) maps X to -Z and Y to -Y, which
+        # lands the arc's ends exactly on the arm end and the upturned tip.
+        elbow = sh.rotate(elbow, (1.0, 0.0, -1.0), 180.0)
+        parts.append(sh.place(elbow, cx, centre_y, centre_z))
+        # Short upturned tip continuing out of the bend.
+        tip_length = tube * 2.2
+        parts.append(sh.place(Part.makeCylinder(tube, tip_length),
+                              cx, centre_y - bend_radius, centre_z))
+    else:
+        # No torus available: a straight peg still hangs a towel.
+        parts.append(sh.place(Part.makeCylinder(tube, bend_radius * 1.6),
+                              cx, centre_y, arm_z))
 
-    return sh.fuse_all([plate, arm, tip])
+    return sh.fuse_all(parts)
 
 
 def toilet_roll_holder(params, assets, ctx):
-    """A wall toilet-roll holder: backplate, arm, and the roll on its
-    spindle. Wall-hosted.
+    """A wall toilet-roll holder: backplate, an arm out from the wall, and
+    the roll on a spindle running PARALLEL to the wall. Wall-hosted.
 
     Params: PlateWidth, PlateHeight, PlateDepth, ArmLength, RollDiameter,
-    RollWidth, CoreDiameter (mm)."""
+    RollWidth, CoreDiameter (mm).
+
+    The spindle direction is the whole point. The first version ran the arm
+    and the spindle along the same axis, so the roll hung off the end of a
+    stick like a paint roller. On a real holder the arm projects from the
+    wall and the roll turns on an axis across it."""
     import Part
 
     plate_width = float(params.get("PlateWidth", 50))
@@ -378,29 +411,38 @@ def toilet_roll_holder(params, assets, ctx):
     roll_width = float(params.get("RollWidth", 100))
     core_diameter = float(params.get("CoreDiameter", 45))
 
-    depth = max(roll_diameter, plate_depth)
+    roll_radius = roll_diameter / 2.0
+    spindle_radius = max(core_diameter * 0.28, 6.0)
+
+    # Lay the part out so its minimum corner is the origin: the roll is the
+    # widest thing in Y and Z, so those extents set the envelope.
+    depth = roll_radius + arm_length + plate_depth
+    axis_y = roll_radius
+    axis_z = roll_radius
 
     plate = sh.rounded_box(plate_width, plate_depth, plate_height, radius=6)
     plate = sh.place(plate, 0, depth - plate_depth,
-                      roll_diameter / 2.0 - plate_height / 2.0)
+                      axis_z - plate_height / 2.0)
 
-    # Arm reaches sideways from the plate, the spindle runs along it.
-    arm = Part.makeCylinder(9.0, arm_length, sh.vector(0, 0, 0),
-                            sh.vector(1, 0, 0))
-    arm = sh.place(arm, plate_width / 2.0, depth - plate_depth / 2.0,
-                    roll_diameter / 2.0)
+    arm = Part.makeCylinder(spindle_radius * 1.3, arm_length,
+                            sh.vector(0, 0, 0), sh.vector(0, -1, 0))
+    arm = sh.place(arm, plate_width / 2.0, depth - plate_depth, axis_z)
 
-    roll = Part.makeCylinder(roll_diameter / 2.0, roll_width,
+    # Spindle runs across the arm, cantilevered so a roll can slide on.
+    spindle_length = roll_width + 14.0
+    spindle = Part.makeCylinder(spindle_radius, spindle_length,
+                                sh.vector(0, 0, 0), sh.vector(1, 0, 0))
+    spindle = sh.place(spindle, plate_width / 2.0, axis_y, axis_z)
+
+    roll = Part.makeCylinder(roll_radius, roll_width,
                              sh.vector(0, 0, 0), sh.vector(1, 0, 0))
-    roll = sh.place(roll, plate_width / 2.0 + arm_length,
-                     depth - roll_diameter / 2.0, roll_diameter / 2.0)
-    core = Part.makeCylinder(core_diameter / 2.0, roll_width + 2.0,
+    roll = sh.place(roll, plate_width / 2.0 + 7.0, axis_y, axis_z)
+    core = Part.makeCylinder(core_diameter / 2.0, roll_width + 4.0,
                              sh.vector(0, 0, 0), sh.vector(1, 0, 0))
-    core = sh.place(core, plate_width / 2.0 + arm_length - 1.0,
-                     depth - roll_diameter / 2.0, roll_diameter / 2.0)
+    core = sh.place(core, plate_width / 2.0 + 5.0, axis_y, axis_z)
     try:
         roll = roll.cut(core)
     except Exception:
         pass
 
-    return sh.fuse_all([plate, arm, roll])
+    return sh.fuse_all([plate, arm, spindle, roll])

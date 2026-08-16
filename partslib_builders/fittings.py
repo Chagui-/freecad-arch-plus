@@ -9,11 +9,12 @@
 # and the recess inside - not rounded corners, which at 20mm thickness are
 # invisible anyway.
 #
-# The curtain is the one shape here that a primitive really cannot describe.
-# Rather than attempt drapery, it is a slab with vertical grooves cut into
-# it at a regular pitch - the same seam trick the sofa uses for its cushion
-# divisions. At blueprint scale that reads as gathered fabric, and it costs
-# a handful of box subtractions instead of a lofted surface.
+# The curtain is the one shape here a primitive really cannot describe, and
+# the first attempt got it backwards: it cut grooves into a flat slab, which
+# read exactly as what it was - a board with holes in it. Grooves SUBTRACT
+# from a plane; folds DISPLACE it. It is now a row of overlapping vertical
+# cylinders alternating front and back, fused into one serpentine body - a
+# hanging plane curled into folds, which is what gathered cloth actually is.
 
 from . import _shapes as sh
 
@@ -128,9 +129,11 @@ def curtain(params, assets, ctx):
     Params: Width, Height, Fullness, RailDiameter, HeaderHeight (mm),
     FoldCount (integer).
 
-    The folds are grooves cut into a slab rather than modelled drapery - see
-    the module notes. `Fullness` sets how far the fabric stands off the
-    wall, which is what gives the folds something to cut into."""
+    The fabric is a serpentine of overlapping vertical cylinders, not a
+    grooved slab - see the module notes. `Fullness` is the total depth the
+    folds occupy, so it is what gives them room to bulge into."""
+    import Part
+
     width = float(params.get("Width", 1600))
     height = float(params.get("Height", 2200))
     fullness = float(params.get("Fullness", 110))
@@ -138,38 +141,51 @@ def curtain(params, assets, ctx):
     header_height = float(params.get("HeaderHeight", 60))
     fold_count = max(int(params.get("FoldCount", 12)), 0)
 
-    import Part
-
     fabric_height = max(height - header_height, 10.0)
-    fabric = sh.rounded_box(width, fullness, fabric_height, radius=8)
+    # The rail is what defines the part's Width; the fabric hangs inside it,
+    # so a curtain still measures exactly what the manifest advertises.
+    overrun = min(80.0, width * 0.06)
+    span = max(width - 2 * overrun, 10.0)
 
-    # Folds: alternating grooves front and back, so the slab reads as
-    # gathered rather than as a fluted panel with one flat side.
+    # The fabric is a SERPENTINE, built by fusing a row of vertical
+    # cylinders whose centres alternate front and back. Adjacent cylinders
+    # overlap, so the union is one continuous wavy body - a hanging plane
+    # curled into folds, which is what a gathered curtain actually is.
+    #
+    # The previous version cut grooves into a flat slab, and it read
+    # exactly as what it was: a board with holes in it. Grooves SUBTRACT
+    # from a plane; folds DISPLACE it. Only the second reads as cloth.
     if fold_count > 0:
-        pitch = width / float(fold_count)
-        groove = min(pitch * 0.35, fullness * 0.45)
+        # r > span / (2 * n) guarantees neighbouring folds intersect; at
+        # span / (1.7 * n) they overlap comfortably. Without that the
+        # curtain would come apart into a row of loose columns.
+        radius = min(span / (1.7 * fold_count), fullness / 2.0)
+        radius = max(radius, 1.0)
+        step = ((span - 2 * radius) / (fold_count - 1.0)
+                if fold_count > 1 else 0.0)
+        folds = []
         for i in range(fold_count):
-            x = i * pitch + (pitch - groove) / 2.0
-            front = (i % 2 == 0)
-            sh_y = -1.0 if front else fullness - fullness * 0.4
-            fabric = sh.cut_box(fabric, x, sh_y, -1.0,
-                                groove, fullness * 0.4 + 1.0,
-                                fabric_height + 2.0)
+            x = radius + i * step if fold_count > 1 else span / 2.0
+            # Alternate which side of the rail each fold bulges toward.
+            y = radius if (i % 2 == 0) else max(fullness - radius, radius)
+            folds.append(sh.place(Part.makeCylinder(radius, fabric_height),
+                                  x, y, 0))
+        fabric = sh.fuse_all(folds)
+    else:
+        fabric = sh.rounded_box(span, fullness, fabric_height, radius=8)
+    fabric = sh.place(fabric, overrun, 0, 0)
 
-    fabric = sh.place(fabric, 0, 0, 0)
-
-    # Rail runs a little past the fabric at each end, as a real one does.
-    overrun = min(80.0, width * 0.05)
-    rail = Part.makeCylinder(rail_diameter / 2.0, width + 2 * overrun,
+    rail_z = fabric_height + header_height / 2.0
+    rail = Part.makeCylinder(rail_diameter / 2.0, width,
                              sh.vector(0, 0, 0), sh.vector(1, 0, 0))
-    rail = sh.place(rail, -overrun, fullness / 2.0,
-                     fabric_height + header_height / 2.0)
+    rail = sh.place(rail, 0, fullness / 2.0, rail_z)
 
+    finial_length = rail_diameter * 0.9
     finials = [
-        sh.place(Part.makeCylinder(rail_diameter * 0.75, rail_diameter * 0.9,
+        sh.place(Part.makeCylinder(rail_diameter * 0.75, finial_length,
                                    sh.vector(0, 0, 0), sh.vector(1, 0, 0)),
-                  x, fullness / 2.0, fabric_height + header_height / 2.0)
-        for x in (-overrun - rail_diameter * 0.9, width + overrun)
+                  x, fullness / 2.0, rail_z)
+        for x in (0.0, width - finial_length)
     ]
 
     return sh.fuse_all([fabric, rail] + finials)

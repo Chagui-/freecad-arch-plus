@@ -15,8 +15,7 @@
     "function": "Accessory",
     "element": "Holder",
     "room": [
-      "Bathroom",
-      "Cloakroom"
+      "Bathroom"
     ]
   },
   "params": {

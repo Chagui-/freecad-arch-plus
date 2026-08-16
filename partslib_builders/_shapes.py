@@ -262,6 +262,38 @@ def oval(shape, scale_x, scale_y):
     return shape.transformGeometry(matrix)
 
 
+def rotate(shape, axis, degrees, center=(0.0, 0.0, 0.0)):
+    """A rotated COPY of `shape` - never mutates the shape passed in."""
+    moved = shape.copy()
+    moved.rotate(vector(*center), vector(*axis), degrees)
+    return moved
+
+
+def tube_elbow(tube_radius, bend_radius, angle=90.0):
+    """A bend of round tube, lying in the XY plane, centred on the origin.
+
+    The centreline is an arc of `bend_radius` running from
+    (bend_radius, 0, 0) - where it heads +Y - round to (0, bend_radius, 0).
+    Callers rotate() and place() it into position.
+
+    This exists so a hook can actually BEND. Butting two cylinders at a
+    right angle reads as two pipes that happen to touch, with a hard mitre
+    line where a bent rod has a smooth curve - which is exactly the
+    difference between something that looks like hardware and something
+    that looks like a diagram of hardware.
+
+    A torus segment is the cheapest true bend available: one primitive, no
+    sweep along a wire, and no boolean. Returns None if the kernel refuses,
+    so callers can fall back to a straight tube rather than lose the part."""
+    import Part
+
+    try:
+        return Part.makeTorus(bend_radius, tube_radius, vector(0, 0, 0),
+                              vector(0, 0, 1), -180.0, 180.0, angle)
+    except Exception:
+        return None
+
+
 def vector(x, y, z):
     """A small convenience over FreeCAD.Vector, for callers translating a
     freshly-made Part shape in place (Part.Shape.translate, not place())."""

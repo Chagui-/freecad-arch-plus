@@ -99,7 +99,7 @@ inserting single lightweight objects built from bundled part definitions.
 ## Features (Parts Library)
 
 ArchPlus ships a starter catalogue of 31 parametric parts across Kitchen,
-Dining Room, Bedroom, Living Room, Bath Room, Cloakroom and Office,
+Dining Room, Bedroom, Living Room, Bath Room and Office,
 alongside the faceted vocabulary (`library/facets.json`) and the
 browser/placement machinery. Parts are floor-, wall- or free-hosted, so
 wall cabinets, mirrors and curtains position against a wall the way a
@@ -116,7 +116,7 @@ message instead of a blank void.
   `Room` via a **Group by** combo; the chosen facet persists across FreeCAD
   restarts.
 - **Multi-valued facets** — a part can belong to several rooms at once (a WC
-  under both Bathroom and Cloakroom, for example) and appears under each
+  under both Bathroom and Bedroom, for example) and appears under each
   group it declares.
 - **Search** — a live search box filters the grid by name, keyword and
   description as you type.

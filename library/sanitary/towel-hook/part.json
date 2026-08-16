@@ -14,8 +14,7 @@
     "function": "Accessory",
     "element": "Hook",
     "room": [
-      "Bathroom",
-      "Cloakroom"
+      "Bathroom"
     ]
   },
   "params": {
