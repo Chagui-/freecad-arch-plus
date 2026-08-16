@@ -98,9 +98,12 @@ inserting single lightweight objects built from bundled part definitions.
 
 ## Features (Parts Library)
 
-ArchPlus ships a starter catalogue of 14 parametric parts across Dining
-Room, Bedroom, Living Room, Bath Room and Office, alongside the faceted
-vocabulary (`library/facets.json`) and the browser/placement machinery.
+ArchPlus ships a starter catalogue of 31 parametric parts across Kitchen,
+Dining Room, Bedroom, Living Room, Bath Room, Cloakroom and Office,
+alongside the faceted vocabulary (`library/facets.json`) and the
+browser/placement machinery. Parts are floor-, wall- or free-hosted, so
+wall cabinets, mirrors and curtains position against a wall the way a
+door does.
 Add further part folders under `library/` (each with its own `part.json`
 manifest, validated against that vocabulary) to extend it; an empty result
 set (e.g. after a search with no matches) shows a plain "nothing here yet"

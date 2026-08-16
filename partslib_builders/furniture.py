@@ -596,3 +596,261 @@ def bookcase(params, assets, ctx):
     cornice = sh.place(cornice, 0, 0, carcass_height)
 
     return sh.fuse_all([carcass, cornice])
+
+
+def side_table(params, assets, ctx):
+    """A small occasional table: square top, four square legs, a lower
+    shelf and a single shallow drawer in the apron.
+
+    Params: Width, Depth, Height, TopThickness, LegSize, ShelfHeight,
+    DrawerHeight (mm).
+
+    Bespoke rather than `table()` at small numbers. A side table is taller
+    relative to its top than a dining table and earns its keep from what is
+    under the top - a shelf and a drawer - which a scaled-down dining table
+    does not have."""
+    width = float(params.get("Width", 450))
+    depth = float(params.get("Depth", 450))
+    height = float(params.get("Height", 550))
+    top_thickness = float(params.get("TopThickness", 25))
+    leg_size = float(params.get("LegSize", 45))
+    shelf_height = float(params.get("ShelfHeight", 140))
+    drawer_height = float(params.get("DrawerHeight", 90))
+
+    leg_height = max(height - top_thickness, 10.0)
+    inset = min(10.0, width * 0.03)
+
+    top = sh.rounded_box(width, depth, top_thickness, radius=8)
+    top = sh.roll_top(top, min(top_thickness * 0.4, 8.0), axis="x")
+    top = sh.place(top, 0, 0, leg_height)
+
+    legs = [
+        sh.place(sh.square_leg(leg_height, leg_size), x, y, 0)
+        for x, y in ((inset, inset),
+                     (width - inset - leg_size, inset),
+                     (inset, depth - inset - leg_size),
+                     (width - inset - leg_size, depth - inset - leg_size))
+    ]
+
+    span_x = width - 2 * inset
+    span_y = depth - 2 * inset
+    drawer_z = leg_height - drawer_height
+    box = sh.rounded_box(span_x, span_y, drawer_height, radius=4)
+    margin = min(14.0, span_x * 0.05)
+    box = sh.panel_reveal(box, margin, margin,
+                          span_x - 2 * margin, drawer_height - 2 * margin,
+                          groove=4.0, depth=6.0)
+    box = sh.place(box, inset, inset, drawer_z)
+
+    shelf = sh.place(
+        sh.rounded_box(span_x, span_y, 18.0, radius=6),
+        inset, inset, min(shelf_height, leg_height - 18.0))
+
+    pull = sh.place(sh.bar(span_x * 0.3, 6.0, along="x"),
+                     width / 2.0 - span_x * 0.15, inset,
+                     drawer_z + drawer_height / 2.0)
+
+    return sh.fuse_all([top] + legs + [box, shelf, pull])
+
+
+def armchair(params, assets, ctx):
+    """A single upholstered armchair: winged back, rolled arms, one deep
+    seat cushion, on short square feet.
+
+    Params: Width, Depth, SeatHeight, BackHeight, BackThickness, ArmWidth,
+    ArmHeight (mm).
+
+    Bespoke rather than `sofa()` with SeatCount 1. An armchair is
+    proportioned differently - deeper relative to its width, with a taller
+    back and arms that are thick relative to the seat between them - so
+    driving it off the sofa's ratios gives a stubby two-seater, not a
+    chair. Same construction rules though: solid masses, seams cut in,
+    rolled along one axis only."""
+    import Part
+
+    width = float(params.get("Width", 900))
+    depth = float(params.get("Depth", 880))
+    seat_height = float(params.get("SeatHeight", 420))
+    back_height = float(params.get("BackHeight", 460))
+    back_thickness = float(params.get("BackThickness", 220))
+    arm_width = float(params.get("ArmWidth", 200))
+    arm_height = float(params.get("ArmHeight", 640))
+
+    inner_width = max(width - 2 * arm_width, 100.0)
+    foot_height = min(60.0, seat_height * 0.14)
+    foot_size = min(55.0, arm_width * 0.30)
+
+    parts = []
+    for x, y in ((arm_width * 0.25, depth * 0.07),
+                 (width - arm_width * 0.25 - foot_size, depth * 0.07),
+                 (arm_width * 0.25, depth * 0.93 - foot_size),
+                 (width - arm_width * 0.25 - foot_size,
+                  depth * 0.93 - foot_size)):
+        parts.append(sh.place(sh.square_leg(foot_height, foot_size), x, y, 0))
+
+    base = Part.makeBox(width, depth, seat_height - foot_height)
+    base = sh.roll_top(base, min(30.0, depth * 0.05), axis="x")
+    parts.append(sh.place(base, 0, 0, foot_height))
+
+    for x in (0.0, width - arm_width):
+        arm = Part.makeBox(arm_width, depth, arm_height - foot_height)
+        arm = sh.roll_top(arm, arm_width * 0.44, axis="y")
+        parts.append(sh.place(arm, x, 0, foot_height))
+
+    back = Part.makeBox(inner_width, back_thickness, back_height)
+    back = sh.roll_top(back, min(back_thickness * 0.44, 90.0), axis="x")
+    parts.append(sh.place(back, arm_width, depth - back_thickness,
+                          seat_height))
+
+    body = sh.fuse_all(parts)
+
+    # A single seam where the seat cushion meets the frame at the front,
+    # and one across the base of the back cushion.
+    seam = 12.0
+    seat_front = depth - back_thickness
+    body = sh.cut_box(body, arm_width, seat_front - seam,
+                      seat_height - 22.0, inner_width, seam, 40.0)
+    body = sh.cut_box(body, arm_width, seat_front - seam * 1.5,
+                      seat_height, inner_width, seam * 1.5 + 6.0, seam)
+    return body
+
+
+def chest_of_drawers(params, assets, ctx):
+    """A wide chest: two half-width drawers over full-width ones, on a
+    recessed plinth, with an overhanging top.
+
+    Params: Width, Depth, Height, TopThickness, PlinthHeight (mm),
+    DrawerCount (integer, the full-width rows below the split top row).
+
+    Bespoke rather than `nightstand()` at chest proportions. The split top
+    row is the detail that makes a chest read as a chest at a glance, and
+    it is meaningless on a 450mm nightstand."""
+    width = float(params.get("Width", 900))
+    depth = float(params.get("Depth", 450))
+    height = float(params.get("Height", 800))
+    top_thickness = float(params.get("TopThickness", 30))
+    plinth_height = float(params.get("PlinthHeight", 70))
+    drawer_count = max(int(params.get("DrawerCount", 3)), 0)
+
+    overhang = min(14.0, width * 0.02)
+    carcass_width = width - 2 * overhang
+    carcass_depth = depth - overhang
+    carcass_height = height - top_thickness
+
+    box = sh.rounded_box(carcass_width, carcass_depth, carcass_height,
+                         radius=6)
+    box = sh.toe_kick(box, carcass_width, carcass_depth,
+                      kick_height=plinth_height,
+                      kick_depth=min(20.0, depth * 0.04),
+                      margin=min(18.0, carcass_width * 0.03))
+
+    margin = min(16.0, carcass_width * 0.02)
+    rows = drawer_count + 1
+    zone = carcass_height - plinth_height
+    pulls = []
+    if rows > 0 and zone > 0:
+        row_height = zone / rows
+        # Top row: two half-width drawers side by side.
+        half = carcass_width / 2.0
+        for i in range(2):
+            box = sh.panel_reveal(
+                box, i * half + margin,
+                plinth_height + (rows - 1) * row_height + margin,
+                half - 2 * margin, row_height - 2 * margin,
+                groove=5.0, depth=7.0)
+            pulls.append(sh.place(
+                sh.bar(half * 0.34, 6.0, along="x"),
+                overhang + i * half + half * 0.33, overhang,
+                plinth_height + (rows - 0.5) * row_height))
+        # Full-width rows beneath.
+        for i in range(drawer_count):
+            box = sh.panel_reveal(
+                box, margin, plinth_height + i * row_height + margin,
+                carcass_width - 2 * margin, row_height - 2 * margin,
+                groove=5.0, depth=7.0)
+            pulls.append(sh.place(
+                sh.bar(carcass_width * 0.28, 6.0, along="x"),
+                overhang + carcass_width * 0.36, overhang,
+                plinth_height + (i + 0.5) * row_height))
+    box = sh.place(box, overhang, overhang, 0)
+
+    top = sh.rounded_box(width, depth, top_thickness, radius=8)
+    top = sh.roll_top(top, min(top_thickness * 0.4, 10.0), axis="x")
+    top = sh.place(top, 0, 0, carcass_height)
+
+    return sh.fuse_all([box, top] + pulls)
+
+
+def media_unit(params, assets, ctx):
+    """A low TV unit: a pair of doored cupboards flanking open shelf bays.
+
+    Params: Width, Depth, Height, TopThickness, PlinthHeight, DoorWidth
+    (mm), ShelfCount (integer).
+
+    The open middle is the point - a media unit has to show its
+    compartments, so this is the one case good in the library that is not a
+    closed box with reveals cut into it."""
+    import Part
+
+    width = float(params.get("Width", 1600))
+    depth = float(params.get("Depth", 400))
+    height = float(params.get("Height", 500))
+    top_thickness = float(params.get("TopThickness", 25))
+    plinth_height = float(params.get("PlinthHeight", 60))
+    door_width = float(params.get("DoorWidth", 420))
+    shelf_count = max(int(params.get("ShelfCount", 1)), 0)
+
+    carcass_height = height - top_thickness
+    door_width = min(door_width, width * 0.35)
+    wall = 18.0
+    # Set the carcass back by the handle's projection so a proud pull still
+    # measures inside the declared Depth, as the other case goods do.
+    clearance = 8.0
+    carcass_depth = depth - clearance
+
+    box = sh.rounded_box(width, carcass_depth, carcass_height, radius=5)
+
+    # Hollow out the middle bay, leaving the two end cupboards solid.
+    bay_width = width - 2 * door_width - 2 * wall
+    bay_height = carcass_height - plinth_height - wall
+    shelves = []
+    if bay_width > 0 and bay_height > 0:
+        cavity = Part.makeBox(bay_width, carcass_depth - wall + 1.0, bay_height)
+        cavity.translate(sh.vector(door_width + wall, -1.0, plinth_height))
+        try:
+            box = box.cut(cavity)
+        except Exception:
+            pass
+        if shelf_count > 0:
+            gap = bay_height / (shelf_count + 1.0)
+            for i in range(1, shelf_count + 1):
+                shelf = Part.makeBox(bay_width, carcass_depth - wall - 8.0, 16.0)
+                shelf.translate(sh.vector(door_width + wall, 8.0,
+                                          plinth_height + gap * i))
+                shelves.append(shelf)
+
+    # Doors on the two end cupboards.
+    margin = min(30.0, door_width * 0.1)
+    for x in (0.0, width - door_width):
+        box = sh.panel_reveal(box, x + margin, plinth_height + margin,
+                              door_width - 2 * margin,
+                              carcass_height - plinth_height - 2 * margin,
+                              groove=5.0, depth=7.0)
+    box = sh.toe_kick(box, width, carcass_depth, kick_height=plinth_height,
+                      kick_depth=min(18.0, depth * 0.04),
+                      margin=min(20.0, width * 0.02))
+    box = sh.place(box, 0, clearance, 0)
+    shelves = [sh.place(s, 0, clearance, 0) for s in shelves]
+
+    top = sh.rounded_box(width, depth, top_thickness, radius=6)
+    top = sh.roll_top(top, min(top_thickness * 0.4, 8.0), axis="x")
+    top = sh.place(top, 0, 0, carcass_height)
+
+    pulls = [
+        sh.place(sh.bar(door_width * 0.3, 6.0, along="x"),
+                  x + door_width * 0.35, clearance,
+                  carcass_height - (carcass_height - plinth_height) * 0.22)
+        for x in (0.0, width - door_width)
+    ]
+
+    return sh.fuse_all([box, top] + shelves + pulls)

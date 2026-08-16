@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "id": "corner-base-cabinet",
+  "name": "Corner base cabinet",
+  "description": "L-shaped corner base unit with a worktop following the same plan.",
+  "keywords": [
+    "kitchen",
+    "corner",
+    "cabinet",
+    "base",
+    "L-shaped",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 900
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 900
+    },
+    "Height": {
+      "type": "Length",
+      "default": 900
+    },
+    "WorktopThickness": {
+      "type": "Length",
+      "default": 40
+    },
+    "KickHeight": {
+      "type": "Length",
+      "default": 100
+    },
+    "ReturnWidth": {
+      "type": "Length",
+      "default": 600
+    },
+    "ReturnDepth": {
+      "type": "Length",
+      "default": 600
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {
+    "builder": "kitchen.corner_base_cabinet"
+  }
+}

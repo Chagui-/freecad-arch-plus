@@ -3,45 +3,193 @@
     "label": "Function",
     "multi": false,
     "values": {
-      "Sanitary": { "ifcType": "Sanitary Terminal" },
-      "Seating": { "ifcType": "Furniture" },
-      "Storage": { "ifcType": "Furniture" },
-      "Lighting": { "ifcType": "Lighting Fixture" },
-      "Surface": { "ifcType": "Furniture" },
-      "Sleeping": { "ifcType": "Furniture" }
+      "Sanitary": {
+        "ifcType": "Sanitary Terminal"
+      },
+      "Seating": {
+        "ifcType": "Furniture"
+      },
+      "Storage": {
+        "ifcType": "Furniture"
+      },
+      "Lighting": {
+        "ifcType": "Lighting Fixture"
+      },
+      "Surface": {
+        "ifcType": "Furniture"
+      },
+      "Sleeping": {
+        "ifcType": "Furniture"
+      },
+      "Appliance": {
+        "ifcType": "Electric Appliance"
+      },
+      "Screening": {
+        "ifcType": "Furniture"
+      },
+      "Accessory": {
+        "ifcType": "Discrete Accessory"
+      }
     }
   },
   "element": {
     "label": "Element",
     "multi": false,
     "values": {
-      "WC": { "ifcType": "Sanitary Terminal", "label": "Toilets", "icon": "wc.svg" },
-      "Basin": { "ifcType": "Sanitary Terminal", "label": "Basins", "icon": "basin.svg" },
-      "Cabinet": { "ifcType": "Furniture", "label": "Cabinets", "icon": "cabinet.svg" },
-      "Chair": { "ifcType": "Furniture", "label": "Chairs", "icon": "chair.svg" },
-      "Table": { "ifcType": "Furniture", "label": "Tables", "icon": "table.svg" },
-      "Bed": { "ifcType": "Furniture", "label": "Beds", "icon": "bed.svg" },
-      "Nightstand": { "ifcType": "Furniture", "label": "Nightstands", "icon": "nightstand.svg" },
-      "Wardrobe": { "ifcType": "Furniture", "label": "Wardrobes", "icon": "wardrobe.svg" },
-      "Sofa": { "ifcType": "Furniture", "label": "Sofas", "icon": "sofa.svg" },
-      "Desk": { "ifcType": "Furniture", "label": "Desks", "icon": "desk.svg" },
-      "Bookcase": { "ifcType": "Furniture", "label": "Bookcases", "icon": "bookcase.svg" },
-      "Bathtub": { "ifcType": "Sanitary Terminal", "label": "Bathtubs", "icon": "bathtub.svg" },
-      "Shower": { "ifcType": "Sanitary Terminal", "label": "Showers", "icon": "shower.svg" },
-      "Vanity": { "ifcType": "Sanitary Terminal", "label": "Vanities", "icon": "vanity.svg" }
+      "WC": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Toilets",
+        "icon": "wc.svg"
+      },
+      "Basin": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Basins",
+        "icon": "basin.svg"
+      },
+      "Cabinet": {
+        "ifcType": "Furniture",
+        "label": "Cabinets",
+        "icon": "cabinet.svg"
+      },
+      "Chair": {
+        "ifcType": "Furniture",
+        "label": "Chairs",
+        "icon": "chair.svg"
+      },
+      "Table": {
+        "ifcType": "Furniture",
+        "label": "Tables",
+        "icon": "table.svg"
+      },
+      "Bed": {
+        "ifcType": "Furniture",
+        "label": "Beds",
+        "icon": "bed.svg"
+      },
+      "Nightstand": {
+        "ifcType": "Furniture",
+        "label": "Nightstands",
+        "icon": "nightstand.svg"
+      },
+      "Wardrobe": {
+        "ifcType": "Furniture",
+        "label": "Wardrobes",
+        "icon": "wardrobe.svg"
+      },
+      "Sofa": {
+        "ifcType": "Furniture",
+        "label": "Sofas",
+        "icon": "sofa.svg"
+      },
+      "Desk": {
+        "ifcType": "Furniture",
+        "label": "Desks",
+        "icon": "desk.svg"
+      },
+      "Bookcase": {
+        "ifcType": "Furniture",
+        "label": "Bookcases",
+        "icon": "bookcase.svg"
+      },
+      "Bathtub": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Bathtubs",
+        "icon": "bathtub.svg"
+      },
+      "Shower": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Showers",
+        "icon": "shower.svg"
+      },
+      "Vanity": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Vanities",
+        "icon": "vanity.svg"
+      },
+      "Armchair": {
+        "ifcType": "Furniture",
+        "label": "Armchairs",
+        "icon": "armchair.svg"
+      },
+      "Television": {
+        "ifcType": "Audio Visual Appliance",
+        "label": "Televisions",
+        "icon": "television.svg"
+      },
+      "Dresser": {
+        "ifcType": "Furniture",
+        "label": "Chests of drawers",
+        "icon": "dresser.svg"
+      },
+      "Hob": {
+        "ifcType": "Electric Appliance",
+        "label": "Hobs",
+        "icon": "hob.svg"
+      },
+      "Oven": {
+        "ifcType": "Electric Appliance",
+        "label": "Ovens",
+        "icon": "oven.svg"
+      },
+      "Mirror": {
+        "ifcType": "Discrete Accessory",
+        "label": "Mirrors",
+        "icon": "mirror.svg"
+      },
+      "Screen": {
+        "ifcType": "Furniture",
+        "label": "Screens",
+        "icon": "screen.svg"
+      },
+      "Curtain": {
+        "ifcType": "Furniture",
+        "label": "Curtains",
+        "icon": "curtain.svg"
+      },
+      "Lamp": {
+        "ifcType": "Lighting Fixture",
+        "label": "Lamps",
+        "icon": "lamp.svg"
+      },
+      "Hook": {
+        "ifcType": "Discrete Accessory",
+        "label": "Hooks",
+        "icon": "hook.svg"
+      },
+      "Holder": {
+        "ifcType": "Discrete Accessory",
+        "label": "Holders",
+        "icon": "holder.svg"
+      }
     }
   },
   "room": {
     "label": "Room",
     "multi": true,
     "values": {
-      "Bathroom": { "icon": "bathroom.svg" },
-      "Cloakroom": { "icon": "cloakroom.svg" },
-      "Kitchen": { "icon": "kitchen.svg" },
-      "Bedroom": { "icon": "bedroom.svg" },
-      "Office": { "icon": "office.svg" },
-      "Dining": { "label": "Dining Room", "icon": "dining.svg" },
-      "Living": { "label": "Living Room", "icon": "living.svg" }
+      "Bathroom": {
+        "icon": "bathroom.svg"
+      },
+      "Cloakroom": {
+        "icon": "cloakroom.svg"
+      },
+      "Kitchen": {
+        "icon": "kitchen.svg"
+      },
+      "Bedroom": {
+        "icon": "bedroom.svg"
+      },
+      "Office": {
+        "icon": "office.svg"
+      },
+      "Dining": {
+        "label": "Dining Room",
+        "icon": "dining.svg"
+      },
+      "Living": {
+        "label": "Living Room",
+        "icon": "living.svg"
+      }
     }
   }
 }

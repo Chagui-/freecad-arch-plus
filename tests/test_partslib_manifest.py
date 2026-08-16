@@ -233,6 +233,30 @@ def test_variant_params_override_part_params():
     assert resolved["params"]["Width"]["default"] == 490
 
 
+def test_variant_placement_overrides_the_part_placement():
+    # A television on a stand is floor-hosted; the same television on a
+    # bracket is wall-hosted. Without placement in the merge that needs two
+    # catalogue entries for one product.
+    data = _part_with_variants()
+    data["placement"] = {"host": "floor", "offset": 0}
+    data["variants"][1]["placement"] = {"host": "wall", "offset": 1200}
+
+    mounted = pm.resolve_variant(data, "490 mm")
+    assert mounted["placement"] == {"host": "wall", "offset": 1200}
+    # The other variant still gets the part's own placement.
+    assert pm.resolve_variant(data, "360 mm")["placement"]["host"] == "floor"
+
+
+def test_variant_placement_merges_per_key():
+    # Setting only `host` must not drop the part's offset.
+    data = _part_with_variants()
+    data["placement"] = {"host": "floor", "offset": 150}
+    data["variants"][1]["placement"] = {"host": "wall"}
+
+    resolved = pm.resolve_variant(data, "490 mm")
+    assert resolved["placement"] == {"host": "wall", "offset": 150}
+
+
 def test_resolving_leaves_the_original_manifest_untouched():
     data = _part_with_variants()
     pm.resolve_variant(data, "490 mm")

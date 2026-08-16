@@ -10,15 +10,34 @@ passed at the time this doc was written, including `tests/test_partslib_theme.py
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
-## The library now ships 14 real parts — UNVERIFIED in real FreeCAD
+## The library now ships 31 real parts — PARTLY verified in real FreeCAD
 
-`library/` no longer ships empty. The `parts-library-content` branch adds 14
-parametric parts across five rooms (Dining Room, Bedroom, Living Room, Bath
-Room, Office) — see the table below — plus two new builder modules
-(`partslib_builders/furniture.py`, `partslib_builders/sanitary.py`) and a
-shared geometry-massing helper (`partslib_builders/_shapes.py`: rounded
-corners, square legs, softened cushion edges, panel reveals, toe-kick
-recesses, oval basin scaling).
+`library/` no longer ships empty. The `parts-library-content` branch adds 31
+parametric parts across seven rooms (Kitchen, Dining Room, Bedroom, Living
+Room, Bath Room, Cloakroom, Office) — see the table below — plus four
+builder modules (`furniture.py`, `sanitary.py`, `kitchen.py`,
+`fittings.py`) and a shared geometry-massing helper
+(`partslib_builders/_shapes.py`: rounded corners, square legs, rolled
+edges, panel reveals, toe-kick recesses, oval basin scaling).
+
+The first 14 parts HAVE now been rendered and reviewed in FreeCAD, and
+several were reworked as a result — see the git history for chair, sofa,
+desk and toilet. The 17 added afterwards (Kitchen, Cloakroom, fittings and
+the Living/Bedroom additions) have NOT been seen in FreeCAD yet.
+
+### Wall-hosted parts are new and unproven
+
+Six of the new parts declare `host: wall` — wall cabinet, corner wall
+cabinet, mirror, towel hook, toilet roll holder, curtain — plus the
+television's wall-mounted variants. Until now every shipped part was
+`host: floor`, so `partslib_placement`'s wall branch (including its
+snap-to-host-base logic) has only ever run against synthetic unit-test
+data. **Placing a wall-hosted part against a real Arch wall is the single
+highest-value manual check on this branch.**
+
+Note also that `resolve_variant` now merges `placement`, so a variant can
+change its host — the television relies on this to be floor-hosted on a
+stand and wall-hosted on a bracket.
 
 **None of this geometry has been built in a real FreeCAD process.** There is
 no FreeCAD available in this development environment, so the only

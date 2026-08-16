@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "id": "chest-of-drawers",
+  "name": "Chest of drawers",
+  "description": "Wide chest with two half-width drawers over full-width ones, on a plinth.",
+  "keywords": [
+    "chest",
+    "drawers",
+    "dresser",
+    "bedroom",
+    "storage",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Dresser",
+    "room": [
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 900
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 450
+    },
+    "Height": {
+      "type": "Length",
+      "default": 800
+    },
+    "TopThickness": {
+      "type": "Length",
+      "default": 30
+    },
+    "PlinthHeight": {
+      "type": "Length",
+      "default": 70
+    },
+    "DrawerCount": {
+      "type": "Integer",
+      "default": 3
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "3 drawers",
+      "params": {
+        "Height": {
+          "type": "Length",
+          "default": 800
+        },
+        "DrawerCount": {
+          "type": "Integer",
+          "default": 3
+        }
+      }
+    },
+    {
+      "label": "4 drawers",
+      "params": {
+        "Height": {
+          "type": "Length",
+          "default": 1000
+        },
+        "DrawerCount": {
+          "type": "Integer",
+          "default": 4
+        }
+      }
+    }
+  ],
+  "geometry": {
+    "builder": "furniture.chest_of_drawers"
+  }
+}

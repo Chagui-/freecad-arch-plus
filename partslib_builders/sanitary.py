@@ -295,3 +295,112 @@ def vanity(params, assets, ctx):
                       height + tap_height - 11.0)
 
     return sh.fuse_all([carcass, top, backsplash, riser, spout] + pulls)
+
+
+def shower_screen(params, assets, ctx):
+    """A glass panel for a shower or over a bath: a pane in a slim profile,
+    with a floor-to-top support post at the fixed edge.
+
+    Params: Width, Height, GlassThickness, ProfileWidth (mm).
+
+    Placed as a floor-hosted part rather than wall-hosted: a bath screen
+    stands on the tub rim and a walk-in panel stands on the tray, and in
+    both cases the thing you position is the foot of the post, not a fixing
+    height up the wall."""
+    width = float(params.get("Width", 900))
+    height = float(params.get("Height", 1900))
+    glass = float(params.get("GlassThickness", 8))
+    profile = float(params.get("ProfileWidth", 30))
+
+    glass = min(glass, profile)
+    pane_width = max(width - profile, 10.0)
+
+    # The post is at the wall end (+Y is the wall side for a floor part
+    # standing against one), the pane runs out from it.
+    post = sh.rounded_box(profile, profile, height, radius=3)
+    post = sh.place(post, 0, 0, 0)
+
+    pane = sh.rounded_box(pane_width, glass, height - profile * 0.3, radius=2)
+    pane = sh.place(pane, profile, (profile - glass) / 2.0, 0)
+
+    # A short bottom rail stiffens the free edge and gives the pane
+    # something to read against at the floor.
+    rail = sh.rounded_box(pane_width, profile * 0.8, profile * 0.8, radius=3)
+    rail = sh.place(rail, profile, (profile - profile * 0.8) / 2.0, 0)
+
+    return sh.fuse_all([post, pane, rail])
+
+
+def towel_hook(params, assets, ctx):
+    """A wall towel hook: a backplate with a projecting arm turned up at the
+    tip. Wall-hosted.
+
+    Params: PlateWidth, PlateHeight, PlateDepth, Projection, ArmDiameter
+    (mm)."""
+    import Part
+
+    plate_width = float(params.get("PlateWidth", 55))
+    plate_height = float(params.get("PlateHeight", 55))
+    plate_depth = float(params.get("PlateDepth", 12))
+    projection = float(params.get("Projection", 65))
+    arm_diameter = float(params.get("ArmDiameter", 14))
+
+    plate = sh.rounded_box(plate_width, plate_depth, plate_height, radius=8)
+    plate = sh.place(plate, 0, projection - plate_depth, 0)
+
+    # Arm runs out from the plate toward the room (-Y).
+    arm = Part.makeCylinder(arm_diameter / 2.0, projection - plate_depth,
+                            sh.vector(0, 0, 0), sh.vector(0, -1, 0))
+    arm = sh.place(arm, plate_width / 2.0, projection - plate_depth,
+                    plate_height * 0.62)
+
+    # Turned-up tip: what makes it a hook rather than a peg.
+    tip = Part.makeCylinder(arm_diameter / 2.0, arm_diameter * 1.6)
+    tip = sh.place(tip, plate_width / 2.0, arm_diameter / 2.0,
+                    plate_height * 0.62)
+
+    return sh.fuse_all([plate, arm, tip])
+
+
+def toilet_roll_holder(params, assets, ctx):
+    """A wall toilet-roll holder: backplate, arm, and the roll on its
+    spindle. Wall-hosted.
+
+    Params: PlateWidth, PlateHeight, PlateDepth, ArmLength, RollDiameter,
+    RollWidth, CoreDiameter (mm)."""
+    import Part
+
+    plate_width = float(params.get("PlateWidth", 50))
+    plate_height = float(params.get("PlateHeight", 50))
+    plate_depth = float(params.get("PlateDepth", 12))
+    arm_length = float(params.get("ArmLength", 70))
+    roll_diameter = float(params.get("RollDiameter", 115))
+    roll_width = float(params.get("RollWidth", 100))
+    core_diameter = float(params.get("CoreDiameter", 45))
+
+    depth = max(roll_diameter, plate_depth)
+
+    plate = sh.rounded_box(plate_width, plate_depth, plate_height, radius=6)
+    plate = sh.place(plate, 0, depth - plate_depth,
+                      roll_diameter / 2.0 - plate_height / 2.0)
+
+    # Arm reaches sideways from the plate, the spindle runs along it.
+    arm = Part.makeCylinder(9.0, arm_length, sh.vector(0, 0, 0),
+                            sh.vector(1, 0, 0))
+    arm = sh.place(arm, plate_width / 2.0, depth - plate_depth / 2.0,
+                    roll_diameter / 2.0)
+
+    roll = Part.makeCylinder(roll_diameter / 2.0, roll_width,
+                             sh.vector(0, 0, 0), sh.vector(1, 0, 0))
+    roll = sh.place(roll, plate_width / 2.0 + arm_length,
+                     depth - roll_diameter / 2.0, roll_diameter / 2.0)
+    core = Part.makeCylinder(core_diameter / 2.0, roll_width + 2.0,
+                             sh.vector(0, 0, 0), sh.vector(1, 0, 0))
+    core = sh.place(core, plate_width / 2.0 + arm_length - 1.0,
+                     depth - roll_diameter / 2.0, roll_diameter / 2.0)
+    try:
+        roll = roll.cut(core)
+    except Exception:
+        pass
+
+    return sh.fuse_all([plate, arm, roll])

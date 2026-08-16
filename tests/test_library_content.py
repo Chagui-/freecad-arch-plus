@@ -8,16 +8,10 @@
 # Deliberately does NOT import partslib_object - it imports FreeCAD at module
 # scope and would fail under plain pytest.
 #
-# The library ships EMPTY (the two placeholder parts that once proved the
-# pipeline - "base-cabinet", "wc-demo" - have been removed; real content is
-# authored on a separate branch). Every test below except
-# test_facets_json_is_valid therefore currently passes VACUOUSLY - scanning
-# zero entries reports zero errors, and a for-loop over zero entries never
-# fails. That is intentional, not a sign these are dead tests to delete:
-# they are guards that arm themselves the moment a real part lands under
-# library/, at which point they start actually checking that part's facet
-# values, geometry builder and variant labels. Do not read "passes with zero
-# parts" as "does nothing" - keep them.
+# These were written as guards that would arm themselves once real content
+# landed under library/, back when it shipped empty. It no longer does: the
+# catalogue now carries parts across every room in the vocabulary, so each
+# loop below actually iterates and actually checks something.
 
 
 import json
@@ -90,3 +84,53 @@ def test_facets_json_is_valid():
     with open(os.path.join(LIBRARY_DIR, "facets.json")) as handle:
         doc = json.load(handle)
     assert partslib_manifest.validate_facets(doc) == []
+
+
+def test_the_library_is_not_empty():
+    # Guards the loops below from silently going vacuous again if the
+    # catalogue is ever emptied or the scan path breaks.
+    assert len(_scan()["entries"]) > 20
+
+
+def test_every_facet_icon_referenced_exists_on_disk():
+    # facets.json names icons by bare filename; a value whose icon is
+    # missing renders as a blank card in the category grid with nothing in
+    # the console to say why. Four element icons shipped missing exactly
+    # this way before the catalogue had parts to surface them.
+    icon_dir = os.path.join(os.path.dirname(LIBRARY_DIR),
+                            "Resources", "icons", "facets")
+    facets = _scan()["facets"]
+    missing = []
+    for facet, spec in facets.items():
+        for value in (spec.get("values") or {}):
+            icon = partslib_manifest.facet_icon(facets, facet, value)
+            if icon and not os.path.exists(os.path.join(icon_dir, icon)):
+                missing.append("%s/%s -> %s" % (facet, value, icon))
+    assert missing == []
+
+
+def test_every_placement_host_is_a_known_host():
+    import partslib_placement
+    for entry in _scan()["entries"]:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        for label in partslib_manifest.variant_labels(manifest):
+            resolved = partslib_manifest.resolve_variant(manifest, label)
+            placement = resolved.get("placement") or {}
+            host = placement.get("host", partslib_placement.DEFAULT_HOST)
+            assert host in partslib_placement.HOSTS, (
+                "%s (%s) declares unknown host %r"
+                % (entry["id"], label, host))
+
+
+def test_wall_and_ceiling_hosted_parts_exist():
+    # Every part was floor-hosted for a long time, which left the wall and
+    # ceiling branches of partslib_placement covered only by unit tests
+    # with synthetic data. Keep at least one real part exercising a
+    # non-floor host so that stays untrue.
+    hosts = set()
+    for entry in _scan()["entries"]:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        for label in partslib_manifest.variant_labels(manifest):
+            resolved = partslib_manifest.resolve_variant(manifest, label)
+            hosts.add((resolved.get("placement") or {}).get("host", "free"))
+    assert "wall" in hosts

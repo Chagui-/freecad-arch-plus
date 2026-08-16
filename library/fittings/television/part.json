@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "id": "television",
+  "name": "Television",
+  "description": "Flat-screen television, on a pedestal stand or wall-mounted.",
+  "keywords": [
+    "tv",
+    "television",
+    "screen",
+    "living",
+    "bedroom",
+    "appliance"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Television",
+    "room": [
+      "Living",
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 1230
+    },
+    "Height": {
+      "type": "Length",
+      "default": 710
+    },
+    "PanelThickness": {
+      "type": "Length",
+      "default": 60
+    },
+    "BezelWidth": {
+      "type": "Length",
+      "default": 18
+    },
+    "StandHeight": {
+      "type": "Length",
+      "default": 90
+    },
+    "Mounted": {
+      "type": "Integer",
+      "default": 0
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "55\" on stand",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1230
+        },
+        "Height": {
+          "type": "Length",
+          "default": 710
+        },
+        "Mounted": {
+          "type": "Integer",
+          "default": 0
+        }
+      },
+      "placement": {
+        "host": "floor",
+        "offset": 0
+      }
+    },
+    {
+      "label": "55\" wall-mounted",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1230
+        },
+        "Height": {
+          "type": "Length",
+          "default": 710
+        },
+        "Mounted": {
+          "type": "Integer",
+          "default": 1
+        }
+      },
+      "placement": {
+        "host": "wall",
+        "offset": 1100
+      }
+    },
+    {
+      "label": "65\" wall-mounted",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1450
+        },
+        "Height": {
+          "type": "Length",
+          "default": 830
+        },
+        "Mounted": {
+          "type": "Integer",
+          "default": 1
+        }
+      },
+      "placement": {
+        "host": "wall",
+        "offset": 1050
+      }
+    }
+  ],
+  "geometry": {
+    "builder": "fittings.television"
+  }
+}
