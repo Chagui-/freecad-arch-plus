@@ -5,7 +5,7 @@
 
 import types
 
-import windowsplus_gui as wg
+from windows import gui as wg
 from conftest import FakeObj, FakeCombo, FakeNum, FakeCheck, quantity, fake_base
 
 
