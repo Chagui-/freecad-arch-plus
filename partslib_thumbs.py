@@ -35,7 +35,14 @@ import time
 # Report view's own timestamp column: while the main thread is blocked Qt
 # does not repaint that view, so a whole run of messages can land on one
 # on-screen timestamp even though real time passed between them.
-SLOW_SECONDS = 0.5
+#
+# Set at five seconds rather than the half-second it started at. Half a
+# second was chosen while hunting a 17-second stall, when anything above
+# the noise floor was worth seeing; as ordinary behaviour it just narrated
+# work that was already fast enough, and a warning that fires routinely
+# stops being read. Five seconds is long enough that a line appearing
+# means something actually went wrong.
+SLOW_SECONDS = 5.0
 
 # Phases quicker than this are folded away rather than cluttering the
 # breakdown of a slow operation.
