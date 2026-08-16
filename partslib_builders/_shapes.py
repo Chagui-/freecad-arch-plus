@@ -95,6 +95,42 @@ def square_leg(height, size, chamfer=None):
     return rounded_box(size, size, height, radius=chamfer)
 
 
+def _edges_along(shape, axis, z, tol=1e-3):
+    """Horizontal edges at height `z` running parallel to 'x' or 'y'."""
+    edges = []
+    for edge in shape.Edges:
+        verts = edge.Vertexes
+        if len(verts) != 2:
+            continue
+        p1, p2 = verts[0].Point, verts[1].Point
+        if abs(p1.z - z) > tol or abs(p2.z - z) > tol:
+            continue
+        dx, dy = abs(p1.x - p2.x), abs(p1.y - p2.y)
+        if axis == "x" and dx > tol and dy < tol:
+            edges.append(edge)
+        elif axis == "y" and dy > tol and dx < tol:
+            edges.append(edge)
+    return edges
+
+
+def roll_top(shape, radius, axis="y", z=None):
+    """Fillet only the top edges running along ONE axis - a rolled arm or a
+    bullnose, continuous from one end of the shape to the other.
+
+    Use this instead of soften_top() wherever the rounding is meant to
+    read as a roll. soften_top() takes the whole top loop, so on a box it
+    rounds all four top edges at once; if that box ALSO has filleted
+    vertical corners, the four roundings collide at the corners and the
+    blend visibly stops short, leaving a raised border round the top face
+    like a picture frame. That is what made the sofa's arms look wrong.
+
+    Rule of thumb, learned the same way: do not round a solid's plan
+    corners AND its top edge. Pick whichever one the eye is meant to read
+    - for an arm or a seat front, it is the roll."""
+    top_z = shape.BoundBox.ZMax if z is None else z
+    return safe_fillet(shape, radius, _edges_along(shape, axis, top_z))
+
+
 def tapered_leg(height, bottom_radius, top_radius):
     """A cone frustum standing on the floor (z=0 to z=height).
 

@@ -463,6 +463,8 @@ def sofa(params, assets, ctx):
     cushions are suggested by seams cut into it - the same trick the
     wardrobe uses for its doors. Only the feet are separate, because
     lifting the frame off the floor is what stops it looking poured."""
+    import Part
+
     width = float(params.get("Width", 1900))
     depth = float(params.get("Depth", 900))
     seat_height = float(params.get("SeatHeight", 420))
@@ -486,24 +488,27 @@ def sofa(params, assets, ctx):
                   depth * 0.94 - foot_size)):
         parts.append(sh.place(sh.square_leg(foot_height, foot_size), x, y, 0))
 
-    # Seat base: one solid block, softened on top the way the original did.
-    base = sh.rounded_box(width, depth, seat_height - foot_height, radius=25)
-    base = sh.soften_top(base, 14)
-    base = sh.place(base, 0, 0, foot_height)
-    parts.append(base)
+    # Every upholstered block below is a PLAIN box rolled along one axis,
+    # never a rounded_box that is then softened on top. Doing both put a
+    # raised border round the top face of each arm - the roll died at the
+    # corner fillets instead of running through - which is the single
+    # thing that made this sofa look wrong. See _shapes.roll_top.
 
-    # Arms: a modest top fillet, roughly a fifth of the arm width. The
-    # previous 0.42 was almost half the width, which rounded the top into
-    # a near-semicircle - hence the sausage.
+    # Seat base: rolled along its front edge.
+    base = Part.makeBox(width, depth, seat_height - foot_height)
+    base = sh.roll_top(base, min(30.0, depth * 0.05), axis="x")
+    parts.append(sh.place(base, 0, 0, foot_height))
+
+    # Arms: rolled front-to-back, so the roll runs the full depth of the
+    # arm and reads as one continuous surface.
     for x in (0.0, width - arm_width):
-        arm = sh.rounded_box(arm_width, depth, arm_height - foot_height,
-                             radius=arm_width * 0.22)
-        arm = sh.soften_top(arm, arm_width * 0.20)
+        arm = Part.makeBox(arm_width, depth, arm_height - foot_height)
+        arm = sh.roll_top(arm, arm_width * 0.44, axis="y")
         parts.append(sh.place(arm, x, 0, foot_height))
 
-    # Back: a solid block between the arms, sitting on the seat.
-    back = sh.rounded_box(inner_width, back_thickness, back_height, radius=20)
-    back = sh.soften_top(back, 16)
+    # Back: rolled along its length, matching the arms.
+    back = Part.makeBox(inner_width, back_thickness, back_height)
+    back = sh.roll_top(back, min(back_thickness * 0.44, 90.0), axis="x")
     back = sh.place(back, arm_width, depth - back_thickness, seat_height)
     parts.append(back)
 

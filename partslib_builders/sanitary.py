@@ -41,14 +41,22 @@ def toilet(params, assets, ctx):
     # non-uniformly scaled geometry in this part at all.
     bowl = sh.rounded_box(bowl_width, bowl_depth, bowl_height,
                           radius=bowl_width * 0.46)
-    # Eased foot, so the pan meets the floor the way a moulded one does
-    # rather than sitting on a hard edge.
-    bowl = sh.soften_top(bowl, min(22.0, bowl_height * 0.06), z=0)
+    # A LARGE fillet round the whole base, not a token eased edge. On the
+    # reference the pan is visibly narrower where it meets the floor and
+    # sweeps outward as it rises; without that the D-shaped extrusion just
+    # reads as a lozenge-sectioned tube standing on the tiles. One fillet
+    # on the bottom loop of a single solid buys that whole silhouette, and
+    # is far more robust in OCC than fusing a narrow foot to a wide body
+    # and trying to blend the step between them.
+    bowl = sh.soften_top(bowl, min(bowl_height * 0.30, bowl_width * 0.30),
+                         z=0)
 
     # Closed seat and lid: a slab following the pan's own outline, inset a
     # touch so its edge casts a line against the pan below. It stops at the
     # cistern's front face rather than running under it.
-    seat_inset = min(6.0, bowl_width * 0.02)
+    # Inset enough that the pan's own rim shows as a band around the seat,
+    # the way it does on the reference - at 6 mm it was invisible.
+    seat_inset = min(16.0, bowl_width * 0.045)
     seat_width = bowl_width - 2 * seat_inset
     seat_depth = max(bowl_depth - tank_depth - seat_inset, 10.0)
     seat = sh.rounded_box(seat_width, seat_depth, seat_thickness,
