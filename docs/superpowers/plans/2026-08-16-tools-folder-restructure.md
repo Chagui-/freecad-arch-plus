@@ -1367,6 +1367,91 @@ git commit -m "refactor: extract shared sketch helpers into common/geometry.py"
 
 ---
 
+### Task 10: Reconcile documentation with the new layout
+
+Added during execution. Tasks 2-6 moved every tool, but the user-facing
+documentation still describes the old layout in 16 places. `README.md:358` is
+the most damaging: it instructs the reader to run `pytest tests/ -q` against a
+directory that no longer exists, so the documented way to check the project now
+fails outright.
+
+This is drift repair only. The README has never carried a repo-layout or
+architecture section, so the absence of any mention of `common/` is **not**
+drift — do not invent one.
+
+**Files:**
+- Modify: `README.md` — 12 stale paths
+- Modify: `docs/PARTS-LIBRARY-VERIFICATION.md` — 3 stale paths
+- Modify: `tools/partslib/resources/icons/facets/bathroom.svg:4` — 1 stale path in an XML comment
+
+**Interfaces:**
+- Consumes: the final layout established by Tasks 1-9.
+- Produces: nothing other tasks depend on.
+
+- [ ] **Step 1: Fix the 12 stale paths in `README.md`**
+
+Lines 107, 111, 177, 197, 222, 242, 290, 296, 388, 415 — prefix the old
+package path with `tools/`:
+
+- `partslib/library/...` → `tools/partslib/library/...`
+- `partslib/builders/...` → `tools/partslib/builders/...`
+
+Line 358 — the test command. The old form named a directory that no longer
+exists; pytest now discovers from the rootdir:
+
+```
+uv run --with pytest --no-project pytest -q
+```
+
+Line 361 — the test file moved:
+
+```
+`tools/partslib/tests/test_library_content.py` scans the real shipped library, so a
+```
+
+- [ ] **Step 2: Fix the 3 stale paths in `docs/PARTS-LIBRARY-VERIFICATION.md`**
+
+Lines 8, 9 and 43. Apply the same two substitutions: `pytest tests/ -q` →
+`pytest -q`, and `tests/test_partslib_theme.py` →
+`tools/partslib/tests/test_partslib_theme.py`.
+
+Leave the historical "122 passed at the time this doc was written" figure
+alone — it is explicitly a point-in-time record, not a current claim.
+
+- [ ] **Step 3: Fix the stale path in the SVG comment**
+
+`tools/partslib/resources/icons/facets/bathroom.svg:4` references
+`Resources/icons/WindowsPlus.svg`, which no longer exists. Retarget it:
+
+```
+     (stroke-width relative to viewBox) matches tools/windows/resources/icons/WindowsPlus.svg. -->
+```
+
+- [ ] **Step 4: Verify no stale references survive**
+
+```bash
+grep -nE '(^|[^a-zA-Z/._-])(partslib|doors|windows|stairs|tests)/' README.md docs/PARTS-LIBRARY-VERIFICATION.md | grep -v "tools/" || echo "clean"
+grep -rn "Resources/" --include="*.svg" tools/ || echo "clean"
+```
+Expected: `clean` from both.
+
+Do NOT rewrite anything under `docs/superpowers/` — the spec and plan documents
+are a historical record of this refactor and legitimately name the old paths.
+
+- [ ] **Step 5: Run the suite**
+
+Run: `pytest -q`
+Expected: `179 passed` — documentation-only changes must not move the count.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "docs: reconcile documentation with the tools/ layout"
+```
+
+---
+
 ## Final verification
 
 - [ ] Full suite: `pytest -q` → `179 passed`
