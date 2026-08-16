@@ -155,6 +155,20 @@ _STYLESHEET_TEMPLATE = """
         color: %(accent)s;
         border: 1px solid %(accent)s;
     }
+    QLabel#VariantCaption {
+        color: %(text_dim)s;
+        padding-right: 6px;
+    }
+    QComboBox#VariantCombo {
+        background-color: transparent;
+        color: %(text)s;
+        border: 1px solid %(border)s;
+        border-radius: 4px;
+        padding: 2px 6px;
+    }
+    QComboBox#VariantCombo:hover {
+        border: 1px solid %(accent)s;
+    }
     QPushButton#BreadcrumbSegment {
         background-color: transparent;
         color: %(text)s;
@@ -379,6 +393,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.variantGroup = QtGui.QButtonGroup(self)
         self.variantGroup.setExclusive(True)
         self.variantGroup.buttonToggled.connect(self._onVariantChanged)
+        # Set by _setVariantChips when a part has enough variants to earn a
+        # dropdown instead of chips; None the rest of the time.
+        self.variantCombo = None
 
         self.metrics = QtGui.QLabel("")
         metricsFont = QtGui.QFont("Monospace")
@@ -457,7 +474,13 @@ class PartsLibraryPanel(QtGui.QWidget):
         """Rescan the library and rebuild both screens."""
         import partslib_object
 
+        import partslib_geometry
+
         timer = _Timer("refreshing the parts library")
+        # A rescan is the user saying "re-read the library", so remembered
+        # shapes go too - params are in the cache key, but an edited builder
+        # or asset file is not.
+        partslib_geometry.clear_shape_cache()
         index = partslib_object.libraryIndex(force=True)
         timer.mark("scan")
 
@@ -876,39 +899,88 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._setVariantChips(entry["variants"])
         self._refreshPreview()
 
+    # Above this many variants, chips stop being a good control: they wrap
+    # onto several rows in a narrow sidebar and the labels ("Walk-in
+    # 1200 mm") are long enough that the row stops reading as a row.
+    MAX_VARIANT_CHIPS = 2
+
     def _setVariantChips(self, labels):
-        """Rebuild the variant chip row for the current selection."""
+        """Rebuild the variant control for the current selection.
+
+        Three cases, because one control does not suit all of them:
+
+        - ONE label. A part with no declared variants gets the implicit
+          "Default", and a lone chip reading "Default" is pure noise - it
+          offers no choice and names nothing the user recognises. Show
+          nothing at all.
+        - TWO labels. Chips: both options visible at once, one click to
+          switch.
+        - MORE. A combo box, which stays one line however many there are
+          and however long their labels."""
         for button in list(self.variantGroup.buttons()):
             self.variantGroup.removeButton(button)
             button.setParent(None)
             button.deleteLater()
+        # _clearLayout deletes the widgets, so any surviving reference to
+        # the old combo would be a dangling C++ pointer.
+        self.variantCombo = None
         _clearLayout(self.variantRow)
 
-        for label in labels:
-            chip = QtGui.QPushButton(label)
-            chip.setObjectName("VariantChip")
-            chip.setCheckable(True)
-            chip.setCursor(QtCore.Qt.PointingHandCursor)
-            self.variantGroup.addButton(chip)
-            self.variantRow.addWidget(chip)
-        self.variantRow.addStretch(1)
+        labels = list(labels or [])
+        if len(labels) < 2:
+            return
 
-        buttons = self.variantGroup.buttons()
-        if buttons:
-            buttons[0].blockSignals(True)
-            buttons[0].setChecked(True)
-            buttons[0].blockSignals(False)
+        if len(labels) <= self.MAX_VARIANT_CHIPS:
+            for label in labels:
+                chip = QtGui.QPushButton(label)
+                chip.setObjectName("VariantChip")
+                chip.setCheckable(True)
+                chip.setCursor(QtCore.Qt.PointingHandCursor)
+                self.variantGroup.addButton(chip)
+                self.variantRow.addWidget(chip)
+            self.variantRow.addStretch(1)
+
+            buttons = self.variantGroup.buttons()
+            if buttons:
+                buttons[0].blockSignals(True)
+                buttons[0].setChecked(True)
+                buttons[0].blockSignals(False)
+            return
+
+        caption = QtGui.QLabel("Variant")
+        caption.setObjectName("VariantCaption")
+        self.variantRow.addWidget(caption)
+
+        combo = QtGui.QComboBox()
+        combo.setObjectName("VariantCombo")
+        # Populate before connecting: addItems fires currentIndexChanged,
+        # and rebuilding the preview mid-populate would build the wrong
+        # variant and waste the work.
+        combo.addItems(labels)
+        combo.setCurrentIndex(0)
+        combo.currentIndexChanged.connect(self._onVariantChanged)
+        self.variantRow.addWidget(combo, 1)
+        self.variantCombo = combo
 
     def _currentVariantLabel(self):
+        combo = getattr(self, "variantCombo", None)
+        if combo is not None:
+            try:
+                return combo.currentText() or None
+            except RuntimeError:
+                # Combo destroyed by a rebuild between selection changes.
+                self.variantCombo = None
         for button in self.variantGroup.buttons():
             if button.isChecked():
                 return button.text()
         return None
 
     def _onVariantChanged(self, *args):
-        # buttonToggled(button, checked) fires twice on an exclusive switch
-        # (the old chip going False, the new one going True) - only react
-        # to the "became checked" half.
+        # Serves both controls. buttonToggled(button, checked) fires twice
+        # on an exclusive switch (the old chip going False, the new one
+        # going True) - only react to the "became checked" half.
+        # currentIndexChanged(int) passes a single argument, so the
+        # two-argument test leaves it alone.
         checked = args[1] if len(args) > 1 else True
         if not checked:
             return

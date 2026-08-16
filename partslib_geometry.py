@@ -128,18 +128,84 @@ def measure(shape):
     return dict(zip(partslib_manifest.derived_metric_names(), lengths))
 
 
+# Session cache of built shapes, keyed by everything that determines the
+# geometry. See build_shape() for why this exists and clear_shape_cache()
+# for when it is dropped.
+_SHAPE_CACHE = {}
+_SHAPE_CACHE_ORDER = []
+_SHAPE_CACHE_LIMIT = 96
+
+
+def clear_shape_cache():
+    """Forget every remembered shape.
+
+    Called whenever the library is rescanned. A part's params are part of
+    the cache key, so editing a manifest already misses the cache - but
+    editing a BUILDER, or an asset file on disk, would not, and a rescan is
+    the user saying "re-read the library" in as many words."""
+    _SHAPE_CACHE.clear()
+    del _SHAPE_CACHE_ORDER[:]
+
+
+def _remember_shape(key, shape):
+    if key in _SHAPE_CACHE:
+        return
+    _SHAPE_CACHE[key] = shape
+    _SHAPE_CACHE_ORDER.append(key)
+    while len(_SHAPE_CACHE_ORDER) > _SHAPE_CACHE_LIMIT:
+        _SHAPE_CACHE.pop(_SHAPE_CACHE_ORDER.pop(0), None)
+
+
 def build_shape(resolved, part_dir, overrides=None):
-    """Build one resolved variant's shape.
+    """Build one resolved variant's shape, reusing an identical earlier build.
 
     `overrides` is an optional {paramName: value} map - typically an
     inserted object's current Parameter property values - merged over the
     manifest's declared defaults by partslib_manifest.merge_params(), which
-    also drops anything the manifest does not declare."""
+    also drops anything the manifest does not declare.
+
+    THE CACHE. Building is not cheap: a drawer chest is roughly 27 sequential
+    OCC booleans and measured over a second. It is also called far more often
+    than "once per part" suggests - selecting a part in the browser rebuilds
+    it, because the W x D x H readout is measured from the shape rather than
+    authored, so the rendered-image caches on disk cannot spare the rebuild.
+    Clicking between two parts therefore paid full price every time.
+
+    The key is everything that decides the geometry: which part directory,
+    which builder, which variant, and the fully merged params. Anything a
+    user can change from the UI changes the key, so a stale hit is not
+    reachable by editing a Parameter or switching a variant.
+
+    Callers get a COPY. A shape handed to a document object becomes that
+    object's, and a caller free to mutate what it was given would otherwise
+    corrupt the entry for everyone after it. Copying a finished solid is
+    still far cheaper than rebuilding one."""
     geometry = resolved.get("geometry") or {}
-    builder = resolve_builder(geometry.get("builder"))
-    assets = AssetLoader(part_dir, geometry.get("assets"))
+    symbol = geometry.get("builder")
+    builder = resolve_builder(symbol)
     params = partslib_manifest.merge_params(resolved, overrides)
-    return builder(params, assets, _Context(geometry))
+
+    key = (os.path.abspath(part_dir), symbol,
+           resolved.get("variantLabel"),
+           repr(sorted(params.items(), key=lambda item: item[0])),
+           repr(sorted((geometry.get("assets") or {}).items())))
+
+    cached = _SHAPE_CACHE.get(key)
+    if cached is not None:
+        try:
+            return cached.copy()
+        except Exception:
+            # A cached shape that can no longer be copied is worse than no
+            # cache at all - drop it and rebuild.
+            _SHAPE_CACHE.pop(key, None)
+
+    assets = AssetLoader(part_dir, geometry.get("assets"))
+    shape = builder(params, assets, _Context(geometry))
+    _remember_shape(key, shape)
+    try:
+        return shape.copy()
+    except Exception:
+        return shape
 
 
 class _Context:
