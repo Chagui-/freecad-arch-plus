@@ -13,9 +13,10 @@ built-in tools. The Parts Library is different in kind: it is a content
 library and browser rather than a modified copy of a native Arch module,
 inserting single lightweight objects built from bundled part definitions.
 
-<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
+<img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
 
 ## Features (Stairs)
+
 
 - **Configuration dialog** (Task panel) with **live preview** — the stair
   renders in the 3D view as you change values, and updates as you edit.
@@ -27,11 +28,12 @@ inserting single lightweight objects built from bundled part definitions.
   steps that sweep 180° (half) or 90° (quarter) while climbing, filling a
   square footprint. Set the turn to a single step for a flat landing instead.
 
-| Configuration dialog | Comfort note & options |
-| --- | --- |
-| <img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="280"> | <img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="280"> |
+<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="100">
 
-<img src="Resources/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="360">
+### Configuration dialog
+
+<img src="Resources/images/stairs_dialog_1.jpg" alt="Stairs configuration dialog" width="250">
+<img src="Resources/images/stairs_dialog_2.jpg" alt="Stairs configuration dialog with comfort note" width="250">
 
 ## Features (Doors)
 
@@ -58,11 +60,13 @@ inserting single lightweight objects built from bundled part definitions.
   **Reposition**: pick a new spot; the door re-orients to the wall face you
   point at, re-snaps to the floor, and re-cuts the host wall.
 
-| Configuration dialog | Opening & panel options |
-| --- | --- |
-| <img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="280"> | <img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="280"> |
+<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100">
 
-<img src="Resources/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="360">
+### Configuration dialog
+
+<img src="Resources/images/doors_dialog_1.jpg" alt="Doors configuration dialog" width="250">
+<img src="Resources/images/doors_dialog_2.jpg" alt="Doors configuration dialog with opening options" width="250">
+
 
 ## Features (Windows)
 
