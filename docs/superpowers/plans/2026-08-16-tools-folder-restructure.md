@@ -120,8 +120,14 @@ git mv Resources/icons/DoorsPlus.svg tools/doors/resources/icons/
 git mv Resources/icons/dimensions_ref_door.svg tools/doors/resources/icons/
 git mv tests/doors/test_doors.py tools/doors/tests/test_doors.py
 git rm -q doorsplus_object.py
+find doors tests/doors -name "__pycache__" -type d -exec rm -rf {} +
 rmdir doors tests/doors
 ```
+
+The `find` is required: every `pytest` run regenerates `__pycache__/` in these
+folders, and `rmdir` refuses a non-empty directory. `rmdir` is kept rather than
+`rm -rf` on purpose — if anything *other* than bytecode is still there, it
+should fail loudly rather than delete a file a `git mv` missed.
 
 `doorsplus_object.py` is deleted rather than kept: per the Global Constraints, Proxy-path compatibility is explicitly out of scope.
 
@@ -236,8 +242,12 @@ git mv Resources/icons/WindowsPlus.svg tools/windows/resources/icons/
 git mv Resources/icons/dimensions_ref_window.svg tools/windows/resources/icons/
 git mv tests/windows/test_windows.py tools/windows/tests/test_windows.py
 git rm -q windowsplus_object.py
+find windows tests/windows -name "__pycache__" -type d -exec rm -rf {} +
 rmdir windows tests/windows
 ```
+
+The `find` clears the bytecode `pytest` regenerates on every run; `rmdir` then
+fails loudly if anything unexpected remains.
 
 - [ ] **Step 3: Retarget the path constants in `tools/windows/gui.py`**
 
@@ -350,8 +360,12 @@ git mv Resources/icons/dimensions_ref_halfturn.svg tools/stairs/resources/icons/
 git mv Resources/icons/steps_ref.svg tools/stairs/resources/icons/
 git mv tests/stairs/test_stairs.py tools/stairs/tests/test_stairs.py
 git rm -q stairsplus_object.py
+find stairs tests/stairs -name "__pycache__" -type d -exec rm -rf {} +
 rmdir stairs tests/stairs
 ```
+
+The `find` clears the bytecode `pytest` regenerates on every run; `rmdir` then
+fails loudly if anything unexpected remains.
 
 - [ ] **Step 3: Retarget the path constants in `tools/stairs/gui.py`**
 
@@ -457,6 +471,7 @@ Largest move by file count, but structurally the same. Two differences: there is
 - Move: `partslib/` (all 9 modules plus `builders/` and `library/`) → `tools/partslib/`
 - Move: `Resources/icons/PartsLibrary.svg` and `Resources/icons/facets/` → `tools/partslib/resources/icons/`
 - Move: all 7 files from `tests/partslib/` → `tools/partslib/tests/`
+- Move: `tests/README.md` → `docs/TESTING.md`, and rewrite its paths
 - Modify: `tools/partslib/gui.py:30,45,46`
 - Modify: `tools/partslib/object.py:23,292`
 - Modify: `tools/partslib/tests/*.py` — the `from partslib import ...` lines
@@ -481,10 +496,45 @@ git mv partslib tools/partslib
 git mv Resources/icons/PartsLibrary.svg tools/partslib/resources/icons/
 git mv Resources/icons/facets tools/partslib/resources/icons/facets
 for f in tests/partslib/*.py; do git mv "$f" tools/partslib/tests/; done
+git mv tests/README.md docs/TESTING.md
+find tests -name "__pycache__" -type d -exec rm -rf {} +
 rmdir tests/partslib tests
 ```
 
 `git mv partslib tools/partslib` moves `builders/` and `library/` with it.
+
+`tests/README.md` is a tracked document describing the test layout. It is the
+last file in `tests/`, so it must move before the directory can be removed —
+`docs/` is its home now that no single `tests/` tree remains. Its contents are
+updated in the next step.
+
+The `find` clears the bytecode `pytest` regenerates on every run; `rmdir` then
+fails loudly if anything unexpected remains.
+
+- [ ] **Step 2b: Update the relocated testing document**
+
+`docs/TESTING.md` describes the old layout throughout and is now wrong in three
+ways. Fix all of them:
+
+1. The intro says `conftest.py` injects the fakes — say it now lives at the repo
+   root, and why: pytest applies a conftest only to tests beneath its own
+   directory, so it must sit above `tools/` and `common/` to reach both.
+2. Every test path it names moves. Rewrite `tests/windows/test_windows.py` →
+   `tools/windows/tests/test_windows.py`, `tests/doors/test_doors.py` →
+   `tools/doors/tests/test_doors.py`, `tests/stairs/test_stairs.py` →
+   `tools/stairs/tests/test_stairs.py`, and any `tests/partslib/...` path to its
+   `tools/partslib/tests/...` equivalent.
+3. The "one test file per tool" framing still holds, but tests now live beside
+   the tool they cover rather than in a central tree — say so.
+
+Do not document `common/tests/` here; it does not exist until Task 7.
+
+Run afterwards to confirm no stale path survives:
+
+```bash
+grep -n "tests/windows\|tests/doors\|tests/stairs\|tests/partslib" docs/TESTING.md || echo "clean"
+```
+Expected: `clean`
 
 - [ ] **Step 3: Delete `_ROOT` and retarget the icon constants in `tools/partslib/gui.py`**
 
@@ -1122,8 +1172,10 @@ Rather than rewrite every `_rect(...)` call inside those long geometry builders,
 
 **Files:**
 - Create: `common/geometry.py`, `common/tests/test_geometry.py`
-- Modify: `tools/doors/gui.py:182-201` (the nested `_rect` / `_addFrame` in `_makeDoorGeometry`)
-- Modify: `tools/windows/gui.py:191-210` (the nested `_rect` / `_addFrame` in `_makeWindowGeometry`)
+- Modify: `tools/doors/gui.py` — the nested `_rect` / `_addFrame` in `_makeDoorGeometry`
+- Modify: `tools/windows/gui.py` — the nested `_rect` / `_addFrame` in `_makeWindowGeometry`
+
+**All line numbers quoted in this task are from before Tasks 7 and 8 edited these files.** Task 7 deletes roughly 25 lines near the top of each `gui.py`, shifting everything below it upward. Locate `_makeDoorGeometry`, `_makeWindowGeometry`, and the nested `_rect` / `_addFrame` **by name**, and treat the numbers below as approximate.
 
 **Interfaces:**
 - Consumes: `_FakeSketch` from the root `conftest.py`, plus the faked `Part` and `Sketcher` modules it installs.
