@@ -3,10 +3,14 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
 
 # FreeCAD backups
 *.FCStd1
 *.FCBak
+
+# Parts library generated caches (parsed BREP, rendered thumbnails)
+.cache/
 
 # Local tool config (not shared)
 .claude/

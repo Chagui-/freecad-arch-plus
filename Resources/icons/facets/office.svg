@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Office - line-art desk and chair, single stroke colour (currentColor).
+     See bathroom.svg for the shared style notes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <line x1="3" y1="9" x2="21" y2="9"/>
+  <line x1="5" y1="9" x2="5" y2="19"/>
+  <line x1="19" y1="9" x2="19" y2="19"/>
+  <rect x="9" y="5" width="6" height="4" rx="0.5"/>
+  <line x1="9" y1="13" x2="12" y2="13"/>
+</svg>

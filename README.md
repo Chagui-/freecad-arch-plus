@@ -4,10 +4,14 @@ A FreeCAD add-on that extends the built-in **BIM** workbench with enhanced
 Arch tools. It adds an **ArchPlus** toolbar and menu inside the BIM workbench.
 
 It currently provides enhanced parametric **Stairs**, **Doors**, and **Windows**
-tools. Each geometry engine is a modifiable copy of a native FreeCAD module —
-`ArchStairs` for stairs and `ArchWindow` for doors and windows — so every native
-feature (IFC export, hosting/opening cuts, presets, …) is preserved while new
-behaviour is added on top, without affecting the built-in tools.
+tools, plus a **Parts Library** for inserting catalog furnishings. Each
+geometry engine for Stairs, Doors and Windows is a modifiable copy of a native
+FreeCAD module — `ArchStairs` for stairs and `ArchWindow` for doors and
+windows — so every native feature (IFC export, hosting/opening cuts, presets,
+…) is preserved while new behaviour is added on top, without affecting the
+built-in tools. The Parts Library is different in kind: it is a content
+library and browser rather than a modified copy of a native Arch module,
+inserting single lightweight objects built from bundled part definitions.
 
 <img src="Resources/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" width="320">
 
@@ -92,6 +96,44 @@ behaviour is added on top, without affecting the built-in tools.
 - **Flip without reopening** — right-click a casement window → **Invert Opening
   Direction** or **Invert Hinge Position** to mirror the swing in place.
 
+## Features (Parts Library)
+
+ArchPlus ships the Parts Library's faceted vocabulary
+(`library/facets.json`) and its browser/placement machinery, but **no
+parts** — `library/` is otherwise empty out of the box. Add part folders
+under it (each with its own `part.json` manifest, validated against that
+vocabulary) to populate the catalogue; until then the panel shows a plain
+"no parts in the library yet" message instead of a blank void.
+
+- **Dockable browser** — click **Parts Library** to open a dock ("ArchPlus
+  Library") that stays open across placements, so you can insert several
+  parts in a row without reopening anything.
+- **Faceted grouping** — group the catalog by `Function`, `Element` or
+  `Room` via a **Group by** combo; the chosen facet persists across FreeCAD
+  restarts.
+- **Multi-valued facets** — a part can belong to several rooms at once (a WC
+  under both Bathroom and Cloakroom, for example) and appears under each
+  group it declares.
+- **Search** — a live search box filters the grid by name, keyword and
+  description as you type.
+- **Live preview with derived measurements** — selecting a part shows a 3D
+  preview and a `W × D × H` readout measured from the built shape, never
+  authored by hand, so the stated size can never disagree with the geometry.
+- **Variants** — parts can declare named variants (e.g. cabinet widths);
+  switching **Variant** in the detail pane or the property editor rebuilds
+  the shape and measurements in place.
+- **Host-aware click-to-place** — click **Place**, then click a floor or
+  wall face: the part drops to the correct height for its declared host
+  (e.g. a wall-hung WC lands at the wall base plus its mounting height) and
+  orients to the face.
+- **Single-object insertion, no tree pollution** — placing a part adds
+  exactly one object with no children, and deleting it leaves the tree
+  completely clean.
+- **Reload from library** — right-click a placed part and choose **Reload
+  from library** to re-read its manifest and rebuild it; opening or
+  recomputing a document never silently rebuilds a part from a
+  since-edited definition on its own.
+
 ## Installation
 
 Clone (or copy) this repository into your FreeCAD user `Mod` folder:
@@ -117,6 +159,10 @@ BIM workbench → **ArchPlus** toolbar:
   default) → configure in the panel. Double-click (or right-click → Edit) a
   window to reopen the panel; right-click → **Reposition** to move it with the
   mouse.
+- **Parts Library** → browse/group/search the catalog in the dock, select a
+  part and variant, then click **Place** and click a floor or wall face to
+  insert it. Right-click a placed part → **Reload from library** to refresh
+  it from its manifest.
 
 ## TODO
 

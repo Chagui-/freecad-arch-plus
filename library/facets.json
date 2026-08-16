@@ -1,0 +1,33 @@
+{
+  "function": {
+    "label": "Function",
+    "multi": false,
+    "values": {
+      "Sanitary": { "ifcType": "Sanitary Terminal" },
+      "Seating": { "ifcType": "Furniture" },
+      "Storage": { "ifcType": "Furniture" },
+      "Lighting": { "ifcType": "Lighting Fixture" }
+    }
+  },
+  "element": {
+    "label": "Element",
+    "multi": false,
+    "values": {
+      "WC": { "ifcType": "Sanitary Terminal", "label": "Toilets", "icon": "wc.svg" },
+      "Basin": { "ifcType": "Sanitary Terminal", "label": "Basins", "icon": "basin.svg" },
+      "Cabinet": { "ifcType": "Furniture", "label": "Cabinets", "icon": "cabinet.svg" },
+      "Chair": { "ifcType": "Furniture", "label": "Chairs", "icon": "chair.svg" }
+    }
+  },
+  "room": {
+    "label": "Room",
+    "multi": true,
+    "values": {
+      "Bathroom": { "icon": "bathroom.svg" },
+      "Cloakroom": { "icon": "cloakroom.svg" },
+      "Kitchen": { "icon": "kitchen.svg" },
+      "Bedroom": { "icon": "bedroom.svg" },
+      "Office": { "icon": "office.svg" }
+    }
+  }
+}
