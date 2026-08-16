@@ -39,7 +39,7 @@ def _injectIntoBIM():
         import stairsplus_gui   # noqa: F401
         import doorsplus_gui    # noqa: F401
         import windowsplus_gui  # noqa: F401
-        import partslib_gui     # noqa: F401
+        import partslib.gui     # noqa: F401
         workbench.appendToolbar(toolbar, commands)
         workbench.appendMenu(toolbar, commands)
 
