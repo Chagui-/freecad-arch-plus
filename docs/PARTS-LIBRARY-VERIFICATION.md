@@ -206,14 +206,14 @@ unaffected by the fallback.
       correctly (light cards, dark text) — this is the same code path,
       not a separate dark-only fix.
 - [ ] **B10 (fix round — on-demand thumbnail fallback).** Neither seed part
-      ships a committed `thumbnail.png`, so this exercises the fallback by
+      ships a committed `thumbnail.jpg`, so this exercises the fallback by
       default. Before opening the panel this session, confirm (in a file
       browser, or `os.path.exists` in the Python console against each
       part's own directory) that neither `base-cabinet`'s nor
-      `wc-demo`'s folder under `library/` yet contains a `thumbnail.png`.
+      `wc-demo`'s folder under `library/` yet contains a `thumbnail.jpg`.
       Open the panel and drill in to view both cards: they still show their
       names even with no icon yet. Close the tab, and confirm each part's
-      folder now contains a freshly-rendered `thumbnail.png`. Reopen the
+      folder now contains a freshly-rendered `thumbnail.jpg`. Reopen the
       panel: both cards now show an icon, read straight from that file (no
       re-render — check the file's mtime is unchanged across the reopen).
 
@@ -423,7 +423,7 @@ print(thumb_path)
       shaded box on white.
 - [ ] **I2.** If it instead prints `False`: `SoOffscreenRenderer` failed on
       this machine's GL/driver setup. This is not a bug to chase down here —
-      note it, because it means committed `thumbnail.png` files become
+      note it, because it means committed `thumbnail.jpg` files become
       mandatory for every future part (fresh offscreen rendering can never
       be relied on on this machine), and that finding should be recorded
       back into the spec.

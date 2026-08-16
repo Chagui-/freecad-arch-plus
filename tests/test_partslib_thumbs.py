@@ -16,6 +16,24 @@ def _clean_render_failure_cache():
     pt.reset_render_failures()
 
 
+def test_thumbnails_are_jpegs():
+    # The saved format is driven off the filename's extension, so the two
+    # have to agree - a thumbnail_path() ending in .png would silently make
+    # every render a PNG again.
+    assert pt.THUMBNAIL_FILENAME.endswith(".jpg")
+    assert pt._image_format_for(pt.thumbnail_path("/parts/wc")) == (
+        "JPEG", pt.JPEG_QUALITY)
+
+
+def test_image_format_follows_the_output_extension():
+    assert pt._image_format_for("/x/y.jpg")[0] == "JPEG"
+    assert pt._image_format_for("/x/y.JPEG")[0] == "JPEG"
+    assert pt._image_format_for("/x/y.png")[0] == "PNG"
+    # Anything unrecognised must still name a format Qt can write, rather
+    # than falling through to None and failing the save.
+    assert pt._image_format_for("/x/y")[0] == "PNG"
+
+
 def test_render_shape_returns_false_rather_than_raising_without_pivy(tmp_path):
     # pivy is not installed here, so the very first import inside
     # render_shape's try block fails - exercising the exact "no GL context /

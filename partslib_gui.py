@@ -977,9 +977,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
 
-          1. a freshly rendered/cached per-variant PNG at detail (256px)
+          1. a freshly rendered/cached per-variant JPEG at detail (256px)
              resolution;
-          2. the part's committed thumbnail.png (not variant-specific, but
+          2. the part's committed thumbnail.jpg (not variant-specific, but
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
              with no pivy/GL available at all, since it is what stands
@@ -1019,7 +1019,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         _RENDER_FAILED for the full rationale."""
         cache_dir = os.path.join(entry["dir"], ".cache")
         out_path = os.path.join(
-            cache_dir, "%s.png" % _sanitizeVariantLabel(label))
+            cache_dir, "%s.jpg" % _sanitizeVariantLabel(label))
         try:
             if os.path.exists(out_path):
                 pixmap = QtGui.QPixmap(out_path)

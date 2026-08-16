@@ -41,9 +41,15 @@ def _timelog(message):
     _warn("ArchPlus: [timing] %s\n" % (message,))
 
 
-THUMBNAIL_FILENAME = "thumbnail.png"
+THUMBNAIL_FILENAME = "thumbnail.jpg"
 THUMBNAIL_SIZE = 256
 _BACKGROUND = (1.0, 1.0, 1.0)
+
+# JPEG quality for saved thumbnails. These are flat-shaded renders on a
+# solid white ground - no photographic gradients for JPEG's DCT to smear -
+# so 92 is visually lossless here while staying well under a committed
+# thumbnail's worth of bytes.
+JPEG_QUALITY = 92
 
 _RENDER_FAILED = set()
 
@@ -126,8 +132,21 @@ def scene_from_shape(shape):
     return coin.SoDB.readAll(reader)
 
 
-def _save_buffer_as_png(renderer, out_path, size):
-    """Save the renderer's frame buffer as a PNG through Qt.
+def _image_format_for(out_path):
+    """(Qt format name, quality) to save `out_path` as, from its extension.
+
+    Driving this off the extension rather than a constant keeps the two
+    callers - the grid's thumbnail.jpg and the detail pane's per-variant
+    cache - honest about what they actually asked for, and lets a caller
+    ask for a PNG without a second code path."""
+    extension = os.path.splitext(out_path)[1].lower()
+    if extension in (".jpg", ".jpeg"):
+        return "JPEG", JPEG_QUALITY
+    return "PNG", -1
+
+
+def _save_buffer_as_image(renderer, out_path, size):
+    """Save the renderer's frame buffer to `out_path` through Qt.
 
     SoOffscreenRenderer.writeToFile() can only emit the image formats Coin
     was BUILT with, and Coin gets PNG/JPEG only from the optional simage
@@ -138,8 +157,8 @@ def _save_buffer_as_png(renderer, out_path, size):
     reason; its getQImage() fallback is not available in this pivy build
     either, so go through the raw buffer.)
 
-    Qt is always present in a GUI session and always writes PNG, so this is
-    the primary path, not the fallback."""
+    Qt is always present in a GUI session and always writes both PNG and
+    JPEG, so this is the primary path, not the fallback."""
     from PySide import QtGui
 
     buf = renderer.getBuffer()
@@ -157,7 +176,7 @@ def _save_buffer_as_png(renderer, out_path, size):
     elif components == 3:
         image_format = QtGui.QImage.Format_RGB888
     else:
-        _timelog("_save_buffer_as_png(%s): unexpected buffer: %d bytes for "
+        _timelog("_save_buffer_as_image(%s): unexpected buffer: %d bytes for "
                   "%dx%d" % (out_path, len(buf), size, size))
         return False
 
@@ -169,11 +188,16 @@ def _save_buffer_as_png(renderer, out_path, size):
         image = image.mirrored(False, True)
     else:
         image = image.transformed(QtGui.QTransform().scale(1.0, -1.0))
-    return bool(image.save(out_path, "PNG"))
+    image_type, quality = _image_format_for(out_path)
+    # JPEG has no alpha channel. Qt drops it on conversion, and since the
+    # renderer paints _BACKGROUND behind everything the discarded alpha
+    # cannot leave black where the background should be.
+    return bool(image.save(out_path, image_type, quality))
 
 
 def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
-    """Render `shape` to a PNG. Returns True on success, False otherwise."""
+    """Render `shape` to an image file, in the format `out_path`'s extension
+    asks for. Returns True on success, False otherwise."""
     _t_total = time.perf_counter()
     try:
         _t = time.perf_counter()
@@ -216,15 +240,16 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE):
         if folder and not os.path.isdir(folder):
             os.makedirs(folder)
 
+        image_type, _ = _image_format_for(out_path)
         _t = time.perf_counter()
-        saved = _save_buffer_as_png(renderer, out_path, size)
-        _timelog("render_shape(%s): Qt PNG save returned %r, took %.3fs"
-                  % (out_path, saved, time.perf_counter() - _t))
-        if not saved and renderer.isWriteSupported("PNG"):
-            # Only worth trying where Coin actually claims PNG support -
-            # otherwise it returns 0 and writes nothing, which is the bug
-            # this whole path exists to work around.
-            renderer.writeToFile(out_path, "PNG")
+        saved = _save_buffer_as_image(renderer, out_path, size)
+        _timelog("render_shape(%s): Qt %s save returned %r, took %.3fs"
+                  % (out_path, image_type, saved, time.perf_counter() - _t))
+        if not saved and renderer.isWriteSupported(image_type):
+            # Only worth trying where Coin actually claims support for the
+            # format - otherwise it returns 0 and writes nothing, which is
+            # the bug this whole path exists to work around.
+            renderer.writeToFile(out_path, image_type)
 
         result = os.path.exists(out_path)
         _timelog("render_shape(%s): TOTAL %.3fs (wrote file=%r)"
