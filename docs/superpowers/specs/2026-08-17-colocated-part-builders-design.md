@@ -211,7 +211,7 @@ parametric part would silently fall through to `asset.single` and fail with
 The scan-time check in §6 closes it: a part must have either a `builder.py` or a
 non-empty `geometry.assets`, else it is a scan error.
 
-### 4.3 Family code
+### 4.4 Family code
 
 A part builder reaches its family as `from .. import _shared`, which means "my
 family" at any depth. Moving a part and its `_shared.py` into a deeper folder
