@@ -1,30 +1,75 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Furniture builders - pure generation, no assets. Every shape is boxes and
-# square posts composed via the helpers in _shapes.py: rounded corners,
-# softened cushion edges, panel reveals, a toe-kick recess on case goods.
-# This is deliberately primitive massing, not sculpted furniture - the goal
-# is a floor-plan/BIM-usable block that reads as "table" or "wardrobe"
-# rather than "box", not a showroom model.
+# The basic family's design language - the massing decisions shared by more
+# than one part in this family, as opposed to the primitives in
+# partslib/shapes.py, which every family uses.
 #
-# Two rules learned from looking at the renders rather than the code:
+# Kitchen units are the most repetitive group here: nearly every one is a
+# carcass with a toe kick, doors carrying a panel reveal, and a handle.
+# carcass() does that once, and each part's builder differs only in what
+# sits on top (a worktop, nothing) and what is cut into the front (doors, an
+# oven, a drawer bank).
 #
-# 1. SQUARE, NOT ROUND. Legs and posts are square section. A 36mm cylinder
-#    renders as a single line with no shading to read, so a chair built on
-#    turned legs came out looking like wire under a floating plank.
-#
-# 2. SOLID, NOT SCATTERED. Where a real object is one soft mass - a sofa -
-#    it is modelled as one mass with seams cut into it, not as separate
-#    floating pieces. Building a sofa's cushions as individual solids with
-#    air around them made it read worse, not better.
-#
-# `table()` is reused by two manifests (dining table, coffee table) - one
-# builder serving several catalogue entries is the reuse the design spec
-# calls out (Sec 6.1/6.4): those parts differ in their default dimensions
-# and metadata, not in their geometry family. A desk is NOT among them; it
-# has a knee hole, a pedestal and a modesty panel, so it gets `desk()`.
+# table() and bed() are whole builders rather than helpers, because the two
+# tables and the two beds in this family are each one design at two sizes
+# today. Their parts delegate here; when a real difference appears it belongs
+# in that part's builder.py, not as another branch in this file.
 
 from archplus.tools.partslib import shapes as sh
+
+
+def carcass(width, depth, height, kick_height, kick_depth, radius=8.0):
+    """A cabinet box standing on a recessed plinth."""
+    box = sh.rounded_box(width, depth, height, radius=radius)
+    return sh.toe_kick(box, width, depth,
+                       kick_height=kick_height, kick_depth=kick_depth,
+                       margin=min(20.0, width * 0.04))
+
+
+def doors(shape, width, height, door_count, base_z, margin=None,
+           groove=6.0, seam=4.0):
+    """Cut door seams and a panel reveal into a carcass front."""
+    if door_count < 1:
+        return shape
+    door_width = width / door_count
+    if margin is None:
+        margin = min(40.0, door_width * 0.12)
+    # Seams between doors plus the reveal around each, subtracted together:
+    # an 800mm two-door unit is nine boxes and one boolean.
+    boxes = [
+        (i * door_width - seam / 2.0, -1.0, base_z,
+         seam, 8.0, height - base_z)
+        for i in range(1, door_count)
+    ]
+    for i in range(door_count):
+        boxes.extend(sh.panel_reveal_boxes(
+            i * door_width + margin, base_z + margin,
+            door_width - 2 * margin, height - base_z - 2 * margin,
+            groove=groove, depth=8.0))
+    return sh.cut_boxes(shape, boxes)
+
+
+def pulls(width, height, door_count, base_z, y, vertical=True):
+    """One handle per door, centred on the door face so it adds no depth."""
+    pulls = []
+    if door_count < 1:
+        return pulls
+    door_width = width / door_count
+    length = (height - base_z) * 0.22 if vertical else door_width * 0.35
+    for i in range(door_count):
+        # Handles sit toward the opening edge: outer doors open outward,
+        # so their handles mirror about the middle of the run.
+        inset = 40.0
+        x = (i * door_width + door_width - inset if i < door_count / 2.0
+             else i * door_width + inset)
+        if vertical:
+            pulls.append(sh.place(sh.bar(length, 7.0, along="z"), x, y,
+                                  base_z + (height - base_z - length) / 2.0))
+        else:
+            pulls.append(sh.place(sh.bar(length, 7.0, along="x"),
+                                  i * door_width + (door_width - length) / 2.0,
+                                  y, height - 60.0))
+    return pulls
 
 
 def table(params, assets, ctx):
