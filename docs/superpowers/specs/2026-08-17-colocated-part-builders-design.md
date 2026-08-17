@@ -2,8 +2,10 @@
 
 **Date:** 2026-08-17
 **Status:** approved, not yet implemented
-**Supersedes:** §6.4 "Builders are central, not per-part" of
-`2026-08-15-parts-library-design.md`
+**Supersedes:** §6.4 "Builders are central, not per-part" and the builder-symbol
+half of §6.3 "Security", both in `2026-08-15-parts-library-design.md`. The
+zero-executable-code property §6.3 reserved for user-supplied libraries is kept,
+and strengthened from a declaration into a structural fact — see §4.1.
 
 ## 1. Why
 
@@ -71,10 +73,8 @@ The category level is removed. All 31 existing parts are one house-style family.
 ```
 archplus/tools/partslib/
   shapes.py                      moved from builders/_shapes.py, contents unchanged
-  builders/
-    __init__.py
-    asset.py                     asset.single — asset-only parts, no part code
-    demo.py                      reference builder, unchanged (design spec §6.1)
+  asset.py                       moved from builders/asset.py — the fallback for
+                                 parts that ship no builder.py
   library/
     facets.json
     basic/
@@ -125,48 +125,72 @@ three-level tree.
 
 `partslib/shapes.py` is cross-family primitive vocabulary — `rounded_box`,
 `square_leg`, `toe_kick`, `fuse_all`. It is imported by every part builder and
-every family, so it is public and loses its underscore. `builders/` is then
-exactly what its docstring claims: central builders a manifest may name by
-symbol.
+every family, so it is public and loses its underscore.
 
 `library/<family>/_shared.py` is one family's design language. A second brand
 imports `shapes` and writes its own `_shared.py`.
 
 ## 4. Builder resolution
 
-### 4.1 Two routes
+### 4.1 The file on disk decides
 
-A manifest that names a symbol uses the central route. A manifest that names
-nothing uses its own folder's `builder.py`:
+A part's geometry comes from its own `builder.py` when it has one, and from the
+stock asset builder when it does not:
 
 ```python
-geometry = resolved.get("geometry") or {}
-symbol = geometry.get("builder")
-builder = (resolve_builder(symbol) if symbol
-           else resolve_local_builder(part_dir))
+builder_py = os.path.join(part_dir, "builder.py")
+builder = (load_local_builder(part_dir) if os.path.exists(builder_py)
+           else asset.single)
 ```
+
+The manifest says **nothing** about builders. `geometry` carries only `assets`
+and `transform`:
 
 ```json
 { "geometry": {} }
 ```
 ```json
-{ "geometry": { "builder": "asset.single",
-                "assets": { "body": "chair.step" } } }
+{ "geometry": { "assets": { "body": "chair.step" } } }
 ```
 
-`resolve_builder` is unchanged — same regex, same central-package restriction.
-`resolve_local_builder(part_dir)` derives the module from the path:
+This deletes the whole symbol mechanism: `resolve_builder`, `_SYMBOL_RE`, the
+`geometry.builder` field, its validation at `manifest.py:147`, its entry in
+`KNOWN_FIELDS`, and `symbol` from `build_shape`'s cache key — `part_dir` already
+identifies the builder. `builders/asset.py` becomes `partslib/asset.py` and is
+imported rather than resolved, so the `builders/` package goes too.
+
+An enum (`"builder": "local"` / `"asset"`) was considered and rejected: it would
+restate what is already on disk, giving the manifest one more thing that can
+drift from reality.
+
+**This strengthens the zero-code property** that §6.3 of the parts-library
+design reserved for possible user-supplied libraries. "This part ships no
+executable code" stops being a declaration that has to be kept true and becomes
+structural — an asset-only part is one with no `builder.py`, and the absence of
+the file *is* the guarantee.
+
+Future central helpers need no registry. A part reaches one by ordinary import:
+
+```python
+from archplus.tools.partslib import asset
+
+def build(params, assets, ctx):
+    return asset.multi(params, assets, ctx)
+```
+
+The README's "the two routes are not exclusive" case is unaffected: a part with
+both a `builder.py` and assets runs its builder, which calls
+`assets.shape(...)`.
+
+### 4.2 Guards
+
+`load_local_builder(part_dir)` derives the module from the path:
 
 ```
 part_dir  <LIBRARY_DIR>/basic/television
 module    archplus.tools.partslib.library.basic.television.builder
 callable  build
 ```
-
-The local route carries **no manifest-supplied name at all**, so a manifest
-cannot point anywhere. The reachable surface shrinks rather than grows.
-
-### 4.2 Guards
 
 Mirroring what `AssetLoader.shape()` already does for asset paths:
 
@@ -177,9 +201,15 @@ Mirroring what `AssetLoader.shape()` already does for asset paths:
 3. `build` must be callable and present in `vars(module)`, so an imported or
    inherited name cannot be used as a builder. Same check as today.
 
-`manifest.py:147` relaxes from "`geometry.builder` must be a string" to "if
-present, must be a string". `geometry` itself stays required — it carries
-`assets` and `transform`.
+`geometry` itself stays required — it carries `assets` and `transform`.
+
+### 4.3 Missing-builder detection
+
+Because the fallback is implicit, forgetting to write `builder.py` for a
+parametric part would silently fall through to `asset.single` and fail with
+"part declares no asset 'body'" — a confusing error for a missing-file problem.
+The scan-time check in §6 closes it: a part must have either a `builder.py` or a
+non-empty `geometry.assets`, else it is a scan error.
 
 ### 4.3 Family code
 
@@ -232,11 +262,11 @@ rather than carried as permanent compatibility code.
 
 ## 6. Two additions
 
-**Scan-time builder check.** `index.py` verifies that a part with no `builder`
-symbol has a `builder.py` on disk. Pure `os.path`, so `index.py` stays free of
-FreeCAD imports, and it turns a missing builder from an insert-time traceback
-into a scan error already guarded by
-`test_scan_reports_zero_errors_for_the_shipped_library`.
+**Scan-time builder check.** `index.py` verifies that every part has either a
+`builder.py` on disk or a non-empty `geometry.assets`. Pure `os.path`, so
+`index.py` stays free of FreeCAD imports, and it turns a missing builder from a
+misleading insert-time "declares no asset 'body'" into a scan error already
+guarded by `test_scan_reports_zero_errors_for_the_shipped_library`.
 
 **Builder reload on rescan.** `clear_shape_cache()` exists because editing a
 builder does not invalidate the shape cache. Once builders are colocated,
@@ -253,10 +283,11 @@ testability.
 
 | File | Changes |
 |---|---|
-| `test_partslib_geometry.py` | 8 `resolve_builder` tests unchanged. New local-route tests: resolves from a part dir; rejects a dir outside `LIBRARY_DIR`; rejects a dot in a segment; rejects a missing `build`; rejects a `build` that is imported rather than defined. Cache tests at 129-183 monkeypatch `resolve_builder` — retarget to the new branch point. |
-| `test_partslib_index.py` | id derived from path; explicit `id` overrides; scan-time builder check |
-| `test_partslib_manifest.py` | `geometry.builder` optional; present-but-not-a-string still rejected |
-| `test_library_content.py` | `test_every_entry_geometry_builder_resolves` covers both routes; all 31 ids unique and path-shaped; every part has a resolvable builder |
+| `test_partslib_geometry.py` | The 8 `resolve_builder` tests are **deleted** with the symbol mechanism, including `test_demo_builder_resolves`. New `load_local_builder` tests: resolves from a part dir; rejects a dir outside `LIBRARY_DIR`; rejects a dot in a segment; rejects a missing `build`; rejects a `build` that is imported rather than defined. New: a part folder with no `builder.py` falls back to `asset.single`. Cache tests at 129-183 monkeypatch `resolve_builder` — retarget to the new branch point, and `_manifest()`'s `builder="demo.box"` default goes away with the field. |
+| `test_partslib_thumbs.py` | Three fixtures at 99, 121, 140 pass `{"builder": "demo.box"}`, which is never resolved in any of them — drop the field. |
+| `test_partslib_index.py` | id derived from path; explicit `id` overrides; the builder-or-assets scan check |
+| `test_partslib_manifest.py` | `geometry.builder` is no longer a known field; `geometry` still required |
+| `test_library_content.py` | `test_every_entry_geometry_builder_resolves` becomes "every part resolves to a builder, local or fallback"; all 31 ids unique and path-shaped |
 
 **Known limit.** `conftest.py` fakes `Part` with only `LineSegment` and
 `Circle`, so headless tests can import a builder and check it is callable but
@@ -279,16 +310,25 @@ Each step lands with the suite green.
    still explicit.
 3. Derive ids from the path, with explicit `id` overriding. Behaviour unchanged,
    because every manifest still carries its id.
-4. Add `resolve_local_builder` beside the symbol route. Nothing uses it yet.
-5. Per part, 31 times: create `builder.py`, delete the function from its family
-   module, drop `geometry.builder` from `part.json`.
+4. Add `load_local_builder` beside the existing symbol route, still unused.
+5. Per part, 31 times: create `builder.py` and delete the function from its
+   family module. The `geometry.builder` field stays for now, so each part keeps
+   working through the symbol route while its code moves.
 6. Move the five shared functions into `library/basic/_shared.py`; delete
    `furniture.py`, `kitchen.py`, `sanitary.py`, `fittings.py`.
-7. Drop the now-redundant explicit `id` from all 31 manifests.
-8. Scan-time builder check; `sys.modules` invalidation in
+7. Switch resolution to the file-on-disk rule; drop `geometry.builder` from all
+   31 manifests and delete `resolve_builder`, `_SYMBOL_RE`, and their tests.
+   `builders/asset.py` → `partslib/asset.py`, imported rather than resolved;
+   delete `demo.py` and the `builders/` package.
+8. Drop the now-redundant explicit `id` from all 31 manifests.
+9. Builder-or-assets scan check; `sys.modules` invalidation in
    `clear_shape_cache()`.
-9. Docs: README §2b rewritten, the add-a-part walkthrough, the
-   `PARTS-LIBRARY-VERIFICATION.md` paths, and the known id break.
+10. Docs: README §2b rewritten, the add-a-part walkthrough, the
+    `PARTS-LIBRARY-VERIFICATION.md` paths, and the known id break.
+
+Steps 4-6 keep the symbol route alive while 1835 lines move, so a broken
+extraction shows up as one failing part rather than a dead library. Step 7 is
+the single switchover, once every part already has its `builder.py`.
 
 ## 9. Accepted costs
 
@@ -297,10 +337,16 @@ Each step lands with the suite green.
 - Four builders — `dining-table`, `coffee-table`, `king-bed`, `single-bed` —
   start as two-line delegations to `_shared`, because those pairs genuinely are
   one function driven by different manifest params today. That file is where the
-  first real divergence goes; the alternative, leaving those four on a central
-  symbol, would mean two conventions for the same thing.
+  first real divergence goes.
 - A single flat family holds 31 parts. Real brand series absorb parts into their
   own families as they land, and moving a part between families is a `git mv`
   plus an id change.
-- `demo.py` remains central and referenced by nothing, per design spec §6.1.
 - No automated proof that geometry is unchanged (§7).
+
+`demo.py` is deleted rather than kept. Its header justifies it as "the worked
+example of the builder contract" because "the library ships empty" — both stale:
+the library has 31 parts, and after this change every one of them is a worked
+example sitting beside its manifest. The five test sites naming `demo.box` never
+resolve it; each monkeypatches `FreeCAD`, `build_shape`, or `resolve_builder`
+first, so the string is an arbitrary placeholder. The only test that resolves it
+exists to assert that it exists.
