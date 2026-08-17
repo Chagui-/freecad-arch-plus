@@ -22,7 +22,7 @@ def build(params, assets, ctx):
     oven_height = min(oven_height, carcass_height - kick_height - 60.0)
 
     box = _shared.carcass(width, carcass_depth, carcass_height,
-                   kick_height, min(45.0, depth * 0.08))
+                          kick_height, min(45.0, depth * 0.08))
 
     # Oven sits at the top of the unit; the drawer takes what is left.
     oven_z = carcass_height - oven_height

@@ -24,7 +24,7 @@ def build(params, assets, ctx):
     carcass_height = height - worktop
 
     box = _shared.carcass(width, carcass_depth, carcass_height,
-                   kick_height, min(45.0, depth * 0.08))
+                          kick_height, min(45.0, depth * 0.08))
     box = _shared.doors(box, width, carcass_height, door_count, kick_height)
     box = sh.place(box, 0, overhang, 0)
 

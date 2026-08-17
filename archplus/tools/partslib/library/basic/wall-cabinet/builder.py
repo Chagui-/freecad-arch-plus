@@ -9,6 +9,7 @@ from .. import _shared
 # floor to the underside of the cabinet - the standard 1500mm to the bottom
 # of a wall unit over a 900mm worktop.
 
+
 def build(params, assets, ctx):
     """A wall-hung kitchen unit. Wall-hosted - see the module notes.
 
