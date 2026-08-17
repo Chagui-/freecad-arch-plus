@@ -4,29 +4,34 @@ Unit tests for the pure logic in the ArchPlus GUI modules — no FreeCAD install
 required. `conftest.py` lives at the repo root and injects lightweight fakes
 for `FreeCAD`, `FreeCADGui`, `PySide`, `Part` and `Sketcher` into
 `sys.modules`, so the modules import and the geometry builders run against a
-stub kernel. It sits at the root rather than inside any one tool's tests
-because pytest only applies a `conftest.py` to tests beneath its own
-directory — the root is the one place above both `tools/` and `common/` that
-reaches every tool's test suite.
+stub kernel.
+
+It sits at the repo root, not inside `archplus/`, for two reasons that both
+have to hold at once. pytest only applies a `conftest.py` to tests beneath its
+own directory, so it has to be at or above `archplus/` to reach every tool's
+suite. And it puts its own directory on `sys.path`, which must be the *add-on
+root* — the same directory FreeCAD adds — so that `archplus` resolves as a
+package and `import archplus.tools.doors.gui` works. Moving it down into
+`archplus/` would satisfy the first requirement and break the second.
 
 Tests live beside the tool they cover rather than in a central tree, but the
 framing is still one test file per tool:
 
-- **`tools/windows/tests/test_windows.py`** / **`tools/doors/tests/test_doors.py`** —
+- **`archplus/tools/windows/tests/test_windows.py`** / **`archplus/tools/doors/tests/test_doors.py`** —
   `WindowParts`/`DoorParts` geometry generation (frame + glass, hinged
   sashes, **sliding uses a slide mode not an arc**, double sashes, round =
   two concentric circles), plus the edit round-trip below.
-- **`tools/stairs/tests/test_stairs.py`** — the edit round-trip, including the
+- **`archplus/tools/stairs/tests/test_stairs.py`** — the edit round-trip, including the
   non-trivial break/turn reconstruction in `_loadFromObject`.
 
-Alongside the per-tool suites, `common/tests/` covers the shared helpers used
+Alongside the per-tool suites, `archplus/common/tests/` covers the shared helpers used
 across tools:
 
 - **`test_spec.py`** — the shared spec-persistence helpers.
 - **`test_widgets.py`** — the shared Qt widget helpers.
 - **`test_geometry.py`** — the shared sketch-building helpers.
 - **`test_lazy_imports.py`** — an AST guard ensuring `Part`, `Sketcher`,
-  `ArchComponent`, `Arch`, `Draft` and `common.geometry` are never imported at
+  `ArchComponent`, `Arch`, `Draft` and `archplus.common.geometry` are never imported at
   module scope in the GUI modules.
 
 ## The edit round-trip
@@ -43,7 +48,7 @@ style, shape) must survive an edit. Windows and doors persist a JSON spec on
 the object; stairs round-trips through native ArchStairs properties.
 
 Geometry that needs the real kernel (the actual solid built by
-`tools.windows.object` / `tools.doors.object`) is out of scope here — verify
+`archplus.tools.windows.object` / `archplus.tools.doors.object`) is out of scope here — verify
 that in FreeCAD.
 
 ## Running

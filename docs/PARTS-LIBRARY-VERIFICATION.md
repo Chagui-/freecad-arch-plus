@@ -6,7 +6,7 @@ full-window MDI tab with a two-screen catalogue browser). None of it can be
 run headlessly: it needs a real FreeCAD 1.1 process, a real Qt event loop and
 (for the preview and thumbnail checks) a real GL/offscreen context. Automated
 coverage stops at `uv run --with pytest --no-project pytest -q` (122
-passed at the time this doc was written, including `tools/partslib/tests/test_partslib_theme.py`'s
+passed at the time this doc was written, including `archplus/tools/partslib/tests/test_partslib_theme.py`'s
 headless coverage of the dark/light theme decision); everything below is
 what that suite cannot see.
 
@@ -63,7 +63,7 @@ for:
 - The bookcase's open-front shell + shelf dividers (`furniture.bookcase`) —
   the one part built as a hollow carcass rather than a solid block.
 
-27 facet icon SVGs live under `tools/partslib/resources/icons/facets/` — eyeball that they
+27 facet icon SVGs live under `archplus/tools/partslib/resources/icons/facets/` — eyeball that they
 render at both toolbar and list-row sizes in light and dark theme. A test
 now asserts every icon a facet value names actually exists on disk (four
 shipped missing once, rendering as blank cards with nothing in the console
@@ -141,7 +141,7 @@ unaffected by the fallback.
 
 - [ ] **A1.** Restart FreeCAD 1.1, switch to the **BIM** workbench. The
       **ArchPlus** toolbar shows a fourth button with the Parts Library icon
-      (`tools/partslib/resources/icons/PartsLibrary.svg`), rendering correctly and visually
+      (`archplus/tools/partslib/resources/icons/PartsLibrary.svg`), rendering correctly and visually
       consistent in weight/style with the Stairs/Doors/Windows icons at both
       toolbar and tree icon sizes.
 - [ ] **A2.** The command also appears under the **ArchPlus** menu group
@@ -174,7 +174,7 @@ unaffected by the fallback.
       vocabulary — a room with zero parts, e.g. `Bedroom`, must not be
       drawn at all). Each visible room card shows its icon (where
       `library/facets.json` declares one under
-      `tools/partslib/resources/icons/facets/`), its label, a hairline rule, then that
+      `archplus/tools/partslib/resources/icons/facets/`), its label, a hairline rule, then that
       room's elements as rows with counts (e.g. `Toilets (1)` under
       `Bathroom`).
 - [ ] **B3 (drilling in).** Click the `Toilets` row under `Bathroom`. The
