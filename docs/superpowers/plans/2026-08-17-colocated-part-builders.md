@@ -749,7 +749,7 @@ not yet migrated keeps resolving through its symbol."
 
 ### Task 5: Extraction script, proven on `fittings.py` (4 parts)
 
-Writes the one-shot extraction tool and applies it to the smallest family module first, so a systematic error surfaces on 4 parts rather than 31. The script AST-compares each extracted body against the original and refuses to write on any mismatch — the strongest check available, since no test can execute a builder.
+Writes the one-shot extraction tool and applies it to the smallest family module first, so a systematic error surfaces on 4 parts rather than 31. The script refuses to write unless reversing its own rewrite recovers the original source byte for byte — the strongest check available, since no test can execute a builder.
 
 **Files:**
 - Create: `tools/extract_builders.py` (throwaway, deleted in Task 9)
