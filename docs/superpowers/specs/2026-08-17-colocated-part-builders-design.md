@@ -310,25 +310,29 @@ Each step lands with the suite green.
    still explicit.
 3. Derive ids from the path, with explicit `id` overriding. Behaviour unchanged,
    because every manifest still carries its id.
-4. Add `load_local_builder` beside the existing symbol route, still unused.
+4. Add `load_local_builder` and make resolution **local-first**: a part's own
+   `builder.py` wins, the `geometry.builder` symbol is the fallback, and
+   `asset.single` is the last resort. No part has a `builder.py` yet, so every
+   part still resolves exactly as before.
 5. Per part, 31 times: create `builder.py` and delete the function from its
-   family module. The `geometry.builder` field stays for now, so each part keeps
-   working through the symbol route while its code moves.
+   family module. Local-first resolution means each part switches over the
+   moment its file lands, and a part not yet migrated keeps using the symbol
+   route — so the library is never broken mid-migration.
 6. Move the five shared functions into `library/basic/_shared.py`; delete
    `furniture.py`, `kitchen.py`, `sanitary.py`, `fittings.py`.
-7. Switch resolution to the file-on-disk rule; drop `geometry.builder` from all
-   31 manifests and delete `resolve_builder`, `_SYMBOL_RE`, and their tests.
-   `builders/asset.py` → `partslib/asset.py`, imported rather than resolved;
-   delete `demo.py` and the `builders/` package.
+7. Now that all 31 parts have a `builder.py`, delete the symbol fallback:
+   `resolve_builder`, `_SYMBOL_RE`, `geometry.builder` in all 31 manifests, and
+   their tests. `builders/asset.py` → `partslib/asset.py`, imported rather than
+   resolved; delete `demo.py` and the `builders/` package.
 8. Drop the now-redundant explicit `id` from all 31 manifests.
 9. Builder-or-assets scan check; `sys.modules` invalidation in
    `clear_shape_cache()`.
 10. Docs: README §2b rewritten, the add-a-part walkthrough, the
     `PARTS-LIBRARY-VERIFICATION.md` paths, and the known id break.
 
-Steps 4-6 keep the symbol route alive while 1835 lines move, so a broken
-extraction shows up as one failing part rather than a dead library. Step 7 is
-the single switchover, once every part already has its `builder.py`.
+Steps 4-6 keep the symbol route alive as a fallback while 1835 lines move, so a
+broken extraction shows up as one failing part rather than a dead library. Step 7
+removes the fallback once every part has its own `builder.py`.
 
 ## 9. Accepted costs
 
