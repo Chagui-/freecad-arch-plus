@@ -1,3 +1,6 @@
+import os
+import sys
+
 import pytest
 
 from archplus.tools.partslib import geometry as pg
@@ -126,7 +129,8 @@ def _patched_builder(monkeypatch, calls):
         calls.append(dict(params))
         return _CountingShape(len(calls))
 
-    monkeypatch.setattr(pg, "resolve_builder", lambda symbol: _build)
+    monkeypatch.setattr(pg, "select_builder",
+                        lambda resolved, part_dir: _build)
     return calls
 
 
@@ -186,3 +190,124 @@ def test_the_cache_is_bounded(tmp_path, monkeypatch):
         pg.build_shape(_manifest(params={
             "Width": {"type": "Length", "default": i}}), str(tmp_path))
     assert len(pg._SHAPE_CACHE) <= pg._SHAPE_CACHE_LIMIT
+
+
+# -- local builder resolution ------------------------------------------------
+
+@pytest.fixture
+def fixture_library(tmp_path, monkeypatch):
+    """A throwaway library root that is importable as a namespace package.
+
+    Points geometry at tmp_path instead of the shipped library, so these
+    tests never create or delete files under library/. tmp_path goes on
+    sys.path so the fixture root imports as a top-level namespace package -
+    no __init__.py anywhere, which is exactly how library/ works.
+    """
+    root = tmp_path / "fixturelib"
+    root.mkdir()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(pg, "LIBRARY_DIR", str(root))
+    monkeypatch.setattr(pg, "LIBRARY_PACKAGE", "fixturelib")
+    yield root
+    for name in [n for n in list(sys.modules)
+                 if n == "fixturelib" or n.startswith("fixturelib.")]:
+        del sys.modules[name]
+
+
+def _write_builder(part_dir, body="    return 'built'"):
+    part_dir.mkdir(parents=True, exist_ok=True)
+    (part_dir / "builder.py").write_text(
+        "def build(params, assets, ctx):\n%s\n" % body)
+
+
+def test_a_local_builder_resolves(fixture_library):
+    part = fixture_library / "basic" / "television"
+    _write_builder(part)
+
+    builder = pg.load_local_builder(str(part))
+
+    assert builder(None, None, None) == "built"
+
+
+def test_a_local_builder_resolves_for_a_standalone_part(fixture_library):
+    # One-off imports sit at the library root, so a one-segment path must
+    # resolve too.
+    part = fixture_library / "geberit-icon"
+    _write_builder(part)
+
+    assert callable(pg.load_local_builder(str(part)))
+
+
+def test_a_part_directory_outside_the_library_is_rejected(
+        fixture_library, tmp_path):
+    outside = tmp_path / "elsewhere" / "evil"
+    _write_builder(outside)
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(outside))
+
+
+def test_the_library_root_itself_is_not_a_part(fixture_library):
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(fixture_library))
+
+
+def test_a_dot_in_a_path_segment_is_rejected(fixture_library):
+    part = fixture_library / "basic" / "55.inch"
+    _write_builder(part)
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_a_builder_module_without_build_is_rejected(fixture_library):
+    part = fixture_library / "basic" / "nobuild"
+    part.mkdir(parents=True)
+    (part / "builder.py").write_text("def make(params, assets, ctx):\n    pass\n")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_an_imported_name_is_not_accepted_as_build(fixture_library):
+    # `build` must be DEFINED here, not pulled in from elsewhere, so a
+    # star-import cannot smuggle in a callable.
+    part = fixture_library / "basic" / "imported"
+    part.mkdir(parents=True)
+    (part / "builder.py").write_text("from os.path import join as build\n")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_has_local_builder_reports_file_presence(fixture_library):
+    with_file = fixture_library / "basic" / "has-one"
+    _write_builder(with_file)
+    without = fixture_library / "basic" / "has-none"
+    without.mkdir(parents=True)
+
+    assert pg.has_local_builder(str(with_file)) is True
+    assert pg.has_local_builder(str(without)) is False
+
+
+def test_a_local_builder_wins_over_a_manifest_symbol(fixture_library):
+    # This is what lets the migration proceed one part at a time: the moment
+    # a part's builder.py lands it takes over, and a part without one still
+    # resolves through its symbol.
+    part = fixture_library / "basic" / "television"
+    _write_builder(part, "    return 'local'")
+
+    resolved = {"geometry": {"builder": "asset.single"}, "params": {}}
+    builder = pg.select_builder(resolved, str(part))
+
+    assert builder(None, None, None) == "local"
+
+
+def test_a_part_with_no_local_builder_uses_its_symbol(fixture_library):
+    part = fixture_library / "basic" / "vendor-chair"
+    part.mkdir(parents=True)
+
+    resolved = {"geometry": {"builder": "asset.single"}, "params": {}}
+
+    assert pg.select_builder(resolved, str(part)) is pg.resolve_builder(
+        "asset.single")

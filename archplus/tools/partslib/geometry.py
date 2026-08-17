@@ -16,6 +16,12 @@ from . import manifest as partslib_manifest
 BUILDER_PACKAGE = "archplus.tools.partslib.builders"
 CACHE_DIRNAME = ".cache"
 
+_DIR = os.path.dirname(os.path.abspath(__file__))
+LIBRARY_DIR = os.path.join(_DIR, "library")
+LIBRARY_PACKAGE = "archplus.tools.partslib.library"
+BUILDER_MODULE = "builder"
+BUILDER_FILENAME = BUILDER_MODULE + ".py"
+
 _SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
 
 
@@ -41,6 +47,75 @@ def resolve_builder(symbol):
         raise ValueError("builder %r has no callable %r"
                          % (module_name, function_name))
     return builder
+
+
+def has_local_builder(part_dir):
+    """True when this part folder carries its own builder.py."""
+    return os.path.exists(os.path.join(part_dir, BUILDER_FILENAME))
+
+
+def load_local_builder(part_dir):
+    """Import a part folder's own builder.py and return its build().
+
+    The manifest names NOTHING on this route - the module path is derived
+    from where the part lives - so a manifest cannot point at code outside
+    its own folder. The library tree is the import tree: no __init__.py is
+    needed anywhere under it, because a directory without one is a namespace
+    package, and `from .. import _shared` still resolves inside those."""
+    base = os.path.abspath(LIBRARY_DIR)
+    target = os.path.abspath(part_dir)
+
+    # Containment, checked the same way AssetLoader.shape() checks asset
+    # paths - including the ValueError, which commonpath raises for two
+    # paths on different Windows drives.
+    try:
+        contained = os.path.commonpath([base, target]) == base
+    except ValueError:
+        contained = False
+    if not contained or target == base:
+        raise ValueError("part directory %r is not inside the library"
+                         % (part_dir,))
+
+    segments = os.path.relpath(target, base).replace("\\", "/").split("/")
+    for segment in segments:
+        if "." in segment:
+            raise ValueError(
+                "part folder %r cannot contain '.': it would split the "
+                "import path" % (segment,))
+
+    module_name = "%s.%s.%s" % (
+        LIBRARY_PACKAGE, ".".join(segments), BUILDER_MODULE)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise ValueError("cannot import %s: %s" % (module_name, exc))
+
+    builder = getattr(module, "build", None)
+    # `build.__module__ == module_name` and not just `"build" in vars(module)`:
+    # a star-import or an explicit `from x import y as build` also lands
+    # `build` in vars(module), so only checking membership there would let a
+    # name imported from elsewhere pass as this part's builder. Checking
+    # __module__ confirms `build` was actually DEFINED in this file.
+    if (getattr(builder, "__module__", None) != module_name
+            or not callable(builder)):
+        raise ValueError("%s has no callable build()" % (module_name,))
+    return builder
+
+
+def select_builder(resolved, part_dir):
+    """The callable that builds this part.
+
+    Local-first: a part's own builder.py wins. The manifest's `builder`
+    symbol is a transitional fallback while builders move into part folders
+    (see the plan's Tasks 5-8); once every part has a builder.py it is
+    removed and the last resort is the stock asset builder, which is what an
+    asset-only part - one shipping no code at all - uses."""
+    if has_local_builder(part_dir):
+        return load_local_builder(part_dir)
+    symbol = (resolved.get("geometry") or {}).get("builder")
+    if symbol:
+        return resolve_builder(symbol)
+    return resolve_builder("asset.single")
 
 
 class AssetLoader:
@@ -176,11 +251,10 @@ def build_shape(resolved, part_dir, overrides=None):
     corrupt the entry for everyone after it. Copying a finished solid is
     still far cheaper than rebuilding one."""
     geometry = resolved.get("geometry") or {}
-    symbol = geometry.get("builder")
-    builder = resolve_builder(symbol)
+    builder = select_builder(resolved, part_dir)
     params = partslib_manifest.merge_params(resolved, overrides)
 
-    key = (os.path.abspath(part_dir), symbol,
+    key = (os.path.abspath(part_dir), getattr(builder, "__module__", ""),
            resolved.get("variantLabel"),
            repr(sorted(params.items(), key=lambda item: item[0])),
            repr(sorted((geometry.get("assets") or {}).items())))
