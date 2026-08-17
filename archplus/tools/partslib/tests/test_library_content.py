@@ -133,3 +133,17 @@ def test_wall_and_ceiling_hosted_parts_exist():
             resolved = partslib_manifest.resolve_variant(manifest, label)
             hosts.add((resolved.get("placement") or {}).get("host", "free"))
     assert "wall" in hosts
+
+
+def test_every_part_lives_under_a_family_folder():
+    # The library tree is also the import tree: a part's builder.py is
+    # imported by the part's path. A part directly at the library root is
+    # allowed by the rules (reserved for one-off imports) but nothing
+    # shipped today is one - all 31 are the house style.
+    for path in partslib_index.manifest_paths(LIBRARY_DIR):
+        relative = os.path.relpath(os.path.dirname(path), LIBRARY_DIR)
+        segments = relative.replace(os.sep, "/").split("/")
+        assert segments[0] == "basic", (
+            "%s is not under library/basic/" % (path,))
+        assert len(segments) == 2, (
+            "%s should be library/basic/<part>/, got %r" % (path, relative))
