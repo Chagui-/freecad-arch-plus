@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Bathroom - line-art bathtub, single stroke colour (currentColor) so it
+     follows the FreeCAD theme like the rest of the UI. Visual weight
+     (stroke-width relative to viewBox) matches tools/windows/resources/icons/WindowsPlus.svg. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 12h18v2a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-2z"/>
+  <path d="M4 12V8.5A2.5 2.5 0 0 1 6.5 6c1 0 1.6.5 2 1.2"/>
+  <line x1="7" y1="19" x2="7" y2="21"/>
+  <line x1="17" y1="19" x2="17" y2="21"/>
+  <circle cx="18.5" cy="9" r="0.9" fill="currentColor" stroke="none"/>
+</svg>

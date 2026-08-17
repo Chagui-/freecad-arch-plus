@@ -36,10 +36,10 @@ def _injectIntoBIM():
     def add_ui(workbench):
         # Importing the modules registers the ArchPlus_* commands.
         # FreeCAD has already put this add-on folder on sys.path.
-        import stairs.gui       # noqa: F401
-        import doors.gui        # noqa: F401
-        import windows.gui      # noqa: F401
-        import partslib.gui     # noqa: F401
+        import archplus.tools.stairs.gui  # noqa: F401
+        import archplus.tools.doors.gui  # noqa: F401
+        import archplus.tools.windows.gui  # noqa: F401
+        import archplus.tools.partslib.gui  # noqa: F401
         workbench.appendToolbar(toolbar, commands)
         workbench.appendMenu(toolbar, commands)
 
