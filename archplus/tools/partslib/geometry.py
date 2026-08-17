@@ -242,9 +242,11 @@ def build_shape(resolved, part_dir, overrides=None):
     Clicking between two parts therefore paid full price every time.
 
     The key is everything that decides the geometry: which part directory,
-    which builder, which variant, and the fully merged params. Anything a
-    user can change from the UI changes the key, so a stale hit is not
-    reachable by editing a Parameter or switching a variant.
+    which builder (module AND function - two builders sharing a module,
+    e.g. two kitchen.* functions, must not collide), which variant, and the
+    fully merged params. Anything a user can change from the UI changes the
+    key, so a stale hit is not reachable by editing a Parameter or switching
+    a variant.
 
     Callers get a COPY. A shape handed to a document object becomes that
     object's, and a caller free to mutate what it was given would otherwise
@@ -254,7 +256,9 @@ def build_shape(resolved, part_dir, overrides=None):
     builder = select_builder(resolved, part_dir)
     params = partslib_manifest.merge_params(resolved, overrides)
 
-    key = (os.path.abspath(part_dir), getattr(builder, "__module__", ""),
+    key = (os.path.abspath(part_dir),
+           getattr(builder, "__module__", "") + "."
+           + getattr(builder, "__qualname__", ""),
            resolved.get("variantLabel"),
            repr(sorted(params.items(), key=lambda item: item[0])),
            repr(sorted((geometry.get("assets") or {}).items())))

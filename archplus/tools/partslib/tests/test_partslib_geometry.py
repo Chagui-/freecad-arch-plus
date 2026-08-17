@@ -176,6 +176,31 @@ def test_different_parts_miss_the_cache(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+def test_two_builders_sharing_a_module_do_not_share_a_cache_entry(
+        tmp_path, monkeypatch):
+    # Regression: two builder functions defined in the SAME module (e.g. two
+    # kitchen.* functions such as base_cabinet and wall_cabinet) must not
+    # collide on __module__ alone. A manifest edited to point at a sibling
+    # function in the same module, with identical part_dir/params/variant,
+    # must still get the SIBLING's shape - not the first function's stale
+    # cache entry.
+    def builder_one(params, assets, ctx):
+        return _CountingShape("one")
+
+    def builder_two(params, assets, ctx):
+        return _CountingShape("two")
+
+    builders = [builder_one, builder_two]
+    monkeypatch.setattr(
+        pg, "select_builder", lambda resolved, part_dir: builders.pop(0))
+
+    first = pg.build_shape(_manifest(), str(tmp_path))
+    second = pg.build_shape(_manifest(), str(tmp_path))
+
+    assert first.tag == "one"
+    assert second.tag == "two"
+
+
 def test_clearing_the_cache_forces_a_rebuild(tmp_path, monkeypatch):
     calls = _patched_builder(monkeypatch, [])
     pg.build_shape(_manifest(), str(tmp_path))
