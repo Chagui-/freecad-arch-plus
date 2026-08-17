@@ -60,9 +60,9 @@ def test_every_entry_geometry_builder_resolves():
     index = _scan()
     for entry in index["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        builder_symbol = manifest.get("geometry", {}).get("builder")
-        # Must not raise.
-        partslib_geometry.resolve_builder(builder_symbol)
+        # Must not raise. Local builders are intentionally allowed to replace
+        # the transitional family symbol one part at a time.
+        partslib_geometry.select_builder(manifest, entry["dir"])
 
 
 def test_every_part_variant_labels_are_non_empty_and_unique():
@@ -147,3 +147,18 @@ def test_every_part_lives_under_a_family_folder():
             "%s is not under library/basic/" % (path,))
         assert len(segments) == 2, (
             "%s should be library/basic/<part>/, got %r" % (path, relative))
+
+
+def test_every_local_builder_imports_and_exposes_build():
+    # A builder.py that imports FreeCAD at module scope, or that names its
+    # entry point anything but build(), fails here rather than at insert
+    # time inside FreeCAD.
+    index = _scan()
+    checked = 0
+    for entry in index["entries"]:
+        if not partslib_geometry.has_local_builder(entry["dir"]):
+            continue
+        assert callable(partslib_geometry.load_local_builder(entry["dir"])), (
+            "%s has no usable build()" % (entry["id"],))
+        checked += 1
+    assert checked > 0, "no part has a builder.py yet"
