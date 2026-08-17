@@ -40,6 +40,25 @@ MODULES = (
 BANNED = ("Part", "Sketcher", "ArchComponent", "Arch", "Draft", "common.geometry")
 
 
+def _top_level_import_names(tree):
+    # Walk only the module's top-level statements (not statements nested
+    # inside function bodies, where these imports belong and are perfectly
+    # safe) and collect every name each import statement binds.
+    names = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            names.append(mod)
+            # `from common import geometry` binds common.geometry without ever
+            # naming it as such - record the qualified form too, or a banned
+            # two-segment target spelled this way slips through.
+            names.extend("%s.%s" % (mod, alias.name) if mod else alias.name
+                         for alias in node.names)
+    return names
+
+
 def _module_scope_import_names(modname):
     # Locate the module's source file and parse it WITHOUT importing/executing
     # it. tools.partslib.gui defines `class PartsLibraryPanel(QtGui.QWidget)`
@@ -50,19 +69,56 @@ def _module_scope_import_names(modname):
     spec = importlib.util.find_spec(modname)
     with open(spec.origin, encoding="utf-8") as f:
         src = f.read()
-    tree = ast.parse(src)
-    names = []
-    for node in tree.body:
-        if isinstance(node, ast.Import):
-            names.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            names.append(node.module or "")
-    return names
+    return _top_level_import_names(ast.parse(src))
+
+
+def _banned_hits(names):
+    return [n for n in names
+            if any(n == b or n.startswith(b + ".") for b in BANNED)]
 
 
 def test_gui_modules_do_not_import_banned_names_at_module_scope():
     for modname in MODULES:
-        for name in _module_scope_import_names(modname):
-            assert not any(name == b or name.startswith(b + ".")
-                            for b in BANNED), \
-                "module-scope import of %r in %s" % (name, modname)
+        hits = _banned_hits(_module_scope_import_names(modname))
+        assert not hits, \
+            "module-scope import of %r in %s" % (hits[0], modname)
+
+
+# The test above only proves these six real files are currently clean - it
+# says nothing about whether the checker itself is capable of catching a
+# violation if one were introduced. Feed it synthetic source for every
+# dangerous import spelling (including the `from common import geometry as
+# ...` form that originally slipped through the ImportFrom branch) and every
+# import spelling that must NOT trip it, so a regression in the checker's
+# own logic fails loudly here instead of silently passing everything else.
+def test_banned_hits_detects_every_dangerous_import_spelling():
+    # Each of these MUST be flagged as a module-scope banned import.
+    dangerous_snippets = (
+        "import Part",
+        "import Sketcher",
+        "import ArchComponent",
+        "from Part import Face",
+        "import common.geometry",
+        "from common.geometry import add_rect",
+        "from common import geometry",
+        "from common import geometry as archplus_geometry",
+        "import Part, Sketcher",
+    )
+    for snippet in dangerous_snippets:
+        names = _top_level_import_names(ast.parse(snippet))
+        assert _banned_hits(names), \
+            "expected %r to be caught as a banned import" % (snippet,)
+
+    # None of these are banned and must NOT be flagged (false positives would
+    # make the guard useless by training reviewers to ignore its failures).
+    safe_snippets = (
+        "import os",
+        "from PySide import QtGui, QtCore",
+        "from common import widgets",
+        "from common.spec import storeSpec, readSpec",
+        "from . import object as doorsplus_object",
+    )
+    for snippet in safe_snippets:
+        names = _top_level_import_names(ast.parse(snippet))
+        assert not _banned_hits(names), \
+            "did not expect %r to be caught as a banned import" % (snippet,)
