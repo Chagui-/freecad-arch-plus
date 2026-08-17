@@ -5,7 +5,7 @@
 # toilet bowl and vanity basin, boolean cut/fuse, softened rim edges. Not
 # vendor-accurate fixtures - a BIM-usable block for space planning.
 
-from . import _shapes as sh
+from archplus.tools.partslib import shapes as sh
 
 
 def toilet(params, assets, ctx):

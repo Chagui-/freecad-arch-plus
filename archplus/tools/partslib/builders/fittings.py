@@ -16,7 +16,7 @@
 # cylinders alternating front and back, fused into one serpentine body - a
 # hanging plane curled into folds, which is what gathered cloth actually is.
 
-from . import _shapes as sh
+from archplus.tools.partslib import shapes as sh
 
 
 def television(params, assets, ctx):

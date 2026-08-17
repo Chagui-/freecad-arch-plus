@@ -24,7 +24,7 @@
 # and metadata, not in their geometry family. A desk is NOT among them; it
 # has a knee hole, a pedestal and a modesty panel, so it gets `desk()`.
 
-from . import _shapes as sh
+from archplus.tools.partslib import shapes as sh
 
 
 def table(params, assets, ctx):

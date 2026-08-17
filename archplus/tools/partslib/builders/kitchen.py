@@ -19,7 +19,7 @@
 # floor to the underside of the cabinet - the standard 1500mm to the bottom
 # of a wall unit over a 900mm worktop.
 
-from . import _shapes as sh
+from archplus.tools.partslib import shapes as sh
 
 
 def _carcass(width, depth, height, kick_height, kick_depth, radius=8.0):
