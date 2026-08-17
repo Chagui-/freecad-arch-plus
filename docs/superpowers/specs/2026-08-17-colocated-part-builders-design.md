@@ -94,11 +94,16 @@ archplus/tools/partslib/
 - A folder containing `part.json` is a **part**.
 - A folder not containing `part.json` is a **family**. It holds `_shared.py`
   (or a `_shared/` package once one module is too small) and its member parts.
-- Every part belongs to a family, because every part has a designer. A part
-  folder therefore never sits directly at the library root, and an id always
-  carries a family segment.
+- A part normally belongs to a family. A part folder may also sit **standalone**
+  at the library root, which is reserved for one-off imports that belong to no
+  series — a downloaded model with no style affiliation. All 31 parts shipping
+  today are the house style and live under `basic/`; nothing is standalone yet.
+- A standalone part has no family, so `..` is the library root and
+  `from .. import _shared` is unavailable to it. It imports `shapes` only. That
+  is the correct constraint: a one-off has no family design language to inherit.
 - A part's **id** is its folder path relative to the library root, using `/`
-  separators: `basic/mirror`.
+  separators — `basic/mirror` for a family member, `geberit-icon` for a
+  standalone part. Ids therefore have one or two segments.
 - Browse taxonomy lives in `facets`, never in the filesystem.
 
 `_shared.py` and `_shared/` are invisible to the index, which walks only for
