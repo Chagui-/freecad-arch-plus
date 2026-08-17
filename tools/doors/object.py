@@ -31,7 +31,7 @@ __title__ = "DoorsPlus object"
 __author__ = "Yorik van Havre, Andres"
 __url__ = "https://www.freecad.org"
 
-## @package doors.object
+## @package tools.doors.object
 #  \brief The DoorsPlus object (a modifiable copy of Arch Window)
 #
 #  This module is a renamed copy of FreeCAD's ArchWindow so the door/window

@@ -19,7 +19,7 @@ import os
 import FreeCAD
 import ArchComponent
 
-_DIR = os.path.dirname(__file__)     # partslib/ itself
+_DIR = os.path.dirname(__file__)     # tools/partslib/ itself
 
 from . import geometry as partslib_geometry
 from . import index as partslib_index

@@ -86,6 +86,13 @@ class _FakeDocument:
 
 
 def _install_fakes():
+    # Installing these stubs REPLACES the real modules in sys.modules. This
+    # file sits at the add-on root, which FreeCAD puts on sys.path, so a stray
+    # `import conftest` inside a live FreeCAD session could otherwise destroy
+    # the real bindings. Only ever shadow when we are genuinely under pytest.
+    if "pytest" not in sys.modules:
+        return
+
     # FreeCAD
     freecad = types.ModuleType("FreeCAD")
     freecad.Vector = _Vector

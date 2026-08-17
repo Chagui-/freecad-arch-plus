@@ -19,6 +19,16 @@ framing is still one test file per tool:
 - **`tools/stairs/tests/test_stairs.py`** — the edit round-trip, including the
   non-trivial break/turn reconstruction in `_loadFromObject`.
 
+Alongside the per-tool suites, `common/tests/` covers the shared helpers used
+across tools:
+
+- **`test_spec.py`** — the shared spec-persistence helpers.
+- **`test_widgets.py`** — the shared Qt widget helpers.
+- **`test_geometry.py`** — the shared sketch-building helpers.
+- **`test_lazy_imports.py`** — an AST guard ensuring `Part`, `Sketcher`,
+  `ArchComponent`, `Arch`, `Draft` and `common.geometry` are never imported at
+  module scope in the GUI modules.
+
 ## The edit round-trip
 
 These tests drive each panel's real `_loadFromObject()` then `_collect()`
@@ -33,8 +43,8 @@ style, shape) must survive an edit. Windows and doors persist a JSON spec on
 the object; stairs round-trips through native ArchStairs properties.
 
 Geometry that needs the real kernel (the actual solid built by
-`windows.object` / `doors.object`) is out of scope here — verify that
-in FreeCAD.
+`tools.windows.object` / `tools.doors.object`) is out of scope here — verify
+that in FreeCAD.
 
 ## Running
 

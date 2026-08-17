@@ -26,7 +26,7 @@ import FreeCAD
 import FreeCADGui
 from PySide import QtGui, QtCore
 
-_DIR = os.path.dirname(__file__)     # partslib/ itself
+_DIR = os.path.dirname(__file__)     # tools/partslib/ itself
 
 from . import index as partslib_index
 from . import theme as partslib_theme
@@ -39,7 +39,8 @@ from . import thumbs as partslib_thumbs
 # except that only prints to the Report view - if ArchComponent were not yet
 # importable at that point, the import would raise, appendToolbar() would
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
-# Matches windows/gui.py's lazy `import windowsplus_object`.
+# Matches tools/windows/gui.py's lazy `from . import object as
+# windowsplus_object`.
 
 ICON = os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
 _FACET_ICON_DIR = os.path.join(_DIR, "resources", "icons", "facets")

@@ -31,7 +31,7 @@ __title__ = "StairsPlus object"
 __author__ = "Yorik van Havre, Andres"
 __url__ = "https://www.freecad.org"
 
-## @package stairs.object
+## @package tools.stairs.object
 #  \brief The StairsPlus object (a modifiable copy of Arch Stairs)
 #
 #  This module provides the _StairsPlus parametric object and a
