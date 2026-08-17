@@ -123,7 +123,7 @@ def test_valid_manifest_has_no_errors():
     assert warnings == []
 
 
-@pytest.mark.parametrize("field", ["schema", "id", "name", "facets", "geometry"])
+@pytest.mark.parametrize("field", ["schema", "name", "facets", "geometry"])
 def test_missing_required_field_is_an_error(field):
     data = _part()
     del data[field]
@@ -332,3 +332,38 @@ def test_merge_params_ignores_an_undeclared_override():
 def test_merge_params_with_no_params_block_is_empty():
     resolved = pm.resolve_variant(_part(), "Default")
     assert pm.merge_params(resolved, {"Width": 750}) == {}
+
+
+def test_a_path_shaped_id_is_valid():
+    assert pm.validate_part_id("basic/coffee-table") == []
+
+
+def test_a_single_segment_id_is_valid():
+    # A standalone part - one reserved for future one-off imports - sits at
+    # the library root and so has a one-segment id.
+    assert pm.validate_part_id("geberit-icon") == []
+
+
+def test_an_uppercase_id_segment_is_rejected():
+    assert pm.validate_part_id("basic/Coffee-Table") != []
+
+
+def test_an_underscore_id_segment_is_rejected():
+    assert pm.validate_part_id("basic/coffee_table") != []
+
+
+def test_an_id_segment_containing_a_dot_is_rejected():
+    # A dot would split the dotted import path used to load builder.py.
+    assert pm.validate_part_id("basic/55.inch") != []
+
+
+def test_an_empty_id_is_rejected():
+    assert pm.validate_part_id("") != []
+
+
+def test_a_manifest_without_an_id_is_valid():
+    # The id is derived from the folder; only an explicit override is checked.
+    data = _part()
+    del data["id"]
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert [e for e in errors if "id" in e] == []

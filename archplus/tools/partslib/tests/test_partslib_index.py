@@ -32,6 +32,33 @@ def _part(part_id, name, **over):
     return data
 
 
+def _library_at(tmp_path, *folder_and_data):
+    """Like _library, but the folder is given separately from the manifest.
+
+    _library names each folder after part["id"], which is exactly what these
+    tests must not rely on - the id is what is being derived."""
+    (tmp_path / "facets.json").write_text(json.dumps(FACETS), encoding="utf8")
+    for folder, data in folder_and_data:
+        target = tmp_path / folder
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "part.json").write_text(json.dumps(data), encoding="utf8")
+    return str(tmp_path)
+
+
+def _unnamed_part(name, **over):
+    """A valid manifest with NO id, for folder-derivation tests."""
+    data = {
+        "schema": 1,
+        "name": name,
+        "facets": {"function": "Seating", "element": "Chair",
+                   "room": ["Kitchen"]},
+        "geometry": {"builder": "asset.single",
+                     "assets": {"body": "chair.brep"}},
+    }
+    data.update(over)
+    return data
+
+
 def test_core_module_does_not_import_freecad():
     import inspect
     src = inspect.getsource(px)
@@ -299,3 +326,60 @@ def test_category_tree_child_labels_come_from_the_element_facet():
     groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
     labels = {c["value"]: c["label"] for c in groups["Kitchen"]["children"]}
     assert labels == {"WC": "Toilets", "Cabinet": "Cabinets", "Chair": "Chairs"}
+
+
+def test_an_id_is_derived_from_the_folder_path(tmp_path):
+    root = _library_at(
+        tmp_path, ("basic/side-table", _unnamed_part("Side Table")))
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert [e["id"] for e in index["entries"]] == ["basic/side-table"]
+
+
+def test_a_standalone_part_gets_a_one_segment_id(tmp_path):
+    # Reserved for one-off imports: a part folder at the library root.
+    root = _library_at(
+        tmp_path, ("geberit-icon", _unnamed_part("Geberit Icon")))
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert [e["id"] for e in index["entries"]] == ["geberit-icon"]
+
+
+def test_an_explicit_id_overrides_the_folder_path(tmp_path):
+    # Pinning an id is how identity survives a folder rename.
+    root = _library_at(tmp_path, (
+        "basic/renamed-folder",
+        _unnamed_part("Side Table", id="basic/side-table")))
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert [e["id"] for e in index["entries"]] == ["basic/side-table"]
+
+
+def test_the_same_leaf_in_two_families_does_not_collide(tmp_path):
+    # This is why ids are paths: every brand sells a chair.
+    root = _library_at(
+        tmp_path,
+        ("basic/chair", _unnamed_part("Chair")),
+        ("ikea-brimnes/chair", _unnamed_part("Chair")))
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert sorted(e["id"] for e in index["entries"]) == [
+        "basic/chair", "ikea-brimnes/chair"]
+
+
+def test_an_id_segment_containing_a_dot_is_reported(tmp_path):
+    # A dot would split the dotted import path for builder.py.
+    root = _library_at(tmp_path, ("basic/55.inch", _unnamed_part("Screen")))
+
+    index = px.scan(root)
+
+    assert index["entries"] == []
+    assert index["errors"] != []

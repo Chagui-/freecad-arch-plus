@@ -55,7 +55,16 @@ def scan(library_dir):
             errors.extend("%s: %s" % (path, e) for e in part_errors)
             continue
 
-        part_id = data["id"]
+        # The folder path IS the id unless the manifest pins one. Deriving it
+        # makes a collision unrepresentable: two parts cannot share a path,
+        # and every brand sells a mirror.
+        part_id = data.get("id") or os.path.relpath(
+            os.path.dirname(path), library_dir).replace(os.sep, "/")
+        id_errors = pm.validate_part_id(part_id)
+        if id_errors:
+            errors.extend("%s: %s" % (path, e) for e in id_errors)
+            continue
+
         if part_id in seen:
             errors.append("duplicate id %r in %s and %s"
                           % (part_id, seen[part_id], path))

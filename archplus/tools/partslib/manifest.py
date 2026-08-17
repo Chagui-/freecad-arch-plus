@@ -18,14 +18,33 @@ DEFAULT_IFC_TYPE = "Building Element Proxy"
 # does not declare one explicitly.
 IFC_TYPE_FACET_ORDER = ("element", "function")
 
-REQUIRED_FIELDS = ("schema", "id", "name", "facets", "geometry")
+# `id` is NOT required: it is derived from the part's folder path by
+# index.scan(). A manifest may still declare one to pin identity across a
+# folder rename, and it is validated when present.
+REQUIRED_FIELDS = ("schema", "name", "facets", "geometry")
 
-KNOWN_FIELDS = REQUIRED_FIELDS + (
+KNOWN_FIELDS = REQUIRED_FIELDS + ("id",) + (
     "description", "keywords", "ifcType", "ifcProperties",
     "params", "placement", "variants",
 )
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def validate_part_id(part_id):
+    """Errors for a part id: '/'-joined lowercase slugs, or [] if valid.
+
+    An id is a part's folder path relative to the library root, so it has one
+    segment for a standalone part and two for a family member. Each segment
+    must satisfy _ID_RE - which forbids '.', the one character that would
+    split the dotted import path used to load the part's builder.py."""
+    if not isinstance(part_id, str) or not part_id:
+        return ["id %r must be a non-empty string" % (part_id,)]
+    segments = part_id.split("/")
+    if not all(_ID_RE.match(segment) for segment in segments):
+        return ["id %r must be '/'-joined lowercase slugs [a-z0-9-]"
+                % (part_id,)]
+    return []
 
 
 def _is_bare_icon_filename(icon):
@@ -133,10 +152,8 @@ def validate_manifest(data, facets):
         errors.append("unsupported schema version %r (expected %d)"
                       % (data.get("schema"), SCHEMA_VERSION))
 
-    part_id = data.get("id")
-    if part_id is not None and not (
-            isinstance(part_id, str) and _ID_RE.match(part_id)):
-        errors.append("id %r must be a lowercase slug [a-z0-9-]" % (part_id,))
+    if data.get("id") is not None:
+        errors.extend(validate_part_id(data["id"]))
 
     errors.extend(_validate_part_facets(data.get("facets"), facets))
 
