@@ -312,11 +312,16 @@ The pure modules stay FreeCAD-free and carry the load.
 - a pinned value and an auto param computing the same number key differently
 
 `test_library_content.py` — guards the real catalogue, and is where the
-regressions are pinned:
-- every part builds at its declared defaults with **no overrides**, so every
-  `"auto"` param proves its builder derives it (a builder that forgot hits
-  `int(None)` and fails loudly here)
-- every part builds at each `Choice` option
+regressions are pinned. Note the ceiling on what it can check: nothing in the
+headless suite calls `build()`, because the builders reach `shapes.py`, which
+needs `Part`. So a forgotten derivation cannot be caught by building; it is
+caught by reading the builder's source instead.
+- every part declaring an `"auto"` param has a `builder.py` that both reads
+  that param and tests it for `None` — the available substitute for building
+  it, since the real failure (`int(None)`) would otherwise surface only inside
+  FreeCAD
+- every `Choice` option resolves through `merge_params` and
+  `resolve_placement` to the host and offset it declares
 - every part declares at least one param, and every `ui: "primary"` name exists
   in `params`
 - no shipped manifest declares `variants`
