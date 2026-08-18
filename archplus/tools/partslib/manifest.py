@@ -14,6 +14,14 @@ import re
 SCHEMA_VERSION = 1
 DEFAULT_IFC_TYPE = "Building Element Proxy"
 
+# A param default of "auto" means the builder derives the value. It reaches
+# the builder as None, so a builder that forgot to derive it fails loudly on
+# int(None) rather than silently building the wrong thing.
+AUTO = "auto"
+
+# How many params a part that marks none gets promoted to the browser panel.
+PRIMARY_FALLBACK = 3
+
 # Order in which facets are consulted for an IfcType mapping when the part
 # does not declare one explicitly.
 IFC_TYPE_FACET_ORDER = ("element", "function")
@@ -255,6 +263,54 @@ def param_specs(resolved):
     return dict(resolved.get("params") or {})
 
 
+def primary_params(manifest):
+    """Ordered names of the params the browser panel shows.
+
+    A part that marks none gets its first PRIMARY_FALLBACK declared params,
+    so a panel is never empty and a lazily-authored manifest still works."""
+    specs = param_specs(manifest)
+    marked = [name for name, spec in specs.items()
+              if (spec or {}).get("ui") == "primary"]
+    if marked:
+        return marked
+    return list(specs)[:PRIMARY_FALLBACK]
+
+
+def choice_options(spec):
+    """The ordered options map of a Choice param spec, else {}."""
+    if (spec or {}).get("type") != "Choice":
+        return {}
+    options = spec.get("options")
+    return dict(options) if isinstance(options, dict) else {}
+
+
+def resolve_placement(manifest, params):
+    """The effective placement block for one set of param values.
+
+    The part's own `placement` first, then each Choice param's SELECTED
+    option's `placement` merged over it per key, in declared order. Merging
+    per key is what lets an option say only `host` and keep the part's own
+    `offset`.
+
+    This is what a variant's placement override used to do, narrowed to one
+    axis: a television on a stand is floor-hosted, the same television on a
+    bracket is wall-hosted at a mounting height, and that is a choice the
+    user makes rather than a second catalogue entry."""
+    resolved = dict(manifest.get("placement") or {})
+    params = params or {}
+    for name, spec in param_specs(manifest).items():
+        options = choice_options(spec)
+        if not options:
+            continue
+        selected = options.get(params.get(name))
+        if not isinstance(selected, dict):
+            continue
+        override = selected.get("placement")
+        if isinstance(override, dict):
+            resolved.update(override)
+    return resolved
+
+
 def merge_params(resolved, overrides):
     """{name: value} for every param the manifest declares.
 
@@ -263,6 +319,10 @@ def merge_params(resolved, overrides):
     None override (e.g. a property nobody has touched) falls back to the
     default rather than handing a builder a literal None.
 
+    A declared default of "auto" resolves to None, which is the builder's
+    signal to derive the value from the other params. An override still
+    wins, so typing a number into a derived field pins it.
+
     Never returns a key the manifest did not declare: an override for an
     undeclared param is silently dropped, so a stale property left behind
     on an object by an old manifest (or a typo) cannot inject a surprise
@@ -270,8 +330,11 @@ def merge_params(resolved, overrides):
     overrides = overrides or {}
     merged = {}
     for name, spec in param_specs(resolved).items():
+        default = spec.get("default")
+        if default == AUTO:
+            default = None
         value = overrides.get(name)
-        merged[name] = value if value is not None else spec.get("default")
+        merged[name] = value if value is not None else default
     return merged
 
 

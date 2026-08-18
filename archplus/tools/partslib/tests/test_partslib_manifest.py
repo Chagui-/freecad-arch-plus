@@ -373,3 +373,118 @@ def test_a_manifest_without_an_id_is_valid():
     del data["id"]
     errors, _warnings = pm.validate_manifest(data, FACETS)
     assert [e for e in errors if "id" in e] == []
+
+
+# -- primary_params ---------------------------------------------------------
+
+def _part_with_ui():
+    return {
+        "schema": 1, "name": "Cabinet",
+        "facets": {}, "geometry": {},
+        "params": {
+            "Width": {"type": "Length", "default": 600, "ui": "primary"},
+            "Depth": {"type": "Length", "default": 600, "ui": "primary"},
+            "KickHeight": {"type": "Length", "default": 100},
+            "DoorCount": {"type": "Integer", "default": "auto"},
+        },
+    }
+
+
+def test_primary_params_are_the_ones_marked_in_declared_order():
+    assert pm.primary_params(_part_with_ui()) == ["Width", "Depth"]
+
+
+def test_primary_params_falls_back_to_the_first_three_declared():
+    data = _part_with_ui()
+    for spec in data["params"].values():
+        spec.pop("ui", None)
+    assert pm.primary_params(data) == ["Width", "Depth", "KickHeight"]
+
+
+def test_primary_params_fallback_stops_at_what_exists():
+    data = {"params": {"Width": {"type": "Length", "default": 600}}}
+    assert pm.primary_params(data) == ["Width"]
+
+
+def test_primary_params_is_empty_when_no_params_declared():
+    assert pm.primary_params({"params": {}}) == []
+
+
+# -- "auto" defaults --------------------------------------------------------
+
+def test_merge_params_resolves_an_auto_default_to_none():
+    merged = pm.merge_params(_part_with_ui(), None)
+    assert merged["DoorCount"] is None
+    assert merged["Width"] == 600
+
+
+def test_merge_params_override_pins_an_auto_param():
+    merged = pm.merge_params(_part_with_ui(), {"DoorCount": 3})
+    assert merged["DoorCount"] == 3
+
+
+def test_merge_params_still_drops_an_undeclared_override():
+    merged = pm.merge_params(_part_with_ui(), {"Nonsense": 1})
+    assert "Nonsense" not in merged
+
+
+# -- Choice options and placement ------------------------------------------
+
+def _part_with_choice():
+    return {
+        "schema": 1, "name": "Television",
+        "facets": {}, "geometry": {},
+        "placement": {"host": "floor", "offset": 0},
+        "params": {
+            "ScreenSize": {"type": "Integer", "default": 55, "ui": "primary"},
+            "Mounting": {
+                "type": "Choice", "default": "stand", "ui": "primary",
+                "options": {
+                    "stand": {"label": "On stand"},
+                    "wall": {"label": "Wall-mounted",
+                             "placement": {"host": "wall", "offset": 1100}},
+                },
+            },
+        },
+    }
+
+
+def test_choice_options_returns_the_declared_map():
+    spec = _part_with_choice()["params"]["Mounting"]
+    assert list(pm.choice_options(spec)) == ["stand", "wall"]
+
+
+def test_choice_options_is_empty_for_a_non_choice_param():
+    assert pm.choice_options({"type": "Length", "default": 600}) == {}
+
+
+def test_resolve_placement_returns_the_part_block_when_no_option_overrides():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "stand"}) == {
+        "host": "floor", "offset": 0}
+
+
+def test_resolve_placement_merges_a_selected_option_over_the_part():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "wall"}) == {
+        "host": "wall", "offset": 1100}
+
+
+def test_resolve_placement_merges_per_key():
+    data = _part_with_choice()
+    data["params"]["Mounting"]["options"]["wall"]["placement"] = {
+        "host": "wall"}
+    assert pm.resolve_placement(data, {"Mounting": "wall"}) == {
+        "host": "wall", "offset": 0}
+
+
+def test_resolve_placement_ignores_an_unknown_option_value():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "nope"}) == {
+        "host": "floor", "offset": 0}
+
+
+def test_resolve_placement_never_mutates_the_manifest():
+    data = _part_with_choice()
+    pm.resolve_placement(data, {"Mounting": "wall"})
+    assert data["placement"] == {"host": "floor", "offset": 0}
