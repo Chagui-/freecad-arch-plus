@@ -20,6 +20,7 @@
 # placed.
 
 import os
+import sys
 
 
 import FreeCAD
@@ -882,7 +883,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         dialog.close()
 
     def _ensureGridThumbnail(self, entry):
-        """Render a fallback thumbnail for `entry`'s default variant.
+        """Render a fallback thumbnail for `entry`'s manifest defaults.
 
         Resolve the manifest defaults for the grid rather than whatever is
         currently selected in the detail pane - the grid is not parameter-
@@ -975,6 +976,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             return
         timer.mark("build")
 
+        metrics = partslib_geometry.measure(shape)
         derived = {}
         try:
             builder = partslib_geometry.load_local_builder(entry["dir"])
@@ -982,7 +984,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             builder = None
         if builder is not None:
             reporter = getattr(
-                __import__("sys").modules.get(builder.__module__),
+                sys.modules.get(builder.__module__),
                 "derived_params", None)
             if callable(reporter):
                 try:
@@ -993,9 +995,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                     FreeCAD.Console.PrintWarning(
                         "ArchPlus: %s cannot report derived params: %s\n"
                         % (entry["id"], exc))
-        derived.update(partslib_geometry.measure(shape))
+        derived.update(metrics)
         self.paramForm.setDerived(derived)
-        metrics = partslib_geometry.measure(shape)
         self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
                              % (metrics["Width"], metrics["Depth"],
                                 metrics["Height"]))
@@ -1018,9 +1019,9 @@ class PartsLibraryPanel(QtGui.QWidget):
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
 
-          1. a freshly rendered/cached per-variant JPEG at detail (256px)
+          1. a freshly rendered/cached per-parameter JPEG at detail (256px)
              resolution;
-          2. the part's committed thumbnail.jpg (not variant-specific, but
+          2. the part's committed thumbnail.jpg (not parameter-specific, but
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
              with no pivy/GL available at all, since it is what stands
@@ -1064,8 +1065,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         layer.
 
         Checks the shared session failure cache first: on a machine where
-        the renderer can never succeed, re-selecting the same part/variant
-        (or switching Variant back and forth) would otherwise retry the
+        the renderer can never succeed, re-selecting the same part/parameters
+        (or switching parameters back and forth) would otherwise retry the
         same doomed render every single time - see partslib_thumbs.py's
         _RENDER_FAILED for the full rationale."""
         cache_dir = os.path.join(entry["dir"], ".cache")
@@ -1080,14 +1081,14 @@ class PartsLibraryPanel(QtGui.QWidget):
             if not partslib_thumbs.render_shape(
                     shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
                 partslib_thumbs.mark_render_failed(out_path, (
-                    "ArchPlus: cannot render a detail preview for %r (%s); "
+                    "ArchPlus: cannot render a detail preview for %r; "
                     "will not retry this session\n" % (entry["id"],)))
                 return None
             pixmap = QtGui.QPixmap(out_path)
             return None if pixmap.isNull() else pixmap
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
-                "ArchPlus: cannot render a detail preview for %s (%s): %s\n"
+                "ArchPlus: cannot render a detail preview for %s: %s\n"
                 % (entry["id"], exc))
             return None
 

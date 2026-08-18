@@ -19,7 +19,7 @@
 # every breadcrumb click, every panel reopen - unbounded, and with no
 # warning printed anywhere to explain why. _RENDER_FAILED remembers a path
 # that has already failed once, so both callers (the grid's committed-vs-
-# on-demand thumbnail, and the detail pane's per-variant preview) skip
+# on-demand thumbnail, and the detail pane's per-parameter preview) skip
 # straight to "no thumbnail" without touching the geometry kernel again,
 # for the rest of this FreeCAD session.
 
@@ -212,7 +212,7 @@ def _image_format_for(out_path):
     """(Qt format name, quality) to save `out_path` as, from its extension.
 
     Driving this off the extension rather than a constant keeps the two
-    callers - the grid's thumbnail.jpg and the detail pane's per-variant
+    callers - the grid's thumbnail.jpg and the detail pane's per-parameter
     cache - honest about what they actually asked for, and lets a caller
     ask for a PNG without a second code path."""
     extension = os.path.splitext(out_path)[1].lower()
