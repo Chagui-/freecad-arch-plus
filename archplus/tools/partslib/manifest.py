@@ -3,10 +3,9 @@
 # PartsLib manifest - the part.json standard and its validation.
 #
 # This module is deliberately FREE OF FreeCAD IMPORTS so that manifest
-# parsing, facet resolution and variant merging can be unit-tested headlessly
+# parsing, facet resolution and param merging can be unit-tested headlessly
 # under plain pytest. Do not add FreeCAD, Part or PySide dependencies here.
 
-import copy
 import json
 import os
 import re
@@ -33,7 +32,7 @@ REQUIRED_FIELDS = ("schema", "name", "facets", "geometry")
 
 KNOWN_FIELDS = REQUIRED_FIELDS + ("id",) + (
     "description", "keywords", "ifcType", "ifcProperties",
-    "params", "placement", "variants",
+    "params", "placement",
 )
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -165,6 +164,15 @@ def validate_manifest(data, facets):
 
     errors.extend(_validate_part_facets(data.get("facets"), facets))
 
+    if "variants" in data:
+        # Not merely unsupported: a manifest still carrying a variant list is
+        # one whose sizes and configuration have not been split into params,
+        # so placing it would silently use the wrong defaults. A hard error
+        # keeps it out of the index instead of quietly ignoring it.
+        errors.append(
+            "'variants' was removed; declare params with \"ui\", \"label\", "
+            "\"default\": \"auto\" and \"options\" instead")
+
     geometry = data.get("geometry")
     if geometry is not None and not isinstance(geometry, dict):
         # `geometry` stays required - it carries `assets` and `transform` -
@@ -173,7 +181,7 @@ def validate_manifest(data, facets):
         errors.append("geometry must be an object")
 
     for field in data:
-        if field not in KNOWN_FIELDS:
+        if field not in KNOWN_FIELDS and field != "variants":
             warnings.append("unknown field %r (ignored)" % field)
 
     return errors, warnings
@@ -206,61 +214,14 @@ def _validate_part_facets(declared, facets):
     return errors
 
 
-DEFAULT_VARIANT_LABEL = "Default"
-
-
 def derived_metric_names():
     """Measurements computed from the built shape, never authored."""
     return ("Width", "Depth", "Height")
 
 
-def variant_labels(manifest):
-    """Ordered variant labels. A part with none gets one implicit default."""
-    variants = manifest.get("variants") or []
-    if not variants:
-        return [DEFAULT_VARIANT_LABEL]
-    return [v.get("label", "Variant %d" % i) for i, v in enumerate(variants)]
-
-
-def resolve_variant(manifest, label):
-    """Return a manifest-shaped dict with one variant's overrides applied.
-
-    Merges variant-over-part for `geometry.assets`, `params`,
-    `ifcProperties` and `placement`. The input manifest is never mutated.
-
-    `placement` is merged per key, so a variant that sets only `host` keeps
-    the part's `offset`. It is in this list because some parts genuinely
-    differ in how they are hosted rather than only in size - a television
-    on a stand is floor-hosted, the same television on a bracket is
-    wall-hosted at a mounting height. Without this, expressing that needs
-    two separate catalogue entries for what a user thinks of as one product
-    with two options."""
-    resolved = copy.deepcopy(manifest)
-    variants = resolved.pop("variants", None) or []
-
-    if not variants:
-        if label != DEFAULT_VARIANT_LABEL:
-            raise KeyError("unknown variant %r" % (label,))
-        return resolved
-
-    labels = variant_labels(manifest)
-    if label not in labels:
-        raise KeyError("unknown variant %r" % (label,))
-    variant = copy.deepcopy(variants[labels.index(label)])
-
-    if "assets" in variant:
-        resolved.setdefault("geometry", {}).setdefault("assets", {}).update(
-            variant["assets"])
-    for key in ("params", "ifcProperties", "placement"):
-        if key in variant:
-            resolved.setdefault(key, {}).update(variant[key])
-    resolved["variantLabel"] = label
-    return resolved
-
-
-def param_specs(resolved):
-    """The resolved variant's `params` block, or {} if it declares none."""
-    return dict(resolved.get("params") or {})
+def param_specs(manifest):
+    """The manifest's `params` block, or {} if it declares none."""
+    return dict(manifest.get("params") or {})
 
 
 def primary_params(manifest):

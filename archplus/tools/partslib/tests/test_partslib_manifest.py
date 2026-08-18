@@ -195,83 +195,19 @@ def test_load_manifest_raises_on_bad_json(tmp_path):
         pm.load_manifest(str(path))
 
 
-def _part_with_variants():
-    return _part(
-        params={"Width": {"type": "Length", "default": 360}},
-        ifcProperties={"Manufacturer": "Pset_X;;IfcLabel;;Geberit"},
-        variants=[
-            {"label": "360 mm",
-             "assets": {"body": "wc-360.brep"},
-             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204060"}},
-            {"label": "490 mm",
-             "assets": {"body": "wc-490.brep"},
-             "params": {"Width": {"type": "Length", "default": 490}},
-             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204070"}},
-        ])
+def test_a_manifest_declaring_variants_is_rejected():
+    data = _part_with_ui()
+    data["variants"] = [{"label": "800 mm"}]
+    errors, _warnings = pm.validate_manifest(data, {})
+    assert any("variants" in error for error in errors)
 
 
-def test_part_without_variants_has_one_default():
-    assert pm.variant_labels(_part()) == ["Default"]
-
-
-def test_variant_labels_are_listed_in_declared_order():
-    assert pm.variant_labels(_part_with_variants()) == ["360 mm", "490 mm"]
-
-
-def test_resolving_default_variant_returns_the_part_unchanged():
-    resolved = pm.resolve_variant(_part(), "Default")
-    assert resolved["geometry"]["assets"] == {"body": "wc-360.brep"}
-
-
-def test_variant_assets_override_part_assets():
-    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
-    assert resolved["geometry"]["assets"] == {"body": "wc-490.brep"}
-
-
-def test_variant_ifc_properties_merge_over_part_level():
-    resolved = pm.resolve_variant(_part_with_variants(), "360 mm")
-    assert resolved["ifcProperties"]["Manufacturer"] == "Pset_X;;IfcLabel;;Geberit"
-    assert resolved["ifcProperties"]["ModelReference"] == "Pset_X;;IfcLabel;;204060"
-
-
-def test_variant_params_override_part_params():
-    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
-    assert resolved["params"]["Width"]["default"] == 490
-
-
-def test_variant_placement_overrides_the_part_placement():
-    # A television on a stand is floor-hosted; the same television on a
-    # bracket is wall-hosted. Without placement in the merge that needs two
-    # catalogue entries for one product.
-    data = _part_with_variants()
-    data["placement"] = {"host": "floor", "offset": 0}
-    data["variants"][1]["placement"] = {"host": "wall", "offset": 1200}
-
-    mounted = pm.resolve_variant(data, "490 mm")
-    assert mounted["placement"] == {"host": "wall", "offset": 1200}
-    # The other variant still gets the part's own placement.
-    assert pm.resolve_variant(data, "360 mm")["placement"]["host"] == "floor"
-
-
-def test_variant_placement_merges_per_key():
-    # Setting only `host` must not drop the part's offset.
-    data = _part_with_variants()
-    data["placement"] = {"host": "floor", "offset": 150}
-    data["variants"][1]["placement"] = {"host": "wall"}
-
-    resolved = pm.resolve_variant(data, "490 mm")
-    assert resolved["placement"] == {"host": "wall", "offset": 150}
-
-
-def test_resolving_leaves_the_original_manifest_untouched():
-    data = _part_with_variants()
-    pm.resolve_variant(data, "490 mm")
-    assert data["geometry"]["assets"] == {"body": "wc-360.brep"}
-
-
-def test_unknown_variant_label_raises():
-    with pytest.raises(KeyError):
-        pm.resolve_variant(_part_with_variants(), "999 mm")
+def test_variants_is_an_error_not_an_ignored_unknown_field():
+    data = _part_with_ui()
+    data["variants"] = []
+    errors, warnings = pm.validate_manifest(data, {})
+    assert any("variants" in error for error in errors)
+    assert not any("variants" in warning for warning in warnings)
 
 
 def test_explicit_ifc_type_wins():
@@ -297,46 +233,44 @@ def test_ifc_type_falls_back_to_the_default():
 
 # -- param_specs / merge_params ---------------------------------------------
 
-def _resolved_with_params():
-    return pm.resolve_variant(_part_with_variants(), "490 mm")
+def _part_with_params():
+    return _part(params={"Width": {"type": "Length", "default": 490}})
 
 
-def test_param_specs_returns_the_resolved_params_block():
-    resolved = _resolved_with_params()
-    assert pm.param_specs(resolved) == {
-        "Width": {"type": "Length", "default": 490}}
+def test_param_specs_returns_the_declared_params_block():
+    assert pm.param_specs(_part_with_ui())["Width"] == {
+        "type": "Length", "default": 600, "ui": "primary"}
 
 
 def test_param_specs_is_empty_when_params_block_absent():
-    resolved = pm.resolve_variant(_part(), "Default")
-    assert pm.param_specs(resolved) == {}
+    assert pm.param_specs({"schema": 1, "name": "X"}) == {}
 
 
 def test_merge_params_uses_declared_defaults_with_no_overrides():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, None) == {"Width": 490}
-    assert pm.merge_params(resolved, {}) == {"Width": 490}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, None) == {"Width": 490}
+    assert pm.merge_params(manifest, {}) == {"Width": 490}
 
 
 def test_merge_params_override_replaces_the_default():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, {"Width": 750}) == {"Width": 750}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, {"Width": 750}) == {"Width": 750}
 
 
 def test_merge_params_none_override_falls_back_to_default():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, {"Width": None}) == {"Width": 490}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, {"Width": None}) == {"Width": 490}
 
 
 def test_merge_params_ignores_an_undeclared_override():
-    resolved = _resolved_with_params()
-    merged = pm.merge_params(resolved, {"Width": 750, "Bogus": 42})
+    manifest = _part_with_params()
+    merged = pm.merge_params(manifest, {"Width": 750, "Bogus": 42})
     assert merged == {"Width": 750}
     assert "Bogus" not in merged
 
 
 def test_merge_params_with_no_params_block_is_empty():
-    resolved = pm.resolve_variant(_part(), "Default")
+    resolved = _part()
     assert pm.merge_params(resolved, {"Width": 750}) == {}
 
 

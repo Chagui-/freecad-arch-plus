@@ -10,9 +10,12 @@ FACETS = {
 }
 
 
-def _library(tmp_path, *parts):
+def _library(tmp_path, *parts, params=None):
     (tmp_path / "facets.json").write_text(json.dumps(FACETS), encoding="utf8")
     for part in parts:
+        if params is not None:
+            part = dict(part)
+            part["params"] = params
         folder = tmp_path / part["id"]
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "part.json").write_text(json.dumps(part), encoding="utf8")
@@ -74,11 +77,22 @@ def test_scan_finds_every_part(tmp_path):
     assert index["errors"] == []
 
 
-def test_scan_records_variant_labels(tmp_path):
-    part = _part("wc-a", "WC A", variants=[{"label": "360 mm"},
-                                           {"label": "490 mm"}])
-    index = px.scan(_library(tmp_path, part))
-    assert index["entries"][0]["variants"] == ["360 mm", "490 mm"]
+def test_entries_carry_the_params_block_and_no_variants(tmp_path):
+    library = _library(
+        tmp_path, _part("wc-a", "WC A"),
+        params={"Width": {"type": "Length", "default": 600,
+                           "ui": "primary"}})
+    entry = px.scan(library)["entries"][0]
+    assert entry["params"] == {
+        "Width": {"type": "Length", "default": 600, "ui": "primary"}}
+    assert "variants" not in entry
+
+
+def test_a_version_1_cache_is_rejected(tmp_path):
+    path = tmp_path / "index.json"
+    path.write_text(json.dumps({"version": 1, "facets": {}, "entries": []}),
+                    encoding="utf8")
+    assert px.load_cache(str(path)) is None
 
 
 def test_duplicate_ids_are_an_error(tmp_path):

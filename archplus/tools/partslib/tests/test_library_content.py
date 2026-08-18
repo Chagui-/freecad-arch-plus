@@ -67,17 +67,6 @@ def test_every_entry_resolves_to_a_builder():
             manifest, entry["dir"])), entry["id"]
 
 
-def test_every_part_variant_labels_are_non_empty_and_unique():
-    index = _scan()
-    for entry in index["entries"]:
-        labels = entry["variants"]
-        assert labels, "entry %r has no variant labels at all" % (entry["id"],)
-        for label in labels:
-            assert label, "entry %r has an empty variant label" % (entry["id"],)
-        assert len(labels) == len(set(labels)), (
-            "entry %r has duplicate variant labels: %r" % (entry["id"], labels))
-
-
 def test_facets_json_is_valid():
     # The one thing the shipped library still asserts positively even with
     # zero parts: the vocabulary itself (library/facets.json) is well-formed.
@@ -114,13 +103,10 @@ def test_every_placement_host_is_a_known_host():
     from archplus.tools.partslib import placement as partslib_placement
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        for label in partslib_manifest.variant_labels(manifest):
-            resolved = partslib_manifest.resolve_variant(manifest, label)
-            placement = resolved.get("placement") or {}
-            host = placement.get("host", partslib_placement.DEFAULT_HOST)
-            assert host in partslib_placement.HOSTS, (
-                "%s (%s) declares unknown host %r"
-                % (entry["id"], label, host))
+        placement = manifest.get("placement") or {}
+        host = placement.get("host", partslib_placement.DEFAULT_HOST)
+        assert host in partslib_placement.HOSTS, (
+            "%s declares unknown host %r" % (entry["id"], host))
 
 
 def test_wall_and_ceiling_hosted_parts_exist():
@@ -131,9 +117,7 @@ def test_wall_and_ceiling_hosted_parts_exist():
     hosts = set()
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        for label in partslib_manifest.variant_labels(manifest):
-            resolved = partslib_manifest.resolve_variant(manifest, label)
-            hosts.add((resolved.get("placement") or {}).get("host", "free"))
+        hosts.add((manifest.get("placement") or {}).get("host", "free"))
     assert "wall" in hosts
 
 
