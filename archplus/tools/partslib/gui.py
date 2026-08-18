@@ -1268,7 +1268,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 doc.openTransaction("Place library part")
                 try:
                     partslib_object.makePart(
-                        entry, self._facets, placement=placement)
+                        entry, self._facets, placement=placement,
+                        overrides=overrides)
                     doc.commitTransaction()
                     state["placed"] = True
                 except Exception as exc:

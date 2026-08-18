@@ -47,6 +47,20 @@ _PARAM_PROPERTY_TYPES = {
     "Choice": "App::PropertyEnumeration",
 }
 
+# What a reseed resets an "auto" param property to when it discards a
+# pinned value: the type's own empty value, not the stale number the user
+# typed. execute()'s write-back immediately replaces it with the real
+# derived value for measured params; for the rest an honest 0 beats a
+# confident 3 that contradicts the geometry. Choice has no empty value,
+# which is one more reason manifest validation refuses "auto" there.
+_EMPTY_PARAM_VALUES = {
+    "Length": 0,
+    "Angle": 0,
+    "Integer": 0,
+    "Bool": False,
+    "String": "",
+}
+
 
 def _paramValue(obj, name, spec):
     """One param property's value, as a builder expects it.
@@ -227,6 +241,15 @@ class _LibraryPart(ArchComponent.Component):
                         default = None
                         if is_new:
                             new_auto.append(name)
+                        if reseed:
+                            # Reload discards the pin, but without this the
+                            # property goes on DISPLAYING the pinned number
+                            # while AutoParams already says the value is
+                            # derived again - a cabinet showing Doors: 3
+                            # over two door leaves (verification F3).
+                            empty = _EMPTY_PARAM_VALUES.get(spec.get("type"))
+                            if empty is not None:
+                                setattr(obj, name, empty)
                     if default is not None:
                         setattr(obj, name, default)
             if reseed:
@@ -254,6 +277,49 @@ class _LibraryPart(ArchComponent.Component):
         for existing in obj.PropertiesList:
             if obj.getGroupOfProperty(existing) == _PARAMS_GROUP:
                 obj.setEditorMode(existing, 0 if existing in names else 2)
+
+    def _applyParamOverrides(self, obj, manifest, overrides):
+        """Write the browser panel's param values onto a seeded object.
+
+        makePart() seeds every property to its manifest default first;
+        this then applies the values the panel collected, so the placed
+        object is the part the preview showed rather than a silent reset
+        to the defaults.
+
+        A Choice override arrives as the option's STABLE VALUE - that is
+        what ParamForm.values() reads back via itemData - while the
+        property stores the LABEL, so it is mapped through the same
+        choice_options() lookup _declareParamProperties performs when
+        seeding a default. Every name applied is removed from AutoParams:
+        a value the user typed is pinned by definition, the rule everywhere
+        else in this module. Names the manifest does not declare, names
+        with no property, and None values are skipped.
+
+        Assigning a param property fires onChanged, which rebuilds - the
+        same reentrancy _declareParamProperties guards against, guarded
+        the same way (the caller performs the one real rebuild)."""
+        overrides = overrides or {}
+        if not overrides:
+            return
+        specs = partslib_manifest.param_specs(manifest)
+        auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or [])
+        self._reseeding = True
+        try:
+            for name, value in overrides.items():
+                spec = specs.get(name)
+                if spec is None or value is None \
+                        or name not in obj.PropertiesList:
+                    continue
+                options = partslib_manifest.choice_options(spec)
+                if options and value in options:
+                    value = ((options.get(value) or {}).get("label")
+                             or value)
+                setattr(obj, name, value)
+                if name in auto:
+                    auto.remove(name)
+            setattr(obj, PROP_AUTO_PARAMS, auto)
+        finally:
+            self._reseeding = False
 
     def _resolveCurrent(self, obj):
         """The manifest for obj's current PartId, or None.
@@ -392,8 +458,15 @@ def _applyMetadata(obj, resolved, facets):
         obj.IfcProperties = dict(properties)
 
 
-def makePart(entry, facets, placement=None):
-    """Create one library part object in the active document."""
+def makePart(entry, facets, placement=None, overrides=None):
+    """Create one library part object in the active document.
+
+    `overrides` is {name: value} for the parameters the browser panel's
+    user actually set (ParamForm.values(), which omits fields still
+    marked derived). Applied on top of the manifest-default seeding, so
+    what lands in the 3D view is what the preview rebuilt - and so a
+    Choice that carries a placement (e.g. a television's Mounting) cannot
+    disagree with the placement computed from the same value."""
     doc = FreeCAD.ActiveDocument
     if doc is None:
         raise RuntimeError("no active document")
@@ -408,6 +481,7 @@ def makePart(entry, facets, placement=None):
     obj.Label = manifest.get("name", entry["id"])
     setattr(obj, PROP_PART_ID, entry["id"])
     obj.Proxy.setPartProperties(obj, manifest, reseed=True)
+    obj.Proxy._applyParamOverrides(obj, manifest, overrides)
     _applyMetadata(obj, manifest, facets)
 
     if placement is not None:

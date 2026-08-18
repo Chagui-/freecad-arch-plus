@@ -18,6 +18,18 @@ DEFAULT_IFC_TYPE = "Building Element Proxy"
 # int(None) rather than silently building the wrong thing.
 AUTO = "auto"
 
+# The closed set of param `type` values. Each one maps to a FreeCAD
+# property class in object.py's _PARAM_PROPERTY_TYPES, so a type outside
+# the set cannot become a property at all - a validation error, not a
+# guess.
+PARAM_TYPES = ("Length", "Angle", "Integer", "Bool", "String", "Choice")
+
+# "auto" is only expressible where the builder derives a plain number the
+# write-back can measure or compute; a Bool, String or Choice "auto" has
+# no meaning to derive (and for Choice the string collides with the AUTO
+# sentinel itself).
+AUTO_PARAM_TYPES = ("Integer", "Length")
+
 # How many params a part that marks none gets promoted to the browser panel.
 PRIMARY_FALLBACK = 3
 
@@ -180,11 +192,54 @@ def validate_manifest(data, facets):
         # part folder holds a builder.py, so there is nothing here to check.
         errors.append("geometry must be an object")
 
+    errors.extend(_validate_params(data.get("params")))
+
     for field in data:
         if field not in KNOWN_FIELDS and field != "variants":
             warnings.append("unknown field %r (ignored)" % field)
 
     return errors, warnings
+
+
+def _validate_params(declared):
+    """Check a manifest's `params` block. Returns a list of error strings.
+
+    `params` is the branch's new public surface: each spec a library
+    author writes must be one the property declarer (object.py) and the
+    panel (paramform.py) can both represent, or the two sides would
+    silently disagree about what a part declares."""
+    if declared is None:
+        return []
+    if not isinstance(declared, dict):
+        return ["params must be an object"]
+
+    errors = []
+    for name, spec in declared.items():
+        if not isinstance(spec, dict):
+            errors.append("param %r must be an object" % name)
+            continue
+        kind = spec.get("type")
+        if kind not in PARAM_TYPES:
+            errors.append(
+                "param %r has unknown type %r (expected one of: %s)"
+                % (name, kind, ", ".join(PARAM_TYPES)))
+            continue
+        if spec.get("default") == AUTO and kind not in AUTO_PARAM_TYPES:
+            errors.append(
+                "param %r: an \"auto\" default is only valid on %s params"
+                % (name, " and ".join(AUTO_PARAM_TYPES)))
+        if kind == "Choice":
+            options = spec.get("options")
+            if not isinstance(options, dict) or not options:
+                errors.append(
+                    "Choice param %r must declare a non-empty 'options' "
+                    "object" % name)
+            elif spec.get("default") is not None \
+                    and spec["default"] not in options:
+                errors.append(
+                    "Choice param %r default %r is not a declared option"
+                    % (name, spec.get("default")))
+    return errors
 
 
 def _validate_part_facets(declared, facets):
@@ -272,7 +327,7 @@ def resolve_placement(manifest, params):
     return resolved
 
 
-def merge_params(resolved, overrides):
+def merge_params(manifest, overrides):
     """{name: value} for every param the manifest declares.
 
     Each name gets its declared default, replaced by overrides[name] only
@@ -290,7 +345,7 @@ def merge_params(resolved, overrides):
     argument into a builder."""
     overrides = overrides or {}
     merged = {}
-    for name, spec in param_specs(resolved).items():
+    for name, spec in param_specs(manifest).items():
         default = spec.get("default")
         if default == AUTO:
             default = None

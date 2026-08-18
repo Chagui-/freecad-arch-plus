@@ -250,9 +250,9 @@ def build_shape(manifest, part_dir, overrides=None):
     which builder (module AND qualname - part_dir alone already determines
     the builder today, since each folder has at most one build(), but
     keeping the qualname in the key is harmless and stays correct if a
-    builder is ever composed from more than one in-process callable), which
-    and the fully merged params. Anything a user can change from
-    the UI changes the key, so a stale hit is not reachable by editing a
+    builder is ever composed from more than one in-process callable), and
+    the fully merged params. Anything a user can change from the UI
+    changes the key, so a stale hit is not reachable by editing a
     Parameter.
 
     Callers get a COPY. A shape handed to a document object becomes that

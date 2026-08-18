@@ -19,8 +19,8 @@ def build(params, assets, ctx):
     height = float(params.get("Height", 720))
     door_count = params.get("DoorCount")
     if door_count is None:
-        # One door up to 600mm; past that the carcass is split, same rule as
-        # the base cabinet it sits above.
+        # One door below 700mm; from 700mm up the carcass is split, same
+        # rule as the base cabinet it sits above.
         door_count = 1 if width < 700 else 2
     door_count = max(int(door_count), 0)
 

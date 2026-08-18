@@ -126,8 +126,14 @@ class ParamForm(QtGui.QWidget):
 
     def _addField(self, grid, row, column, name):
         spec = self._specs.get(name) or {}
-        caption = QtGui.QLabel(spec.get("label") or name)
         widget = _widgetFor(spec)
+        if widget is None:
+            # An unrecognised type gets NO field here, matching object.py's
+            # warn-and-skip when declaring properties: guessing a spinbox
+            # would send a float into build_shape as a real override for a
+            # param nothing else represents.
+            return
+        caption = QtGui.QLabel(spec.get("label") or name)
         if name in self._auto:
             widget.setStyleSheet(
                 "font-style: italic; color: %s;"
@@ -156,7 +162,13 @@ class ParamForm(QtGui.QWidget):
 
 
 def _widgetFor(spec):
-    """One editor widget for a param spec, seeded from its default."""
+    """One editor widget for a param spec, or None for an unknown type.
+
+    The None case is a SKIP, not a fallback widget: the old fall-through
+    produced a millimetre QDoubleSpinBox for anything unrecognised, whose
+    float would ride into build_shape as a real override. object.py warns
+    and skips the same case when declaring properties, and the two sides
+    must agree."""
     kind = spec.get("type")
     default = spec.get("default")
     if default == partslib_manifest.AUTO:
@@ -183,13 +195,14 @@ def _widgetFor(spec):
         widget.setRange(0, 9999)
         widget.setValue(int(default or 0))
         return widget
-
-    widget = QtGui.QDoubleSpinBox()
-    widget.setRange(0.0, 100000.0)
-    widget.setDecimals(0)
-    widget.setSuffix(" deg" if kind == "Angle" else " mm")
-    widget.setValue(float(default or 0))
-    return widget
+    if kind in ("Length", "Angle"):
+        widget = QtGui.QDoubleSpinBox()
+        widget.setRange(0.0, 100000.0)
+        widget.setDecimals(0)
+        widget.setSuffix(" deg" if kind == "Angle" else " mm")
+        widget.setValue(float(default or 0))
+        return widget
+    return None
 
 
 def _connect(widget, name, slot):

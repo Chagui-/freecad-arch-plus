@@ -422,3 +422,91 @@ def test_resolve_placement_never_mutates_the_manifest():
     data = _part_with_choice()
     pm.resolve_placement(data, {"Mounting": "wall"})
     assert data["placement"] == {"host": "floor", "offset": 0}
+
+
+# -- params block validation ------------------------------------------------
+
+@pytest.mark.parametrize("kind", pm.PARAM_TYPES)
+def test_every_known_param_type_is_accepted(kind):
+    spec = {"type": kind, "default": 0}
+    if kind == "Choice":
+        spec = {"type": kind, "default": "stand",
+                "options": {"stand": {}, "wall": {}}}
+    errors, _warnings = pm.validate_manifest(_part(params={"P": spec}),
+                                             FACETS)
+    assert errors == []
+
+
+def test_params_block_must_be_an_object():
+    errors, _warnings = pm.validate_manifest(_part(params="nope"), FACETS)
+    assert any("params" in e for e in errors)
+
+
+def test_param_spec_must_be_an_object():
+    errors, _warnings = pm.validate_manifest(
+        _part(params={"Width": 600}), FACETS)
+    assert any("Width" in e for e in errors)
+
+
+def test_unknown_param_type_is_an_error():
+    data = _part(params={"Width": {"type": "Wavelength", "default": 600}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Width" in e and "Wavelength" in e for e in errors)
+
+
+@pytest.mark.parametrize("kind", ["Angle", "Bool", "String", "Choice"])
+def test_auto_default_is_rejected_outside_integer_and_length(kind):
+    spec = {"type": kind, "default": "auto"}
+    if kind == "Choice":
+        spec["options"] = {"stand": {}, "wall": {}}
+    errors, _warnings = pm.validate_manifest(_part(params={"P": spec}),
+                                             FACETS)
+    assert any("P" in e and "auto" in e for e in errors)
+
+
+@pytest.mark.parametrize("kind", pm.AUTO_PARAM_TYPES)
+def test_auto_default_is_accepted_on_integer_and_length(kind):
+    data = _part(params={"P": {"type": kind, "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
+
+
+def test_choice_param_without_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_param_with_empty_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": {}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_param_with_non_object_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": ["stand", "wall"]}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_default_not_a_declared_option_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "bracket",
+                                      "options": {"stand": {},
+                                                  "wall": {}}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "bracket" in e for e in errors)
+
+
+def test_choice_default_in_the_declared_options_is_valid():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": {"stand": {},
+                                                  "wall": {}}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
