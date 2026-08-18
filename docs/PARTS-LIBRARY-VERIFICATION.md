@@ -345,8 +345,7 @@ These are the focused checks for the parameter form and object state:
 
 - [ ] **F1 (brief check 14).** Right-click the placed Base cabinet in the
       tree → **Reload from library** runs without error.
-- [ ] **F2 (Check 1 from the Task 10/11 fix round — no silent rebuild on
-      document open).**
+- [ ] **F2 (no silent rebuild on document open).**
       1. Note the current shape/dimensions of the placed Base cabinet.
       2. Save the document and close it.
       3. On disk, edit `library/basic/base-cabinet/part.json` and change
@@ -359,12 +358,12 @@ These are the focused checks for the parameter form and object state:
          the geometry updates to the new dimension from the edited
          `part.json`. Revert your edit to `part.json` afterwards so the
          shipped content matches what is committed.
-- [ ] **F3 (Check 2 from the Task 10/11 fix round — derived values restore
-      safely).** Place a Base cabinet, pin **Doors** to `3`, and confirm the
-      custom value survives recompute. Right-click → **Reload from library**.
-      **Expected:** Reload succeeds, the cabinet geometry returns to two door
-      leaves for width `800`, the pin is discarded, and no exception/traceback
-      appears.
+- [ ] **F3 (derived values restore safely).** Place a Base cabinet and set
+      its **Width** to `800` in the property editor. Pin **Doors** to `3` and
+      confirm the custom value survives recompute. Right-click →
+      **Reload from library**. **Expected:** Reload succeeds, the cabinet
+      geometry returns to two door leaves (the derived value for width `800`),
+      the pin is discarded, and no exception/traceback appears.
 - [ ] **F4 (deferred, Task 11).** Right-click a placed part, choose
       **Reload from library** after having renamed/deleted its `id` from
       the library entirely (simulate by temporarily renaming the part's
