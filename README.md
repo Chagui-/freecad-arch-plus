@@ -127,8 +127,8 @@ message instead of a blank void.
 - **Live preview with derived measurements** — selecting a part shows a 3D
   preview and a `W × D × H` readout measured from the built shape, never
   authored by hand, so the stated size can never disagree with the geometry.
-- **Variants** — parts can declare named variants (e.g. cabinet widths);
-  switching **Variant** in the detail pane or the property editor rebuilds
+- **Declared parameters** — parts expose primary parameters in the browser and
+  keep additional parameters behind **More parameters**; editing them rebuilds
   the shape and measurements in place.
 - **Host-aware click-to-place** — click **Place**, then click a floor or
   wall face: the part drops to the correct height for its declared host
@@ -167,9 +167,9 @@ BIM workbench → **ArchPlus** toolbar:
   default) → configure in the panel. Double-click (or right-click → Edit) a
   window to reopen the panel; right-click → **Reposition** to move it with the
   mouse.
-- **Parts Library** → browse/group/search the catalog in the dock, select a
-  part and variant, then click **Place** and click a floor or wall face to
-  insert it. Right-click a placed part → **Reload from library** to refresh
+- **Parts Library** → browse/group/search the catalog in the dock, edit its
+  parameters, then click **Place** and click a floor or wall face to insert it.
+  Right-click a placed part → **Reload from library** to refresh
   it from its manifest.
 
 ## Adding parts to the library
@@ -240,11 +240,25 @@ a manufacturer's download, or something too organic to describe in code.
 - `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
   `offset` is millimetres from that surface — e.g. a wall cabinet uses
   `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
-- `variants` (optional) is a list of `{"label": ..., "params": {...}}`.
-  A variant may also override `assets`, `ifcProperties` and `placement`, so
-  a TV on a stand and the same TV on a bracket can be one catalogue entry
-  with two hosts. Parts with one variant show no variant control, two show
-  chips, three or more show a dropdown.
+| key | meaning |
+|---|---|
+| `params.<name>.ui` | `"primary"` shows the param in the browser panel. Absent means it sits behind **More parameters**. |
+| `params.<name>.label` | Display name. The key itself stays the builder argument and the property name. |
+| `params.<name>.default` | A number, a string, or `"auto"` — meaning the builder derives it. |
+| `params.<name>.options` | `Choice` only: ordered value to `{label, placement?}`. A selected option's `placement` merges per key over the part's. |
+
+```json
+"params": {
+  "Width":     { "type": "Length",  "default": 600,    "ui": "primary" },
+  "DoorCount": { "type": "Integer", "default": "auto", "label": "Doors" },
+  "Mounting":  { "type": "Choice",  "default": "stand", "ui": "primary",
+                 "options": {
+                   "stand": { "label": "On stand" },
+                   "wall":  { "label": "Wall-mounted",
+                              "placement": { "host": "wall", "offset": 1100 } }
+                 } }
+}
+```
 
 ### 2a. Geometry from a model file (no code)
 
@@ -323,6 +337,19 @@ def build(params, assets, ctx):
 The contract is `def build(params, assets, ctx) -> Part.Shape`. Import
 `Part`/`FreeCAD` *inside* the function, never at module scope, so the
 headless test suite can import the module without FreeCAD present.
+
+A param declared with `"default": "auto"` arrives as `None`. That is the
+instruction to derive it — "an 800mm cabinet has two doors" is design
+knowledge, and it belongs here rather than enumerated in the manifest.
+Because the key is always present, `params.get(name, fallback)` no longer
+protects you; test for `None` explicitly:
+
+```python
+door_count = params.get("DoorCount")
+if door_count is None:
+    door_count = 1 if width < 700 else 2
+door_count = max(int(door_count), 0)
+```
 
 A part with **no** `builder.py` is an asset-only part: it is built by the
 stock asset builder from the file named in `geometry.assets`. The absence of
@@ -425,9 +452,9 @@ type and the value, separated by double semicolons:
 }
 ```
 
-`"Pset;;IfcType;;Value"`. A variant may override individual keys, which is
-how three sizes of one product each carry their own order code while sharing
-everything else. Get the encoding wrong and the property is dropped silently
+`"Pset;;IfcType;;Value"`. Parameters describe geometry; metadata is declared
+at part level and is shared by the resulting object. Get the encoding wrong
+and the property is dropped silently
 on export rather than raising — so check a real export before trusting it.
 
 Dimensions do **not** belong here. Width, depth and height are measured from

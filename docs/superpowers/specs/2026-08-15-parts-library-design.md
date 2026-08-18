@@ -1,5 +1,10 @@
 # ArchPlus Parts Library — Design
 
+> **Amended 2026-08-17.** §5.3 (Variants) and the `variants` row of the
+> manifest table no longer describe the system: `variants` was removed and
+> replaced by per-part declared parameters. See
+> `2026-08-17-part-parameters-design.md`.
+
 **Date:** 2026-08-15
 **Status:** Approved for planning
 

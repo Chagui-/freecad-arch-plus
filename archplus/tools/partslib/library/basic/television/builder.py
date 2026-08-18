@@ -17,7 +17,7 @@ def build(params, assets, ctx):
     Height are derived from ScreenSize unless pinned.
 
     `Height` is the panel alone; a stand adds `StandHeight` below it, so the
-    two variants measure differently on purpose - a wall-mounted set has no
+    two mountings measure differently on purpose - a wall-mounted set has no
     floor footprint to schedule."""
     bezel = float(params.get("BezelWidth", 18))
     screen_size = max(int(params.get("ScreenSize", 55)), 1)

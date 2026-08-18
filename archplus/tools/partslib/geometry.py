@@ -253,7 +253,7 @@ def build_shape(manifest, part_dir, overrides=None):
     builder is ever composed from more than one in-process callable), which
     and the fully merged params. Anything a user can change from
     the UI changes the key, so a stale hit is not reachable by editing a
-    Parameter or switching a variant.
+    Parameter.
 
     Callers get a COPY. A shape handed to a document object becomes that
     object's, and a caller free to mutate what it was given would otherwise
