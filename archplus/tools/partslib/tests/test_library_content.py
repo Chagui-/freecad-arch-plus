@@ -312,10 +312,11 @@ def test_a_wall_mounted_television_is_wall_hosted():
     index = _scan()
     data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
     params = partslib_manifest.merge_params(data, {"Mounting": "wall"})
-    assert partslib_manifest.resolve_placement(data, params)["host"] == "wall"
+    placement = partslib_manifest.resolve_placement(data, params)
+    assert placement["host"] == "wall"
     # The old 65-inch wall variant used 1050; approved design deliberately
     # collapses both sizes to one 1100 offset, so per-size offsets must fail.
-    assert partslib_manifest.resolve_placement(data, params)["offset"] == 1100
+    assert placement["offset"] == 1100
 
 
 def test_television_size_drives_the_panel_dimensions():

@@ -26,6 +26,11 @@
       "default": 2000,
       "ui": "primary"
     },
+    "BaseHeight": {
+      "type": "Length",
+      "default": 200,
+      "ui": "primary"
+    },
     "MattressHeight": {
       "type": "Length",
       "default": 250
@@ -37,11 +42,6 @@
     "HeadboardThickness": {
       "type": "Length",
       "default": 60
-    },
-    "BaseHeight": {
-      "type": "Length",
-      "default": 200,
-      "ui": "primary"
     },
     "PillowCount": {
       "type": "Integer",

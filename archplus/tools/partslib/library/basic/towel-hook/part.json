@@ -27,14 +27,14 @@
       "default": 55,
       "ui": "primary"
     },
-    "PlateDepth": {
-      "type": "Length",
-      "default": 12
-    },
     "Projection": {
       "type": "Length",
       "default": 65,
       "ui": "primary"
+    },
+    "PlateDepth": {
+      "type": "Length",
+      "default": 12
     },
     "ArmDiameter": {
       "type": "Length",
