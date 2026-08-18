@@ -1974,6 +1974,19 @@ with this worked example:
 }
 ```
 
+- [ ] **Step 1b: Fix the two genuinely stale prose references**
+
+Independent of the docs work, two code comments still describe the deleted
+mechanism and are the only stale ones left:
+
+- `archplus/tools/partslib/geometry.py` — the shape-cache docstring ends
+  "...Parameter or switching a variant." Nothing can switch a variant now;
+  make it "...editing a Parameter."
+- `archplus/tools/partslib/library/basic/television/builder.py` — the docstring
+  says "the two variants measure differently on purpose". It means the two
+  mountings: a wall-mounted set has no floor footprint to schedule. Reword to
+  "the two mountings".
+
 - [ ] **Step 2: Document the `None` contract in README §2b**
 
 After the paragraph ending "so the headless test suite can import the module
@@ -2014,9 +2027,27 @@ directly under the title:
 
 - [ ] **Step 5: Verify no stale references remain**
 
-Run: `grep -rn variant archplus docs README.md | grep -v "2026-08-15\|2026-08-17"`
-Expected: no hits. Anything left is either a missed rename or a comment that
-still describes the old mechanism; fix it before committing.
+The naive check — grep for `variant` and expect nothing — is WRONG, and chasing
+it would delete load-bearing code. Several references must survive:
+
+| survives in | why it must |
+|---|---|
+| `manifest.py` | the rejection error text a stale manifest gets, the `field != "variants"` exclusion that stops double-reporting, and a docstring recording what a variant's placement override used to do |
+| `tests/test_partslib_manifest.py`, `tests/test_partslib_index.py`, `tests/test_library_content.py` | the tests that assert `variants` is now rejected and absent — the guards for this whole change |
+| `object.py` | the legacy-`Variant` property hide, which must keep working for old documents |
+| `index.py` | the `CACHE_VERSION` 2 rationale |
+| `docs/superpowers/plans/*`, `docs/superpowers/specs/*` | historical planning records |
+| `archplus/tools/stairs/object.py` | a different tool, unrelated and pre-existing |
+
+Note also that `grep variant` matches `invariant`, so any check must exclude it.
+
+Run this instead, which lists only files where a reference should NOT survive:
+
+```bash
+grep -rn "variant" archplus README.md docs/PARTS-LIBRARY-VERIFICATION.md   | grep -vi invariant   | grep -v "/tests/\|manifest.py\|index.py\|object.py\|docs/superpowers/"
+```
+
+Expected: no hits. Fix what it finds; touch nothing in the table above.
 
 - [ ] **Step 6: Run the whole suite**
 
