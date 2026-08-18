@@ -17,7 +17,7 @@
 - Builders import `Part`/`FreeCAD` **inside** `build()`, never at module scope.
 - Style: no f-strings, no type annotations, `%`-formatting, 4-space indent, SPDX header on new files.
 - Every part folder is `archplus/tools/partslib/library/basic/<part-id>/` holding `part.json`, `builder.py` (unless asset-only) and `thumbnail.jpg`. Builders are found by **file presence**; nothing names them.
-- Run the suite with `python3.11 -m pytest archplus -q` from the repo root. The `python3` on PATH has no pytest installed.
+- Run the suite with `uvx --with pytest pytest archplus -q` from the repo root. Neither `python3` nor `python3.11` has pytest installed; `uvx` is the only working runner. Baseline before this plan: **204 passed**.
 - Commit after every task. The branch is `part-parameters`; never commit to `main`.
 
 ---
@@ -161,7 +161,7 @@ def test_resolve_placement_never_mutates_the_manifest():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_partslib_manifest.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_partslib_manifest.py -q`
 Expected: FAIL with `AttributeError: module 'archplus.tools.partslib.manifest' has no attribute 'primary_params'`
 
 - [ ] **Step 3: Add the constants**
@@ -254,12 +254,12 @@ and add this paragraph to its docstring:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_partslib_manifest.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_partslib_manifest.py -q`
 Expected: PASS, including every pre-existing variant test — nothing was removed.
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -331,7 +331,7 @@ def test_a_pinned_value_and_an_auto_param_key_differently(tmp_path, monkeypatch)
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_partslib_geometry.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_partslib_geometry.py -q`
 Expected: FAIL. If they already pass because Task 1 is in place, keep them
 anyway — they are the regression guard for the `None` contract.
 
@@ -377,7 +377,7 @@ paragraph above it that enumerates what the key contains.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_partslib_geometry.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_partslib_geometry.py -q`
 Expected: PASS. The existing `test_different_variants_miss_the_cache` will now
 FAIL — delete it; a variant label no longer exists to key on, and the two new
 tests above cover what replaced it.
@@ -448,7 +448,7 @@ def test_kitchen_and_sanitary_parts_declare_no_variants():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: FAIL with `base-cabinet should declare DoorCount as auto`.
 
 - [ ] **Step 3: Edit the five manifests**
@@ -591,7 +591,7 @@ and delete the later `burner_count = ...` line so it is not computed twice.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: PASS.
 
 Note what this does NOT prove. Nothing in the headless suite calls `build()`:
@@ -638,13 +638,13 @@ def test_every_auto_param_is_derived_by_its_builder():
                 % (entry["id"], name))
 ```
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: PASS. This test also arms itself for Tasks 4 and 5, which add more
 `"auto"` params.
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -701,7 +701,7 @@ def test_furniture_parts_declare_no_variants():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: FAIL with `sofa should declare Width as auto`.
 
 - [ ] **Step 3: Edit the five manifests**
@@ -849,12 +849,12 @@ and delete the later `drawer_count = ...` line so it is not computed twice.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -918,7 +918,7 @@ def test_curtain_folds_are_derived():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: FAIL with `KeyError: 'ScreenSize'`.
 
 - [ ] **Step 3: Edit the two manifests**
@@ -1007,12 +1007,12 @@ params line to:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1088,7 +1088,7 @@ def test_a_bath_width_screen_is_reachable_at_walk_in_height():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: FAIL with `shower-screen still declares variants`.
 
 - [ ] **Step 3: Delete the eight remaining variant lists**
@@ -1131,12 +1131,12 @@ add one no builder reads.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests/test_library_content.py -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS. `variants` is now unused by every shipped part but still
 supported by the code; Task 7 removes the support.
 
@@ -1234,7 +1234,7 @@ def test_a_version_1_cache_is_rejected(tmp_path):
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests -q`
 Expected: FAIL — `assert any("variants" in error ...)` is False, because
 `variants` is still a known field.
 
@@ -1285,12 +1285,12 @@ and append to the `save_cache` docstring paragraph that explains why
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `python3.11 -m pytest archplus/tools/partslib/tests -q`
+Run: `uvx --with pytest pytest archplus/tools/partslib/tests -q`
 Expected: PASS.
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS. If any test fails on `entry["variants"]` from a GUI-adjacent
 module, leave it failing, note it in the commit message, and let Task 9 fix it.
 
@@ -1924,7 +1924,7 @@ renaming the local from `variants` to `adjustable`:
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -2020,7 +2020,7 @@ still describes the old mechanism; fix it before committing.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `python3.11 -m pytest archplus -q`
+Run: `uvx --with pytest pytest archplus -q`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
