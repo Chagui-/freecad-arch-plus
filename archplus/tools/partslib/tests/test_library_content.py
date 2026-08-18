@@ -151,6 +151,26 @@ def test_every_part_lives_under_a_family_folder():
             "%s should be library/basic/<part>/, got %r" % (path, relative))
 
 
+def test_every_shipped_id_is_derived_from_its_folder():
+    # No shipped part pins an explicit id. The override exists for renames;
+    # using it by default would let a folder and an id drift apart.
+    index = _scan()
+    for entry in index["entries"]:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        assert "id" not in manifest, (
+            "%s pins an explicit id" % (entry["path"],))
+        expected = os.path.relpath(
+            entry["dir"], LIBRARY_DIR).replace(os.sep, "/")
+        assert entry["id"] == expected
+
+
+def test_shipped_ids_are_unique():
+    index = _scan()
+    ids = [e["id"] for e in index["entries"]]
+    assert len(ids) == len(set(ids))
+    assert len(ids) == 31
+
+
 def test_every_local_builder_imports_and_exposes_build():
     # A builder.py that imports FreeCAD at module scope, or that names its
     # entry point anything but build(), fails here rather than at insert

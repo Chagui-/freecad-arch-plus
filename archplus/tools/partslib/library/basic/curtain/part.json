@@ -1,6 +1,5 @@
 {
   "schema": 1,
-  "id": "curtain",
   "name": "Curtain",
   "description": "Curtain on a rail, gathered into folds. Offset is to the rail height.",
   "keywords": [
