@@ -184,3 +184,65 @@ def test_every_local_builder_imports_and_exposes_build():
             "%s has no usable build()" % (entry["id"],))
         checked += 1
     assert checked > 0, "no part has a builder.py yet"
+
+
+def _entry(index, part_id):
+    for entry in index["entries"]:
+        if entry["id"] == part_id or entry["id"] == "basic/" + part_id:
+            return entry
+    raise AssertionError("no such part %r" % (part_id,))
+
+
+def _params(part_id, overrides=None):
+    """Merged params for one shipped part, as a builder would receive them."""
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+    return partslib_manifest.merge_params(data, overrides)
+
+
+def test_derived_kitchen_and_sanitary_params_are_declared_auto():
+    for part_id, name in (("base-cabinet", "DoorCount"),
+                          ("wall-cabinet", "DoorCount"),
+                          ("wardrobe", "DoorCount"),
+                          ("gas-hob", "Width"),
+                          ("vanity", "BasinWidth")):
+        assert _params(part_id)[name] is None, (
+            "%s should declare %s as auto" % (part_id, name))
+
+
+def test_kitchen_and_sanitary_parts_declare_no_variants():
+    index = _scan()
+    for part_id in ("base-cabinet", "wall-cabinet", "wardrobe",
+                    "gas-hob", "vanity"):
+        data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+        assert "variants" not in data
+
+
+def test_every_auto_param_is_derived_by_its_builder():
+    # The suite cannot call build() - the builders reach shapes.py, which
+    # needs Part - so a forgotten derivation would otherwise surface only
+    # inside FreeCAD, as int(None). Reading the source is the weaker but
+    # available check: the param must be fetched and tested for None.
+    import io
+
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        auto = [name for name, spec
+                in partslib_manifest.param_specs(data).items()
+                if spec.get("default") == partslib_manifest.AUTO]
+        if not auto:
+            continue
+        builder_path = os.path.join(entry["dir"], "builder.py")
+        assert os.path.exists(builder_path), (
+            "%s declares auto params but ships no builder.py"
+            % (entry["id"],))
+        with io.open(builder_path, "r", encoding="utf8") as handle:
+            source = handle.read()
+        for name in auto:
+            assert 'params.get("%s")' % name in source, (
+                "%s declares %s as auto but its builder never reads it"
+                % (entry["id"], name))
+            assert "is None" in source, (
+                "%s declares %s as auto but its builder never tests for None"
+                % (entry["id"], name))

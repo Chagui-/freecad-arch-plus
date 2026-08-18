@@ -14,12 +14,16 @@ def build(params, assets, ctx):
     unit whose width matches it."""
     import Part
 
-    width = float(params.get("Width", 600))
+    burner_count = max(int(params.get("BurnerCount", 4)), 1)
+    width = params.get("Width")
+    if width is None:
+        # 150mm of hob per burner: the 4-burner 600mm and 5-burner 750mm
+        # sizes every manufacturer ships.
+        width = 150.0 * burner_count
+    width = float(width)
     depth = float(params.get("Depth", 520))
     plate = float(params.get("PlateThickness", 40))
     burner_height = float(params.get("BurnerHeight", 25))
-    burner_count = max(int(params.get("BurnerCount", 4)), 1)
-
     body = sh.rounded_box(width, depth, plate, radius=10)
     body = sh.roll_top(body, min(plate * 0.3, 8.0), axis="x")
 

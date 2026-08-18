@@ -14,7 +14,12 @@ def build(params, assets, ctx):
     width = float(params.get("Width", 900))
     depth = float(params.get("Depth", 500))
     height = float(params.get("Height", 850))
-    basin_width = float(params.get("BasinWidth", width * 0.5))
+    basin_width = params.get("BasinWidth")
+    if basin_width is None:
+        # The basin takes half the top: a 600 unit gets a 300 basin, a 900
+        # unit a 450.
+        basin_width = width * 0.5
+    basin_width = float(basin_width)
     basin_depth = float(params.get("BasinDepth", depth * 0.6))
     basin_recess = float(params.get("BasinRecess", 120))
     backsplash_height = float(params.get("BacksplashHeight", 100))

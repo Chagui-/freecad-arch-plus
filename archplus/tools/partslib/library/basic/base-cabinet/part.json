@@ -18,75 +18,16 @@
     ]
   },
   "params": {
-    "Width": {
-      "type": "Length",
-      "default": 600
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 600
-    },
-    "Height": {
-      "type": "Length",
-      "default": 900
-    },
-    "WorktopThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "KickHeight": {
-      "type": "Length",
-      "default": 100
-    },
-    "DoorCount": {
-      "type": "Integer",
-      "default": 1
-    }
+    "Width": { "type": "Length", "default": 600, "ui": "primary" },
+    "Depth": { "type": "Length", "default": 600, "ui": "primary" },
+    "Height": { "type": "Length", "default": 900, "ui": "primary" },
+    "WorktopThickness": { "type": "Length", "default": 40 },
+    "KickHeight": { "type": "Length", "default": 100 },
+    "DoorCount": { "type": "Integer", "default": "auto", "label": "Doors" }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "300 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 300
-        },
-        "DoorCount": {
-          "type": "Integer",
-          "default": 1
-        }
-      }
-    },
-    {
-      "label": "600 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 600
-        },
-        "DoorCount": {
-          "type": "Integer",
-          "default": 1
-        }
-      }
-    },
-    {
-      "label": "800 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 800
-        },
-        "DoorCount": {
-          "type": "Integer",
-          "default": 2
-        }
-      }
-    }
-  ],
   "geometry": {}
 }
