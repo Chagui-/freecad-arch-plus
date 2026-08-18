@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "name": "Wall cabinet",
+  "description": "Wall-hung kitchen unit. Offset is to the underside, 1500 mm over a 900 mm worktop.",
+  "keywords": [
+    "kitchen",
+    "cabinet",
+    "wall",
+    "unit",
+    "overhead",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 350
+    },
+    "Height": {
+      "type": "Length",
+      "default": 720
+    },
+    "DoorCount": {
+      "type": "Integer",
+      "default": 1
+    }
+  },
+  "placement": {
+    "host": "wall",
+    "offset": 1500
+  },
+  "variants": [
+    {
+      "label": "600 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 600
+        },
+        "DoorCount": {
+          "type": "Integer",
+          "default": 1
+        }
+      }
+    },
+    {
+      "label": "800 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 800
+        },
+        "DoorCount": {
+          "type": "Integer",
+          "default": 2
+        }
+      }
+    }
+  ],
+  "geometry": {}
+}

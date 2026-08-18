@@ -14,6 +14,7 @@ from . import manifest as pm
 
 FACETS_FILENAME = "facets.json"
 MANIFEST_FILENAME = "part.json"
+BUILDER_FILENAME = "builder.py"
 CACHE_VERSION = 1
 
 
@@ -55,12 +56,34 @@ def scan(library_dir):
             errors.extend("%s: %s" % (path, e) for e in part_errors)
             continue
 
-        part_id = data["id"]
+        # The folder path IS the id unless the manifest pins one. Deriving it
+        # makes a collision unrepresentable: two parts cannot share a path,
+        # and every brand sells a mirror.
+        part_id = data.get("id") or os.path.relpath(
+            os.path.dirname(path), library_dir).replace(os.sep, "/")
+        id_errors = pm.validate_part_id(part_id)
+        if id_errors:
+            errors.extend("%s: %s" % (path, e) for e in id_errors)
+            continue
+
         if part_id in seen:
             errors.append("duplicate id %r in %s and %s"
                           % (part_id, seen[part_id], path))
             continue
         seen[part_id] = path
+
+        # A part builds either from its own code or from a declared asset.
+        # Neither means the part cannot produce geometry, and catching it
+        # here turns a misleading "declares no asset 'body'" at insert time
+        # into a scan error. os.path only - this module stays FreeCAD-free.
+        part_dir = os.path.dirname(path)
+        geometry = data.get("geometry") or {}
+        if (not os.path.exists(os.path.join(part_dir, BUILDER_FILENAME))
+                and not (geometry.get("assets") or {})):
+            errors.append(
+                "%s: has no %s and declares no geometry.assets"
+                % (path, BUILDER_FILENAME))
+            continue
 
         entries.append({
             "id": part_id,

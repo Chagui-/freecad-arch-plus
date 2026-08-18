@@ -17,7 +17,7 @@ parametric parts across six rooms (Kitchen, Dining Room, Bedroom, Living
 Room, Bath Room, Office) — see the table below — plus four
 builder modules (`furniture.py`, `sanitary.py`, `kitchen.py`,
 `fittings.py`) and a shared geometry-massing helper
-(`partslib_builders/_shapes.py`: rounded corners, square legs, rolled
+(`partslib/shapes.py`: rounded corners, square legs, rolled
 edges, panel reveals, toe-kick recesses, oval basin scaling).
 
 The first 14 parts HAVE now been rendered and reviewed in FreeCAD, and
@@ -41,7 +41,8 @@ stand and wall-hosted on a bracket.
 
 There is no FreeCAD in the development environment, so automated
 verification stops at: (1) the headless `pytest -q` suite (manifests
-and facets are well-formed, every `geometry.builder` symbol resolves, every
+and facets are well-formed, every part folder's builder.py (where present)
+loads and exposes a callable build(), every
 variant-label list is non-empty and unique, every declared placement host
 is known, every facet icon exists on disk), and (2) a throwaway script that
 runs every part/variant's builder against a bounding-box-only stand-in for
@@ -53,7 +54,7 @@ D, E, F, G, I, J, K) needs a human-in-FreeCAD pass. In particular, watch
 for:
 
 - Any `PrintWarning`/`PrintError` from a `makeFillet` or boolean op falling
-  back silently (every fillet in `_shapes.py` is wrapped in a try/except that
+  back silently (every fillet in `shapes.py` is wrapped in a try/except that
   degrades to a sharp edge on failure — a part that looks "blockier" than
   intended in the preview is this fallback firing, not a bug to fix blind).
 - The toilet, bathtub, vanity and shower base's oval/recessed geometry
@@ -357,7 +358,7 @@ unaffected by the fallback.
       document open).**
       1. Note the current shape/dimensions of the placed Base cabinet.
       2. Save the document and close it.
-      3. On disk, edit `library/furniture/base-cabinet/part.json` and change
+      3. On disk, edit `library/basic/base-cabinet/part.json` and change
          one dimension under `params` (e.g. bump `Height`'s `default`).
       4. Reopen the document. **Expected: the object's geometry is
          unchanged** — it still shows the old dimension. Opening/recomputing
@@ -373,7 +374,7 @@ unaffected by the fallback.
          `1000 mm`).
       2. Save and close the document.
       3. On disk, temporarily remove the `1000 mm` entry from
-         `variants` in `library/furniture/base-cabinet/part.json` (leaving
+         `variants` in `library/basic/base-cabinet/part.json` (leaving
          `600 mm` and `800 mm`).
       4. Reopen the document — the cached shape and `Variant` label may
          still show the now-stale `1000 mm` string.
@@ -430,7 +431,8 @@ nothing here is specific to any one machine or username:
 import os, sys, tempfile
 addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
 sys.path.append(addon_dir)
-import Part, partslib_thumbs as pt
+import Part
+import archplus.tools.partslib.thumbs as pt
 thumb_path = os.path.join(tempfile.gettempdir(), "archplus_thumb_test.png")
 print(pt.render_shape(Part.makeBox(360, 540, 400), thumb_path))
 print(thumb_path)
@@ -445,27 +447,42 @@ print(thumb_path)
       be relied on on this machine), and that finding should be recorded
       back into the spec.
 
-## Part J — `demo.box` shape building sanity check (deferred, Task 8)
+## Part J — builder resolution and shape building sanity check (deferred, Task 8)
 
-Run in the FreeCAD Python console. As in Part I, the add-on directory is
-derived at run time rather than hard-coded:
+`demo.py` and its synthetic `box`-shaped builder are gone — a builder now has
+to live in a real part's own folder, so this check resolves and builds a
+real part (`library/basic/nightstand`) instead of a synthetic one. Run in
+the FreeCAD Python console. As in Part I, the add-on directory is derived at
+run time rather than hard-coded:
 
 ```python
 import os, sys
 addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
 sys.path.append(addon_dir)
-import partslib_geometry as pg
+import archplus.tools.partslib.geometry as pg
 
-resolved = {"geometry": {"builder": "demo.box"},
-            "params": {"Width": {"default": 500},
-                       "Depth": {"default": 400},
-                       "Height": {"default": 300}}}
-shape = pg.build_shape(resolved, ".")
+part_dir = os.path.join(addon_dir, "archplus", "tools", "partslib",
+                         "library", "basic", "nightstand")
+resolved = {"geometry": {},
+            "params": {"Width": {"default": 400},
+                       "Depth": {"default": 350},
+                       "Height": {"default": 500}}}
+builder = pg.select_builder(resolved, part_dir)
+print(builder)
+shape = pg.build_shape(resolved, part_dir)
 print(pg.measure(shape))
 ```
 
-- [ ] **J1.** Prints `{'Width': 500.0, 'Depth': 400.0, 'Height': 300.0}`.
-- [ ] **J2.** `len(FreeCAD.ActiveDocument.Objects)` is unchanged before and
+- [ ] **J1.** `select_builder` prints the nightstand's own `build` function,
+      e.g. `<function build at ...>` whose `__module__` is
+      `archplus.tools.partslib.library.basic.nightstand.builder` — resolved
+      because that folder holds a `builder.py`, not because the manifest
+      named anything.
+- [ ] **J2.** `pg.measure(shape)` prints
+      `{'Width': 400.0, 'Depth': 350.0, 'Height': 500.0}` — the nightstand
+      builder is written so the built shape's bounding box matches the
+      advertised `Width`/`Depth`/`Height` exactly.
+- [ ] **J3.** `len(FreeCAD.ActiveDocument.Objects)` is unchanged before and
       after calling `build_shape` — building a shape must add nothing to
       the document tree.
 

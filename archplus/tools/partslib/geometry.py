@@ -9,38 +9,92 @@
 
 import importlib
 import os
-import re
+import sys
 
+from . import asset
 from . import manifest as partslib_manifest
 
-BUILDER_PACKAGE = "archplus.tools.partslib.builders"
 CACHE_DIRNAME = ".cache"
 
-_SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
+_DIR = os.path.dirname(os.path.abspath(__file__))
+LIBRARY_DIR = os.path.join(_DIR, "library")
+LIBRARY_PACKAGE = "archplus.tools.partslib.library"
+BUILDER_MODULE = "builder"
+BUILDER_FILENAME = BUILDER_MODULE + ".py"
 
 
-def resolve_builder(symbol):
-    """Turn a "module.function" symbol into a callable.
+def has_local_builder(part_dir):
+    """True when this part folder carries its own builder.py."""
+    return os.path.exists(os.path.join(part_dir, BUILDER_FILENAME))
 
-    Only names inside the archplus.tools.partslib.builders package resolve. Anything
-    path-like, dotted deeper than one level, or absent raises ValueError."""
-    if not isinstance(symbol, str) or not _SYMBOL_RE.match(symbol):
-        raise ValueError("invalid builder symbol %r" % (symbol,))
 
-    module_name, function_name = symbol.split(".")
+def load_local_builder(part_dir):
+    """Import a part folder's own builder.py and return its build().
+
+    The manifest names NOTHING on this route - the module path is derived
+    from where the part lives - so a manifest cannot point at code outside
+    its own folder. The library tree is the import tree: no __init__.py is
+    needed anywhere under it, because a directory without one is a namespace
+    package, and `from .. import _shared` still resolves inside those.
+
+    Containment is checked against realpath, not abspath: abspath does not
+    resolve symlinks, so a symlinked part folder inside the library would
+    otherwise pass commonpath while actually pointing outside LIBRARY_DIR."""
+    base = os.path.realpath(LIBRARY_DIR)
+    target = os.path.realpath(part_dir)
+
+    # Containment, checked the same way AssetLoader.shape() checks asset
+    # paths - including the ValueError, which commonpath raises for two
+    # paths on different Windows drives.
     try:
-        module = importlib.import_module(
-            "%s.%s" % (BUILDER_PACKAGE, module_name))
-    except ImportError as exc:
-        raise ValueError("unknown builder module %r: %s" % (module_name, exc))
+        contained = os.path.commonpath([base, target]) == base
+    except ValueError:
+        contained = False
+    if not contained or target == base:
+        raise ValueError("part directory %r is not inside the library"
+                         % (part_dir,))
 
-    builder = getattr(module, function_name, None)
-    if (function_name.startswith("_")
-            or function_name not in vars(module)
+    segments = os.path.relpath(target, base).replace("\\", "/").split("/")
+    for segment in segments:
+        if "." in segment:
+            raise ValueError(
+                "part folder %r cannot contain '.': it would split the "
+                "import path" % (segment,))
+
+    module_name = "%s.%s.%s" % (
+        LIBRARY_PACKAGE, ".".join(segments), BUILDER_MODULE)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise ValueError("cannot import %s: %s" % (module_name, exc))
+
+    builder = getattr(module, "build", None)
+    # `build.__module__ == module_name` and not just `"build" in vars(module)`:
+    # a star-import or an explicit `from x import y as build` also lands
+    # `build` in vars(module), so only checking membership there would let a
+    # name imported from elsewhere pass as this part's builder. Checking
+    # __module__ confirms `build` was actually DEFINED in this file.
+    if (getattr(builder, "__module__", None) != module_name
             or not callable(builder)):
-        raise ValueError("builder %r has no callable %r"
-                         % (module_name, function_name))
+        raise ValueError("%s has no callable build()" % (module_name,))
     return builder
+
+
+def select_builder(resolved, part_dir):
+    """The callable that builds this part.
+
+    The file on disk decides: a part with its own builder.py uses it, and a
+    part without one is asset-only and uses the stock asset builder. The
+    manifest names nothing, so it cannot point at code anywhere - which is a
+    stronger guarantee than the symbol it replaced, because "this part ships
+    no executable code" is now the absence of a file rather than a claim
+    that has to be kept true.
+
+    `resolved` is retained deliberately for call-site stability and is no
+    longer read here."""
+    if has_local_builder(part_dir):
+        return load_local_builder(part_dir)
+    return asset.single
 
 
 class AssetLoader:
@@ -70,8 +124,11 @@ class AssetLoader:
         # trusting os.path (whose own separator handling is native-OS-only).
         segments = filename.replace("\\", "/").split("/")
 
-        base = os.path.abspath(self._dir)
-        source = os.path.abspath(os.path.join(base, filename))
+        # realpath, not abspath: abspath does not resolve symlinks, so a
+        # symlinked part folder would otherwise pass commonpath while
+        # actually pointing outside the part directory.
+        base = os.path.realpath(self._dir)
+        source = os.path.realpath(os.path.join(base, filename))
         try:
             contained = os.path.commonpath([base, source]) == base
         except ValueError:
@@ -132,14 +189,29 @@ _SHAPE_CACHE_LIMIT = 96
 
 
 def clear_shape_cache():
-    """Forget every remembered shape.
+    """Forget every remembered shape, and every imported part builder.
 
     Called whenever the library is rescanned. A part's params are part of
     the cache key, so editing a manifest already misses the cache - but
     editing a BUILDER, or an asset file on disk, would not, and a rescan is
-    the user saying "re-read the library" in as many words."""
+    the user saying "re-read the library" in as many words.
+
+    Now that a part's code lives in its own folder, authoring a part means
+    editing that builder.py - and Python caches an imported module for the
+    life of the session, so the import is a second stale cache. Dropping
+    both is what makes "Rescan library" actually re-read an edited builder
+    instead of appearing to do nothing until FreeCAD restarts."""
     _SHAPE_CACHE.clear()
     del _SHAPE_CACHE_ORDER[:]
+    _forget_library_builders()
+
+
+def _forget_library_builders():
+    """Drop every imported module under the library package."""
+    prefix = LIBRARY_PACKAGE + "."
+    for name in [name for name in list(sys.modules)
+                 if name == LIBRARY_PACKAGE or name.startswith(prefix)]:
+        del sys.modules[name]
 
 
 def _remember_shape(key, shape):
@@ -167,20 +239,25 @@ def build_shape(resolved, part_dir, overrides=None):
     Clicking between two parts therefore paid full price every time.
 
     The key is everything that decides the geometry: which part directory,
-    which builder, which variant, and the fully merged params. Anything a
-    user can change from the UI changes the key, so a stale hit is not
-    reachable by editing a Parameter or switching a variant.
+    which builder (module AND qualname - part_dir alone already determines
+    the builder today, since each folder has at most one build(), but
+    keeping the qualname in the key is harmless and stays correct if a
+    builder is ever composed from more than one in-process callable), which
+    variant, and the fully merged params. Anything a user can change from
+    the UI changes the key, so a stale hit is not reachable by editing a
+    Parameter or switching a variant.
 
     Callers get a COPY. A shape handed to a document object becomes that
     object's, and a caller free to mutate what it was given would otherwise
     corrupt the entry for everyone after it. Copying a finished solid is
     still far cheaper than rebuilding one."""
     geometry = resolved.get("geometry") or {}
-    symbol = geometry.get("builder")
-    builder = resolve_builder(symbol)
+    builder = select_builder(resolved, part_dir)
     params = partslib_manifest.merge_params(resolved, overrides)
 
-    key = (os.path.abspath(part_dir), symbol,
+    key = (os.path.abspath(part_dir),
+           getattr(builder, "__module__", "") + "."
+           + getattr(builder, "__qualname__", ""),
            resolved.get("variantLabel"),
            repr(sorted(params.items(), key=lambda item: item[0])),
            repr(sorted((geometry.get("assets") or {}).items())))

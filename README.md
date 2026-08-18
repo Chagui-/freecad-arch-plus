@@ -174,11 +174,22 @@ BIM workbench → **ArchPlus** toolbar:
 
 ## Adding parts to the library
 
-A part is a folder under `archplus/tools/partslib/library/` containing a `part.json` manifest. The
-scan walks the whole tree, so the intermediate folders (`furniture/`,
-`kitchen/`, `sanitary/`, `fittings/`) are grouping for humans only — nothing
-reads them. Parts are found by their manifest, and grouped in the browser by
-the **facets** they declare.
+A part is a folder under `archplus/tools/partslib/library/<family>/<part>/`
+containing a `part.json` manifest — e.g. all 31 shipped parts currently live
+under one family, `basic/`. Unlike the old category folders this replaced,
+the family level is not cosmetic: a family can hold a `_shared.py` with
+massing reused by several of its parts (see 2b), and a part's id is derived
+from its full path, e.g. `basic/mirror`. Parts are found by their manifest,
+and grouped in the browser by the **facets** they declare — that grouping is
+independent of the family folder a part happens to live in.
+
+> **One-time break (2026-08-17).** Part ids are now derived from the folder
+> path, so `mirror` became `basic/mirror`. A document saved before this keeps
+> its geometry — the object holds its own cached shape and ArchPlus warns
+> `part 'mirror' is not in the library` rather than touching it — but its
+> `Parameters` group disappears from the property editor (the properties are
+> hidden, not merely locked). Delete and re-place the part to get parametric
+> editing back.
 
 There are two ways to give a part its geometry, and only one of them involves
 writing code:
@@ -194,12 +205,11 @@ a manufacturer's download, or something too organic to describe in code.
 
 ### 1. Write the manifest
 
-`archplus/tools/partslib/library/furniture/my-stool/part.json`:
+`archplus/tools/partslib/library/basic/my-stool/part.json`:
 
 ```json
 {
   "schema": 1,
-  "id": "my-stool",
   "name": "Bar stool",
   "description": "Round stool with a footrest ring.",
   "keywords": ["stool", "bar", "seating"],
@@ -213,12 +223,15 @@ a manufacturer's download, or something too organic to describe in code.
     "SeatDiameter": { "type": "Length", "default": 340 }
   },
   "placement": { "host": "floor", "offset": 0 },
-  "geometry": { "builder": "furniture.bar_stool" }
+  "geometry": {}
 }
 ```
 
-- `schema`, `id`, `name`, `facets` and `geometry` are required; the rest are
-  optional. `id` must be a lowercase slug and unique across the library.
+- `schema`, `name`, `facets` and `geometry` are required; the rest are
+  optional. `id` is *not* one of them — it is derived from the part's folder
+  path (`basic/my-stool` here). A manifest may still declare an `id` to pin
+  identity across a later folder rename; when present it must be a
+  lowercase, `/`-joined slug.
 - Every facet value must already exist in `archplus/tools/partslib/library/facets.json` — an unknown
   one is a hard error, not a silent pass. `room` is multi-valued (a list);
   `function` and `element` take a single string.
@@ -235,19 +248,23 @@ a manufacturer's download, or something too organic to describe in code.
 
 ### 2a. Geometry from a model file (no code)
 
-Drop the file in the part's own folder and point the manifest at the stock
-`asset.single` builder. No Python, no new module:
+Drop the file in the part's own folder and leave the part with no
+`builder.py`. No Python, no new module — the missing file is what tells
+ArchPlus to fall back to the stock asset builder, which reads
+`geometry.assets`:
 
 ```
-archplus/tools/partslib/library/sanitary/geberit-icon/
+archplus/tools/partslib/library/geberit-icon/
   part.json
   geberit-icon.step        # or .brep — as downloaded
   .cache/                  # generated on first load, gitignored
 ```
 
+A purchased single model like this has no family of its own, so it sits
+directly under `library/` rather than inside one — the standalone case.
+
 ```json
 "geometry": {
-  "builder": "asset.single",
   "assets": { "body": "geberit-icon.step" },
   "transform": { "rotate": [90, 0, 0], "anchor": "back-bottom-center" }
 }
@@ -286,17 +303,16 @@ content. Expect to be the first to shake it out.
 
 ### 2b. Write a builder (parametric geometry)
 
-Manifests reference geometry by symbol only — `"module.function"`, resolved
-inside `archplus/tools/partslib/builders/`. A manifest can never name a path or an import
-target outside that package, which is what stops a manifest from executing
-arbitrary code. Adding a new module there is enough; there is no registry to
-update.
+A part's geometry code lives in its own folder, next to its manifest. Create
+`builder.py` beside `part.json` and give it a `build` function — nothing in
+the manifest names it, and nothing needs registering:
 
 ```python
-# archplus/tools/partslib/builders/furniture.py
-from . import _shapes as sh
+# archplus/tools/partslib/library/basic/bar-stool/builder.py
+from archplus.tools.partslib import shapes as sh
 
-def bar_stool(params, assets, ctx):
+
+def build(params, assets, ctx):
     """One docstring line, then the params it reads."""
     height = float(params.get("Height", 750))
     diameter = float(params.get("SeatDiameter", 340))
@@ -308,18 +324,27 @@ The contract is `def build(params, assets, ctx) -> Part.Shape`. Import
 `Part`/`FreeCAD` *inside* the function, never at module scope, so the
 headless test suite can import the module without FreeCAD present.
 
-`_shapes.py` carries the shared massing helpers — `rounded_box`,
+A part with **no** `builder.py` is an asset-only part: it is built by the
+stock asset builder from the file named in `geometry.assets`. The absence of
+the file is what guarantees no code from that folder runs.
+
+`shapes.py` carries the shared massing primitives — `rounded_box`,
 `square_leg`, `roll_top`, `panel_reveal_boxes`, `cut_boxes`, `toe_kick`,
 `bar`, `tube_elbow`, `place`, `fuse_all`. Prefer them: every fillet in there
 already falls back to a sharp edge rather than aborting the build when OCC
 refuses.
+
+Massing shared by several parts in the same family goes in the family's
+`_shared.py`, reached as `from .. import _shared`. That relative import means
+"my family" at any depth, so a part can later move into a sub-family folder
+without editing its builder.
 
 The two routes are not exclusive. `assets` is handed to every builder, so a
 builder can generate the parametric part and load a fixed one for the rest —
 a carcass computed from `params`, with a purchased handle fused on:
 
 ```python
-def cabinet_with_handle(params, assets, ctx):
+def build(params, assets, ctx):
     carcass = sh.rounded_box(params["Width"], params["Depth"], params["Height"])
     handle = assets.shape("handle")        # from the manifest's assets map
     return sh.fuse_all([carcass, sh.place(handle, x=..., y=..., z=...)])
@@ -359,9 +384,9 @@ uv run --with pytest --no-project pytest -q
 ```
 
 `archplus/tools/partslib/tests/test_library_content.py` scans the real shipped library, so a
-malformed manifest, an unknown facet value, an unresolvable builder symbol,
-an unknown placement host or a facet icon missing from disk all fail here
-rather than reaching a user as an empty panel.
+malformed manifest, an unknown facet value, a part folder whose builder.py
+fails to load, an unknown placement host or a facet icon missing from disk
+all fail here rather than reaching a user as an empty panel.
 
 Then open the Parts Library in FreeCAD and look at it. The test suite runs
 without FreeCAD, so it cannot tell you whether a boolean succeeded, a fillet

@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "name": "Nightstand",
+  "description": "Parametric bedside cabinet with a toe-kick recess.",
+  "keywords": [
+    "nightstand",
+    "bedside",
+    "cabinet",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Nightstand",
+    "room": [
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 400
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 350
+    },
+    "Height": {
+      "type": "Length",
+      "default": 500
+    },
+    "DrawerCount": {
+      "type": "Integer",
+      "default": 2
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "Compact",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 400
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 350
+        },
+        "Height": {
+          "type": "Length",
+          "default": 500
+        }
+      }
+    },
+    {
+      "label": "Standard",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 450
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 400
+        },
+        "Height": {
+          "type": "Length",
+          "default": 550
+        }
+      }
+    }
+  ],
+  "geometry": {}
+}

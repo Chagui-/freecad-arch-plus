@@ -51,7 +51,10 @@ _PARAM_PROPERTY_TYPES = {
     "String": "App::PropertyString",
 }
 
-LIBRARY_DIR = os.path.join(_DIR, "library")
+# Defined in geometry.py, which needs it for the builder containment guard
+# and must stay importable without FreeCAD. Re-exported here because
+# gui.py reads partslib_object.LIBRARY_DIR.
+LIBRARY_DIR = partslib_geometry.LIBRARY_DIR
 
 # Spec §9: browsing must never re-parse the whole library. The scanned index
 # is cached outside the add-on folder so a git checkout never clobbers it.

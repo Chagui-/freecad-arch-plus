@@ -56,13 +56,15 @@ def test_every_entry_facet_value_exists_in_the_shipped_vocabulary():
                     % (entry["id"], item, facet_name))
 
 
-def test_every_entry_geometry_builder_resolves():
+def test_every_entry_resolves_to_a_builder():
+    # Local builder.py or the asset fallback - every part must end up with a
+    # callable, and the fallback path must not raise for a part that has no
+    # builder.py of its own.
     index = _scan()
     for entry in index["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        builder_symbol = manifest.get("geometry", {}).get("builder")
-        # Must not raise.
-        partslib_geometry.resolve_builder(builder_symbol)
+        assert callable(partslib_geometry.select_builder(
+            manifest, entry["dir"])), entry["id"]
 
 
 def test_every_part_variant_labels_are_non_empty_and_unique():
@@ -133,3 +135,52 @@ def test_wall_and_ceiling_hosted_parts_exist():
             resolved = partslib_manifest.resolve_variant(manifest, label)
             hosts.add((resolved.get("placement") or {}).get("host", "free"))
     assert "wall" in hosts
+
+
+def test_every_part_lives_under_a_family_folder():
+    # The library tree is also the import tree: a part's builder.py is
+    # imported by the part's path. A part directly at the library root is
+    # allowed by the rules (reserved for one-off imports) but nothing
+    # shipped today is one - all 31 are the house style.
+    for path in partslib_index.manifest_paths(LIBRARY_DIR):
+        relative = os.path.relpath(os.path.dirname(path), LIBRARY_DIR)
+        segments = relative.replace(os.sep, "/").split("/")
+        assert segments[0] == "basic", (
+            "%s is not under library/basic/" % (path,))
+        assert len(segments) == 2, (
+            "%s should be library/basic/<part>/, got %r" % (path, relative))
+
+
+def test_every_shipped_id_is_derived_from_its_folder():
+    # No shipped part pins an explicit id. The override exists for renames;
+    # using it by default would let a folder and an id drift apart.
+    index = _scan()
+    for entry in index["entries"]:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        assert "id" not in manifest, (
+            "%s pins an explicit id" % (entry["path"],))
+        expected = os.path.relpath(
+            entry["dir"], LIBRARY_DIR).replace(os.sep, "/")
+        assert entry["id"] == expected
+
+
+def test_shipped_ids_are_unique():
+    index = _scan()
+    ids = [e["id"] for e in index["entries"]]
+    assert len(ids) == len(set(ids))
+    assert len(ids) == 31
+
+
+def test_every_local_builder_imports_and_exposes_build():
+    # A builder.py that imports FreeCAD at module scope, or that names its
+    # entry point anything but build(), fails here rather than at insert
+    # time inside FreeCAD.
+    index = _scan()
+    checked = 0
+    for entry in index["entries"]:
+        if not partslib_geometry.has_local_builder(entry["dir"]):
+            continue
+        assert callable(partslib_geometry.load_local_builder(entry["dir"])), (
+            "%s has no usable build()" % (entry["id"],))
+        checked += 1
+    assert checked > 0, "no part has a builder.py yet"

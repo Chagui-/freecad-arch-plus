@@ -110,8 +110,7 @@ def _part(**over):
         "name": "Wall-hung WC",
         "facets": {"function": "Sanitary", "element": "WC",
                    "room": ["Bathroom"]},
-        "geometry": {"builder": "asset.single",
-                     "assets": {"body": "wc-360.brep"}},
+        "geometry": {"assets": {"body": "wc-360.brep"}},
     }
     data.update(over)
     return data
@@ -123,7 +122,7 @@ def test_valid_manifest_has_no_errors():
     assert warnings == []
 
 
-@pytest.mark.parametrize("field", ["schema", "id", "name", "facets", "geometry"])
+@pytest.mark.parametrize("field", ["schema", "name", "facets", "geometry"])
 def test_missing_required_field_is_an_error(field):
     data = _part()
     del data[field]
@@ -165,9 +164,16 @@ def test_multi_valued_facet_accepts_a_bare_string():
     assert errors == []
 
 
-def test_geometry_without_builder_is_an_error():
+def test_geometry_with_no_builder_field_is_not_an_error():
+    # The field is gone from the schema: which code runs is decided by
+    # whether the part folder holds a builder.py, not by anything named here.
     errors, _ = pm.validate_manifest(_part(geometry={}), FACETS)
-    assert any("builder" in e for e in errors)
+    assert errors == []
+
+
+def test_non_object_geometry_is_an_error():
+    errors, _ = pm.validate_manifest(_part(geometry="nope"), FACETS)
+    assert any("geometry" in e for e in errors)
 
 
 def test_unknown_top_level_field_is_a_warning_not_an_error():
@@ -332,3 +338,38 @@ def test_merge_params_ignores_an_undeclared_override():
 def test_merge_params_with_no_params_block_is_empty():
     resolved = pm.resolve_variant(_part(), "Default")
     assert pm.merge_params(resolved, {"Width": 750}) == {}
+
+
+def test_a_path_shaped_id_is_valid():
+    assert pm.validate_part_id("basic/coffee-table") == []
+
+
+def test_a_single_segment_id_is_valid():
+    # A standalone part - one reserved for future one-off imports - sits at
+    # the library root and so has a one-segment id.
+    assert pm.validate_part_id("geberit-icon") == []
+
+
+def test_an_uppercase_id_segment_is_rejected():
+    assert pm.validate_part_id("basic/Coffee-Table") != []
+
+
+def test_an_underscore_id_segment_is_rejected():
+    assert pm.validate_part_id("basic/coffee_table") != []
+
+
+def test_an_id_segment_containing_a_dot_is_rejected():
+    # A dot would split the dotted import path used to load builder.py.
+    assert pm.validate_part_id("basic/55.inch") != []
+
+
+def test_an_empty_id_is_rejected():
+    assert pm.validate_part_id("") != []
+
+
+def test_a_manifest_without_an_id_is_valid():
+    # The id is derived from the folder; only an explicit override is checked.
+    data = _part()
+    del data["id"]
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert [e for e in errors if "id" in e] == []

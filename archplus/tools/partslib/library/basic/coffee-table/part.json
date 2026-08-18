@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "name": "Coffee table",
+  "description": "Parametric low table on 4 tapered legs.",
+  "keywords": [
+    "table",
+    "coffee",
+    "living room",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Surface",
+    "element": "Table",
+    "room": [
+      "Living"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 900
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 500
+    },
+    "Height": {
+      "type": "Length",
+      "default": 450
+    },
+    "TopThickness": {
+      "type": "Length",
+      "default": 30
+    },
+    "LegRadius": {
+      "type": "Length",
+      "default": 30
+    },
+    "ApronHeight": {
+      "type": "Length",
+      "default": 55
+    },
+    "ShelfHeight": {
+      "type": "Length",
+      "default": 120
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "variants": [
+    {
+      "label": "Small",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 900
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 500
+        }
+      }
+    },
+    {
+      "label": "Large",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1200
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 650
+        }
+      }
+    }
+  ],
+  "geometry": {}
+}

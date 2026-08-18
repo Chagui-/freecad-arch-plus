@@ -3,6 +3,13 @@
 **Date:** 2026-08-15
 **Status:** Approved for planning
 
+> **Partially superseded (2026-08-17).** §6.4 "Builders are central, not
+> per-part" and the builder-symbol half of §6.3 "Security" are replaced by
+> `2026-08-17-colocated-part-builders-design.md`. Builders now live in each
+> part's folder, resolved by file presence rather than by a manifest symbol.
+> The zero-executable-code property §6.3 reserved for user-supplied libraries
+> is kept and strengthened: an asset-only part is one with no `builder.py`.
+
 ## 1. Purpose
 
 Add a fourth ArchPlus tool: a browsable library of reusable BIM parts — sanitary

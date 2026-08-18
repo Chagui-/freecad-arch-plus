@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "name": "Toilet roll holder",
+  "description": "Wall-mounted roll holder with the roll shown on its spindle.",
+  "keywords": [
+    "toilet roll",
+    "paper",
+    "holder",
+    "accessory",
+    "bathroom",
+    "cloakroom"
+  ],
+  "facets": {
+    "function": "Accessory",
+    "element": "Holder",
+    "room": [
+      "Bathroom"
+    ]
+  },
+  "params": {
+    "PlateWidth": {
+      "type": "Length",
+      "default": 50
+    },
+    "PlateHeight": {
+      "type": "Length",
+      "default": 50
+    },
+    "PlateDepth": {
+      "type": "Length",
+      "default": 12
+    },
+    "ArmLength": {
+      "type": "Length",
+      "default": 70
+    },
+    "RollDiameter": {
+      "type": "Length",
+      "default": 115
+    },
+    "RollWidth": {
+      "type": "Length",
+      "default": 100
+    },
+    "CoreDiameter": {
+      "type": "Length",
+      "default": 45
+    }
+  },
+  "placement": {
+    "host": "wall",
+    "offset": 700
+  },
+  "geometry": {}
+}

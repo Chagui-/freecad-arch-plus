@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "name": "Corner wall cabinet",
+  "description": "L-shaped wall-hung corner unit, hung at the same height as the run.",
+  "keywords": [
+    "kitchen",
+    "corner",
+    "cabinet",
+    "wall",
+    "L-shaped",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 720
+    },
+    "ReturnWidth": {
+      "type": "Length",
+      "default": 350
+    },
+    "ReturnDepth": {
+      "type": "Length",
+      "default": 350
+    }
+  },
+  "placement": {
+    "host": "wall",
+    "offset": 1500
+  },
+  "geometry": {}
+}

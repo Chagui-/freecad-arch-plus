@@ -1,47 +1,9 @@
+import os
+import sys
+
 import pytest
 
 from archplus.tools.partslib import geometry as pg
-
-
-@pytest.mark.parametrize("symbol", [
-    "asset",                      # no function part
-    "",                           # empty
-    "asset.single.extra",         # too many parts
-    "../evil.run",                # path traversal
-    "/abs/path.run",              # absolute path
-    "partslib.builders.asset.single",  # package prefix not allowed
-])
-def test_malformed_builder_symbols_are_rejected(symbol):
-    with pytest.raises(ValueError):
-        pg.resolve_builder(symbol)
-
-
-def test_unknown_builder_module_is_rejected():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("nosuchmodule.single")
-
-
-def test_unknown_builder_function_is_rejected():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.nosuchfunction")
-
-
-def test_stock_asset_builder_resolves():
-    assert callable(pg.resolve_builder("asset.single"))
-
-
-def test_demo_builder_resolves():
-    assert callable(pg.resolve_builder("demo.box"))
-
-
-def test_dunder_attribute_is_not_resolved_as_a_builder():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.__class__")
-
-
-def test_dunder_init_is_not_resolved_as_a_builder():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.__init__")
 
 
 def test_forward_slash_traversal_asset_name_is_rejected():
@@ -111,9 +73,9 @@ def _clean_shape_cache():
     pg.clear_shape_cache()
 
 
-def _manifest(builder="demo.box", params=None, variant=None):
+def _manifest(params=None, variant=None):
     data = {
-        "geometry": {"builder": builder},
+        "geometry": {},
         "params": params or {"Width": {"type": "Length", "default": 100}},
     }
     if variant is not None:
@@ -126,7 +88,8 @@ def _patched_builder(monkeypatch, calls):
         calls.append(dict(params))
         return _CountingShape(len(calls))
 
-    monkeypatch.setattr(pg, "resolve_builder", lambda symbol: _build)
+    monkeypatch.setattr(pg, "select_builder",
+                        lambda resolved, part_dir: _build)
     return calls
 
 
@@ -172,6 +135,31 @@ def test_different_parts_miss_the_cache(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+def test_two_builders_sharing_a_module_do_not_share_a_cache_entry(
+        tmp_path, monkeypatch):
+    # Regression: two builder functions defined in the SAME module (e.g. two
+    # kitchen.* functions such as base_cabinet and wall_cabinet) must not
+    # collide on __module__ alone. A manifest edited to point at a sibling
+    # function in the same module, with identical part_dir/params/variant,
+    # must still get the SIBLING's shape - not the first function's stale
+    # cache entry.
+    def builder_one(params, assets, ctx):
+        return _CountingShape("one")
+
+    def builder_two(params, assets, ctx):
+        return _CountingShape("two")
+
+    builders = [builder_one, builder_two]
+    monkeypatch.setattr(
+        pg, "select_builder", lambda resolved, part_dir: builders.pop(0))
+
+    first = pg.build_shape(_manifest(), str(tmp_path))
+    second = pg.build_shape(_manifest(), str(tmp_path))
+
+    assert first.tag == "one"
+    assert second.tag == "two"
+
+
 def test_clearing_the_cache_forces_a_rebuild(tmp_path, monkeypatch):
     calls = _patched_builder(monkeypatch, [])
     pg.build_shape(_manifest(), str(tmp_path))
@@ -186,3 +174,176 @@ def test_the_cache_is_bounded(tmp_path, monkeypatch):
         pg.build_shape(_manifest(params={
             "Width": {"type": "Length", "default": i}}), str(tmp_path))
     assert len(pg._SHAPE_CACHE) <= pg._SHAPE_CACHE_LIMIT
+
+
+# -- local builder resolution ------------------------------------------------
+
+@pytest.fixture
+def fixture_library(tmp_path, monkeypatch):
+    """A throwaway library root that is importable as a namespace package.
+
+    Points geometry at tmp_path instead of the shipped library, so these
+    tests never create or delete files under library/. tmp_path goes on
+    sys.path so the fixture root imports as a top-level namespace package -
+    no __init__.py anywhere, which is exactly how library/ works.
+    """
+    root = tmp_path / "fixturelib"
+    root.mkdir()
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(pg, "LIBRARY_DIR", str(root))
+    monkeypatch.setattr(pg, "LIBRARY_PACKAGE", "fixturelib")
+    yield root
+    for name in [n for n in list(sys.modules)
+                 if n == "fixturelib" or n.startswith("fixturelib.")]:
+        del sys.modules[name]
+
+
+def _write_builder(part_dir, body="    return 'built'"):
+    part_dir.mkdir(parents=True, exist_ok=True)
+    (part_dir / "builder.py").write_text(
+        "def build(params, assets, ctx):\n%s\n" % body)
+
+
+def test_a_local_builder_resolves(fixture_library):
+    part = fixture_library / "basic" / "television"
+    _write_builder(part)
+
+    builder = pg.load_local_builder(str(part))
+
+    assert builder(None, None, None) == "built"
+
+
+def test_a_local_builder_resolves_for_a_standalone_part(fixture_library):
+    # One-off imports sit at the library root, so a one-segment path must
+    # resolve too.
+    part = fixture_library / "geberit-icon"
+    _write_builder(part)
+
+    assert callable(pg.load_local_builder(str(part)))
+
+
+def test_a_part_directory_outside_the_library_is_rejected(
+        fixture_library, tmp_path):
+    outside = tmp_path / "elsewhere" / "evil"
+    _write_builder(outside)
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(outside))
+
+
+def test_the_library_root_itself_is_not_a_part(fixture_library):
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(fixture_library))
+
+
+def test_a_dot_in_a_path_segment_is_rejected(fixture_library):
+    part = fixture_library / "basic" / "55.inch"
+    _write_builder(part)
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_a_builder_module_without_build_is_rejected(fixture_library):
+    part = fixture_library / "basic" / "nobuild"
+    part.mkdir(parents=True)
+    (part / "builder.py").write_text("def make(params, assets, ctx):\n    pass\n")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_an_imported_name_is_not_accepted_as_build(fixture_library):
+    # `build` must be DEFINED here, not pulled in from elsewhere, so a
+    # star-import cannot smuggle in a callable.
+    part = fixture_library / "basic" / "imported"
+    part.mkdir(parents=True)
+    (part / "builder.py").write_text("from os.path import join as build\n")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(part))
+
+
+def test_has_local_builder_reports_file_presence(fixture_library):
+    with_file = fixture_library / "basic" / "has-one"
+    _write_builder(with_file)
+    without = fixture_library / "basic" / "has-none"
+    without.mkdir(parents=True)
+
+    assert pg.has_local_builder(str(with_file)) is True
+    assert pg.has_local_builder(str(without)) is False
+
+
+def test_a_part_without_a_builder_py_falls_back_to_the_asset_builder(
+        fixture_library):
+    # A part shipping no code at all IS an asset-only part. The absence of
+    # builder.py is the guarantee, rather than a manifest string claiming it.
+    from archplus.tools.partslib import asset
+
+    part = fixture_library / "basic" / "vendor-chair"
+    part.mkdir(parents=True)
+
+    assert pg.select_builder({"geometry": {}}, str(part)) is asset.single
+
+
+def test_a_manifest_builder_symbol_is_ignored(fixture_library):
+    # The field is gone from the schema; a stale one must not resurrect a
+    # resolution path that no longer exists.
+    from archplus.tools.partslib import asset
+
+    part = fixture_library / "basic" / "vendor-chair"
+    part.mkdir(parents=True)
+
+    resolved = {"geometry": {"builder": "anything.at.all"}}
+
+    assert pg.select_builder(resolved, str(part)) is asset.single
+
+
+def test_clearing_the_cache_forgets_imported_library_builders(fixture_library):
+    part = fixture_library / "basic" / "editable"
+    _write_builder(part, "    return 'first'")
+
+    assert pg.load_local_builder(str(part))(None, None, None) == "first"
+
+    (part / "builder.py").write_text(
+        "def build(params, assets, ctx):\n    return 'second'\n")
+    # Without the sys.modules purge the edit is invisible for the rest of
+    # the session, which is the whole point of this call.
+    pg.clear_shape_cache()
+
+    assert pg.load_local_builder(str(part))(None, None, None) == "second"
+
+
+def test_a_symlinked_part_directory_escaping_the_library_is_rejected(
+        fixture_library, tmp_path):
+    # abspath does not resolve symlinks, so a symlinked part folder inside
+    # the library would otherwise pass the commonpath containment check
+    # while actually pointing outside LIBRARY_DIR. index.manifest_paths
+    # never discovers such a folder today (os.walk defaults to
+    # followlinks=False), but the containment guard in load_local_builder
+    # must hold on its own rather than depending on that being true.
+    outside = tmp_path / "elsewhere" / "evil"
+    _write_builder(outside)
+
+    link = fixture_library / "basic" / "escapee"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(str(outside), str(link), target_is_directory=True)
+    except OSError:
+        pytest.skip("platform does not support symlinks")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(link))
+
+
+# -- shared constants ---------------------------------------------------
+
+def test_builder_filename_constant_matches_index():
+    # index.py deliberately does not import geometry.py (it must stay
+    # FreeCAD-free and dependency-light), so the filename the scanner checks
+    # for and the filename the resolver actually imports are two separately
+    # hardcoded strings. If they ever disagree, the scan-time "has a
+    # builder.py" check silently stops matching what select_builder resolves.
+    from archplus.tools.partslib import index as px
+
+    assert pg.BUILDER_FILENAME == px.BUILDER_FILENAME

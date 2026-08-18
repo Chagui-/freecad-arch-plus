@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "name": "Curtain",
+  "description": "Curtain on a rail, gathered into folds. Offset is to the rail height.",
+  "keywords": [
+    "curtain",
+    "drape",
+    "rail",
+    "window",
+    "living",
+    "bedroom",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Screening",
+    "element": "Curtain",
+    "room": [
+      "Living",
+      "Bedroom"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 1600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 2200
+    },
+    "Fullness": {
+      "type": "Length",
+      "default": 110
+    },
+    "RailDiameter": {
+      "type": "Length",
+      "default": 28
+    },
+    "HeaderHeight": {
+      "type": "Length",
+      "default": 60
+    },
+    "FoldCount": {
+      "type": "Integer",
+      "default": 12
+    }
+  },
+  "placement": {
+    "host": "wall",
+    "offset": 2300
+  },
+  "variants": [
+    {
+      "label": "1600 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1600
+        },
+        "FoldCount": {
+          "type": "Integer",
+          "default": 12
+        }
+      }
+    },
+    {
+      "label": "2400 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 2400
+        },
+        "FoldCount": {
+          "type": "Integer",
+          "default": 18
+        }
+      }
+    }
+  ],
+  "geometry": {}
+}
