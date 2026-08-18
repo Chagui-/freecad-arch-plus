@@ -73,13 +73,11 @@ def _clean_shape_cache():
     pg.clear_shape_cache()
 
 
-def _manifest(params=None, variant=None):
+def _manifest(params=None):
     data = {
         "geometry": {},
         "params": params or {"Width": {"type": "Length", "default": 100}},
     }
-    if variant is not None:
-        data["variantLabel"] = variant
     return data
 
 
@@ -119,11 +117,39 @@ def test_different_params_miss_the_cache(tmp_path, monkeypatch):
     assert calls[1]["Width"] == 250
 
 
-def test_different_variants_miss_the_cache(tmp_path, monkeypatch):
-    calls = _patched_builder(monkeypatch, [])
-    pg.build_shape(_manifest(variant="Small"), str(tmp_path))
-    pg.build_shape(_manifest(variant="Large"), str(tmp_path))
-    assert len(calls) == 2
+def test_an_auto_param_reaches_the_builder_as_none(tmp_path, monkeypatch):
+    seen = {}
+
+    def _builder(params, assets, ctx):
+        seen.update(params)
+        return _CountingShape(1)
+
+    monkeypatch.setattr(pg, "select_builder",
+                        lambda manifest, part_dir: _builder)
+    pg.build_shape(
+        {"geometry": {},
+         "params": {"Width": {"type": "Length", "default": 600},
+                    "DoorCount": {"type": "Integer", "default": "auto"}}},
+        str(tmp_path))
+    assert seen == {"Width": 600, "DoorCount": None}
+
+
+def test_a_pinned_value_and_an_auto_param_key_differently(tmp_path, monkeypatch):
+    builds = []
+
+    def _builder(params, assets, ctx):
+        builds.append(dict(params))
+        return _CountingShape(len(builds))
+
+    monkeypatch.setattr(pg, "select_builder",
+                        lambda manifest, part_dir: _builder)
+    data = {"geometry": {},
+            "params": {"DoorCount": {"type": "Integer", "default": "auto"}}}
+    pg.build_shape(data, str(tmp_path))
+    pg.build_shape(data, str(tmp_path), {"DoorCount": 2})
+    assert len(builds) == 2
+    assert builds[0]["DoorCount"] is None
+    assert builds[1]["DoorCount"] == 2
 
 
 def test_different_parts_miss_the_cache(tmp_path, monkeypatch):
@@ -140,7 +166,7 @@ def test_two_builders_sharing_a_module_do_not_share_a_cache_entry(
     # Regression: two builder functions defined in the SAME module (e.g. two
     # kitchen.* functions such as base_cabinet and wall_cabinet) must not
     # collide on __module__ alone. A manifest edited to point at a sibling
-    # function in the same module, with identical part_dir/params/variant,
+    # function in the same module, with identical part_dir/params,
     # must still get the SIBLING's shape - not the first function's stale
     # cache entry.
     def builder_one(params, assets, ctx):
