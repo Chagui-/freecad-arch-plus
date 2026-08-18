@@ -293,3 +293,33 @@ def test_furniture_parts_declare_no_variants():
                     "bookcase", "media-unit"):
         data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
         assert "variants" not in data
+
+
+def test_a_65_inch_television_on_a_stand_is_reachable():
+    # The cell the old flat variant list silently lacked: it shipped
+    # 55-on-stand, 55-wall and 65-wall, but never 65-on-stand.
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
+    params = partslib_manifest.merge_params(
+        data, {"ScreenSize": 65, "Mounting": "stand"})
+    assert params["ScreenSize"] == 65
+    assert params["Mounting"] == "stand"
+    assert partslib_manifest.resolve_placement(data, params) == {
+        "host": "floor", "offset": 0}
+
+
+def test_a_wall_mounted_television_is_wall_hosted():
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
+    params = partslib_manifest.merge_params(data, {"Mounting": "wall"})
+    assert partslib_manifest.resolve_placement(data, params)["host"] == "wall"
+
+
+def test_television_size_drives_the_panel_dimensions():
+    merged = _params("television")
+    assert merged["Width"] is None
+    assert merged["Height"] is None
+
+
+def test_curtain_folds_are_derived():
+    assert _params("curtain")["FoldCount"] is None
