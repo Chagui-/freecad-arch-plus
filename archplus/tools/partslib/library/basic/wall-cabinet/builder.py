@@ -21,7 +21,8 @@ def build(params, assets, ctx):
 
     # The carcass is set back by the handle's own projection, so a proud
     # handle still lands inside the Depth the catalogue advertises - the
-    # same inward-overhang rule the case goods in furniture.py follow.
+    # same inward-overhang rule the other case goods in library/basic/
+    # follow (see e.g. wardrobe/builder.py and bookcase/builder.py).
     clearance = 8.0
     box = sh.rounded_box(width, depth - clearance, height, radius=6)
     box = _shared.doors(box, width, height, door_count, 0.0)

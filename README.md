@@ -384,9 +384,9 @@ uv run --with pytest --no-project pytest -q
 ```
 
 `archplus/tools/partslib/tests/test_library_content.py` scans the real shipped library, so a
-malformed manifest, an unknown facet value, an unresolvable builder symbol,
-an unknown placement host or a facet icon missing from disk all fail here
-rather than reaching a user as an empty panel.
+malformed manifest, an unknown facet value, a part folder whose builder.py
+fails to load, an unknown placement host or a facet icon missing from disk
+all fail here rather than reaching a user as an empty panel.
 
 Then open the Parts Library in FreeCAD and look at it. The test suite runs
 without FreeCAD, so it cannot tell you whether a boolean succeeded, a fillet

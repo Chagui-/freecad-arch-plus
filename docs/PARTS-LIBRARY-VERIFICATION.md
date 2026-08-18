@@ -41,7 +41,8 @@ stand and wall-hosted on a bracket.
 
 There is no FreeCAD in the development environment, so automated
 verification stops at: (1) the headless `pytest -q` suite (manifests
-and facets are well-formed, every `geometry.builder` symbol resolves, every
+and facets are well-formed, every part folder's builder.py (where present)
+loads and exposes a callable build(), every
 variant-label list is non-empty and unique, every declared placement host
 is known, every facet icon exists on disk), and (2) a throwaway script that
 runs every part/variant's builder against a bounding-box-only stand-in for
@@ -53,7 +54,7 @@ D, E, F, G, I, J, K) needs a human-in-FreeCAD pass. In particular, watch
 for:
 
 - Any `PrintWarning`/`PrintError` from a `makeFillet` or boolean op falling
-  back silently (every fillet in `_shapes.py` is wrapped in a try/except that
+  back silently (every fillet in `shapes.py` is wrapped in a try/except that
   degrades to a sharp edge on failure — a part that looks "blockier" than
   intended in the preview is this fallback firing, not a bug to fix blind).
 - The toilet, bathtub, vanity and shower base's oval/recessed geometry

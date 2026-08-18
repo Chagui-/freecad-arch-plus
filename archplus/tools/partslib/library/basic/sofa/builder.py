@@ -46,7 +46,7 @@ def build(params, assets, ctx):
     # never a rounded_box that is then softened on top. Doing both put a
     # raised border round the top face of each arm - the roll died at the
     # corner fillets instead of running through - which is the single
-    # thing that made this sofa look wrong. See _shapes.roll_top.
+    # thing that made this sofa look wrong. See shapes.roll_top.
 
     # Seat base: rolled along its front edge.
     base = Part.makeBox(width, depth, seat_height - foot_height)

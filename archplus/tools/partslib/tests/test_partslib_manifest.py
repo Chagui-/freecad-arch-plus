@@ -110,8 +110,7 @@ def _part(**over):
         "name": "Wall-hung WC",
         "facets": {"function": "Sanitary", "element": "WC",
                    "room": ["Bathroom"]},
-        "geometry": {"builder": "asset.single",
-                     "assets": {"body": "wc-360.brep"}},
+        "geometry": {"assets": {"body": "wc-360.brep"}},
     }
     data.update(over)
     return data

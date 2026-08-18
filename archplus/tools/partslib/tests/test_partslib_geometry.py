@@ -312,3 +312,38 @@ def test_clearing_the_cache_forgets_imported_library_builders(fixture_library):
     pg.clear_shape_cache()
 
     assert pg.load_local_builder(str(part))(None, None, None) == "second"
+
+
+def test_a_symlinked_part_directory_escaping_the_library_is_rejected(
+        fixture_library, tmp_path):
+    # abspath does not resolve symlinks, so a symlinked part folder inside
+    # the library would otherwise pass the commonpath containment check
+    # while actually pointing outside LIBRARY_DIR. index.manifest_paths
+    # never discovers such a folder today (os.walk defaults to
+    # followlinks=False), but the containment guard in load_local_builder
+    # must hold on its own rather than depending on that being true.
+    outside = tmp_path / "elsewhere" / "evil"
+    _write_builder(outside)
+
+    link = fixture_library / "basic" / "escapee"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.symlink(str(outside), str(link), target_is_directory=True)
+    except OSError:
+        pytest.skip("platform does not support symlinks")
+
+    with pytest.raises(ValueError):
+        pg.load_local_builder(str(link))
+
+
+# -- shared constants ---------------------------------------------------
+
+def test_builder_filename_constant_matches_index():
+    # index.py deliberately does not import geometry.py (it must stay
+    # FreeCAD-free and dependency-light), so the filename the scanner checks
+    # for and the filename the resolver actually imports are two separately
+    # hardcoded strings. If they ever disagree, the scan-time "has a
+    # builder.py" check silently stops matching what select_builder resolves.
+    from archplus.tools.partslib import index as px
+
+    assert pg.BUILDER_FILENAME == px.BUILDER_FILENAME

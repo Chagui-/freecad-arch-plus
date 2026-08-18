@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Shared massing helpers for the furniture/sanitary builders.
+# Shared massing helpers for the library's part builders.
 #
 # Every part in this library is built from Part primitives (boxes, cones,
 # cylinders) plus boolean ops and fillets - never sculpted geometry. These
@@ -8,11 +8,13 @@
 # edge" and "oval basin" are each written once and reused across a dozen
 # parts, rather than each builder hand-rolling its own edge-selection logic.
 #
-# No manifest ever names a symbol in this module directly: partslib_geometry
-# only resolves "module.function" one level into partslib_builders, so a
-# part.json can say "furniture.table" but never "_shapes.rounded_box". That
-# is what keeps this a shared internal helper rather than a second builder
-# surface to keep secure.
+# No manifest ever names a symbol in this module, or any other: a part's
+# geometry comes from a builder.py in its own folder, and a part with no
+# builder.py is asset-only. This module is imported directly by whichever
+# builder.py wants it (`from archplus.tools.partslib import shapes as sh`);
+# it is never itself resolved through a manifest, which is what keeps it a
+# shared internal helper rather than a second builder surface to keep
+# secure.
 #
 # Every fillet call is wrapped in a try/except that falls back to the
 # unfilleted shape. There is no FreeCAD available in this development

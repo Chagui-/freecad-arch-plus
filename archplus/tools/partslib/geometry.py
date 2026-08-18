@@ -35,9 +35,13 @@ def load_local_builder(part_dir):
     from where the part lives - so a manifest cannot point at code outside
     its own folder. The library tree is the import tree: no __init__.py is
     needed anywhere under it, because a directory without one is a namespace
-    package, and `from .. import _shared` still resolves inside those."""
-    base = os.path.abspath(LIBRARY_DIR)
-    target = os.path.abspath(part_dir)
+    package, and `from .. import _shared` still resolves inside those.
+
+    Containment is checked against realpath, not abspath: abspath does not
+    resolve symlinks, so a symlinked part folder inside the library would
+    otherwise pass commonpath while actually pointing outside LIBRARY_DIR."""
+    base = os.path.realpath(LIBRARY_DIR)
+    target = os.path.realpath(part_dir)
 
     # Containment, checked the same way AssetLoader.shape() checks asset
     # paths - including the ValueError, which commonpath raises for two
@@ -84,7 +88,10 @@ def select_builder(resolved, part_dir):
     manifest names nothing, so it cannot point at code anywhere - which is a
     stronger guarantee than the symbol it replaced, because "this part ships
     no executable code" is now the absence of a file rather than a claim
-    that has to be kept true."""
+    that has to be kept true.
+
+    `resolved` is retained deliberately for call-site stability and is no
+    longer read here."""
     if has_local_builder(part_dir):
         return load_local_builder(part_dir)
     return asset.single
@@ -117,8 +124,11 @@ class AssetLoader:
         # trusting os.path (whose own separator handling is native-OS-only).
         segments = filename.replace("\\", "/").split("/")
 
-        base = os.path.abspath(self._dir)
-        source = os.path.abspath(os.path.join(base, filename))
+        # realpath, not abspath: abspath does not resolve symlinks, so a
+        # symlinked part folder would otherwise pass commonpath while
+        # actually pointing outside the part directory.
+        base = os.path.realpath(self._dir)
+        source = os.path.realpath(os.path.join(base, filename))
         try:
             contained = os.path.commonpath([base, source]) == base
         except ValueError:
@@ -229,11 +239,13 @@ def build_shape(resolved, part_dir, overrides=None):
     Clicking between two parts therefore paid full price every time.
 
     The key is everything that decides the geometry: which part directory,
-    which builder (module AND function - two builders sharing a module,
-    e.g. two kitchen.* functions, must not collide), which variant, and the
-    fully merged params. Anything a user can change from the UI changes the
-    key, so a stale hit is not reachable by editing a Parameter or switching
-    a variant.
+    which builder (module AND qualname - part_dir alone already determines
+    the builder today, since each folder has at most one build(), but
+    keeping the qualname in the key is harmless and stays correct if a
+    builder is ever composed from more than one in-process callable), which
+    variant, and the fully merged params. Anything a user can change from
+    the UI changes the key, so a stale hit is not reachable by editing a
+    Parameter or switching a variant.
 
     Callers get a COPY. A shape handed to a document object becomes that
     object's, and a caller free to mutate what it was given would otherwise

@@ -103,7 +103,9 @@ archplus/tools/partslib/
   is the correct constraint: a one-off has no family design language to inherit.
 - A part's **id** is its folder path relative to the library root, using `/`
   separators — `basic/mirror` for a family member, `geberit-icon` for a
-  standalone part. Ids therefore have one or two segments.
+  standalone part. Nothing constrains an id to one or two segments: a family
+  member nested more deeply than one level (see §4.4) gets a longer id, and
+  `validate_part_id` accepts any number of segments.
 - Browse taxonomy lives in `facets`, never in the filesystem.
 
 `_shared.py` and `_shared/` are invisible to the index, which walks only for
@@ -194,12 +196,18 @@ callable  build
 
 Mirroring what `AssetLoader.shape()` already does for asset paths:
 
-1. `part_dir` must resolve inside `LIBRARY_DIR` — `os.path.commonpath`, with the
+1. `part_dir` must resolve inside `LIBRARY_DIR` — `os.path.commonpath` on
+   `os.path.realpath` of both sides (realpath, not abspath, so a symlinked
+   part folder cannot resolve to somewhere outside LIBRARY_DIR), with the
    `ValueError` catch for a different drive on Windows.
 2. No path segment may contain `.` — the only character that breaks a dotted
    import.
-3. `build` must be callable and present in `vars(module)`, so an imported or
-   inherited name cannot be used as a builder. Same check as today.
+3. `build` must be callable and its `__module__` must equal the imported
+   module's own name — the strictly stronger check than merely being present
+   in `vars(module)`, since a star-import or an explicit `from x import y as
+   build` also lands `build` in `vars(module)`; checking `__module__` confirms
+   `build` was actually defined in this file, so an imported or inherited name
+   cannot be used as a builder.
 
 `geometry` itself stays required — it carries `assets` and `transform`.
 
