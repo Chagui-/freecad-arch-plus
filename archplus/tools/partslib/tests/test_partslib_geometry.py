@@ -297,3 +297,18 @@ def test_a_manifest_builder_symbol_is_ignored(fixture_library):
     resolved = {"geometry": {"builder": "anything.at.all"}}
 
     assert pg.select_builder(resolved, str(part)) is asset.single
+
+
+def test_clearing_the_cache_forgets_imported_library_builders(fixture_library):
+    part = fixture_library / "basic" / "editable"
+    _write_builder(part, "    return 'first'")
+
+    assert pg.load_local_builder(str(part))(None, None, None) == "first"
+
+    (part / "builder.py").write_text(
+        "def build(params, assets, ctx):\n    return 'second'\n")
+    # Without the sys.modules purge the edit is invisible for the rest of
+    # the session, which is the whole point of this call.
+    pg.clear_shape_cache()
+
+    assert pg.load_local_builder(str(part))(None, None, None) == "second"

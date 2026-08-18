@@ -9,6 +9,7 @@
 
 import importlib
 import os
+import sys
 
 from . import asset
 from . import manifest as partslib_manifest
@@ -178,14 +179,29 @@ _SHAPE_CACHE_LIMIT = 96
 
 
 def clear_shape_cache():
-    """Forget every remembered shape.
+    """Forget every remembered shape, and every imported part builder.
 
     Called whenever the library is rescanned. A part's params are part of
     the cache key, so editing a manifest already misses the cache - but
     editing a BUILDER, or an asset file on disk, would not, and a rescan is
-    the user saying "re-read the library" in as many words."""
+    the user saying "re-read the library" in as many words.
+
+    Now that a part's code lives in its own folder, authoring a part means
+    editing that builder.py - and Python caches an imported module for the
+    life of the session, so the import is a second stale cache. Dropping
+    both is what makes "Rescan library" actually re-read an edited builder
+    instead of appearing to do nothing until FreeCAD restarts."""
     _SHAPE_CACHE.clear()
     del _SHAPE_CACHE_ORDER[:]
+    _forget_library_builders()
+
+
+def _forget_library_builders():
+    """Drop every imported module under the library package."""
+    prefix = LIBRARY_PACKAGE + "."
+    for name in [name for name in list(sys.modules)
+                 if name == LIBRARY_PACKAGE or name.startswith(prefix)]:
+        del sys.modules[name]
 
 
 def _remember_shape(key, shape):

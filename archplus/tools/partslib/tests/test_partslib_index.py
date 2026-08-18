@@ -26,7 +26,9 @@ def _part(part_id, name, **over):
         "name": name,
         "facets": {"function": "Sanitary", "element": "WC",
                    "room": ["Bathroom"]},
-        "geometry": {},
+        # No builder.py on disk and a declared asset: an asset-only part,
+        # which is what the fixture has always meant.
+        "geometry": {"assets": {"body": "wc-360.brep"}},
     }
     data.update(over)
     return data
@@ -382,3 +384,41 @@ def test_an_id_segment_containing_a_dot_is_reported(tmp_path):
 
     assert index["entries"] == []
     assert index["errors"] != []
+
+
+def test_a_part_with_no_builder_and_no_assets_is_an_error(tmp_path):
+    # Forgetting builder.py would otherwise fall through to the asset
+    # builder and fail with "declares no asset 'body'", which names the
+    # wrong problem.
+    root = _library_at(tmp_path, (
+        "basic/forgot-the-builder",
+        _unnamed_part("Forgot", geometry={})))
+
+    index = px.scan(root)
+
+    assert index["entries"] == []
+    assert any("builder.py" in e for e in index["errors"]), index["errors"]
+
+
+def test_a_part_with_a_builder_py_is_accepted(tmp_path):
+    root = _library_at(tmp_path, (
+        "basic/has-a-builder",
+        _unnamed_part("Has One", geometry={})))
+    (tmp_path / "basic" / "has-a-builder" / "builder.py").write_text(
+        "def build(params, assets, ctx):\n    return None\n")
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert [e["id"] for e in index["entries"]] == ["basic/has-a-builder"]
+
+
+def test_an_asset_only_part_needs_no_builder_py(tmp_path):
+    # No builder.py plus declared assets is exactly an asset-only part.
+    root = _library_at(
+        tmp_path, ("basic/vendor-chair", _unnamed_part("Vendor Chair")))
+
+    index = px.scan(root)
+
+    assert index["errors"] == []
+    assert [e["id"] for e in index["entries"]] == ["basic/vendor-chair"]
