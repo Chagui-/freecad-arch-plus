@@ -187,8 +187,9 @@ independent of the family folder a part happens to live in.
 > path, so `mirror` became `basic/mirror`. A document saved before this keeps
 > its geometry — the object holds its own cached shape and ArchPlus warns
 > `part 'mirror' is not in the library` rather than touching it — but its
-> Parameters stop being editable. Delete and re-place the part to get
-> parametric editing back.
+> `Parameters` group disappears from the property editor (the properties are
+> hidden, not merely locked). Delete and re-place the part to get parametric
+> editing back.
 
 There are two ways to give a part its geometry, and only one of them involves
 writing code:

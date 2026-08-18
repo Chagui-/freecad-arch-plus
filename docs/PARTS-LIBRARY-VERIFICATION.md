@@ -430,7 +430,8 @@ nothing here is specific to any one machine or username:
 import os, sys, tempfile
 addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
 sys.path.append(addon_dir)
-import Part, partslib_thumbs as pt
+import Part
+import archplus.tools.partslib.thumbs as pt
 thumb_path = os.path.join(tempfile.gettempdir(), "archplus_thumb_test.png")
 print(pt.render_shape(Part.makeBox(360, 540, 400), thumb_path))
 print(thumb_path)
@@ -457,7 +458,7 @@ run time rather than hard-coded:
 import os, sys
 addon_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "ArchPlus")
 sys.path.append(addon_dir)
-import partslib_geometry as pg
+import archplus.tools.partslib.geometry as pg
 
 part_dir = os.path.join(addon_dir, "archplus", "tools", "partslib",
                          "library", "basic", "nightstand")
