@@ -53,8 +53,8 @@ def _paramValue(obj, name, spec):
 
     A Choice property holds the option LABEL, because that is what the user
     reads in the property editor. Map it back to the stable value the
-    manifest and the builder use - by label first, then by position - so
-    renaming a label does not orphan an already-saved object."""
+    manifest and the builder use - by label first, then by position. The
+    positional fallback is for a library edited on disk mid-session."""
     value = getattr(obj, name)
     options = partslib_manifest.choice_options(spec)
     if not options:
@@ -66,6 +66,9 @@ def _paramValue(obj, name, spec):
         labels = list(obj.getEnumerationsOfProperty(name))
         return list(options)[labels.index(value)]
     except Exception:
+        FreeCAD.Console.PrintWarning(
+            "ArchPlus: param %r has unknown choice value %r; using %r\n"
+            % (name, value, list(options)[0]))
         return list(options)[0]
 
 # Defined in geometry.py, which needs it for the builder containment guard
@@ -191,6 +194,8 @@ class _LibraryPart(ArchComponent.Component):
         self._paramNames = names
         self._reseeding = True
         try:
+            existing_auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or [])
+            new_auto = []
             for name, spec in specs.items():
                 prop_type = _PARAM_PROPERTY_TYPES.get(spec.get("type"))
                 if prop_type is None:
@@ -220,12 +225,21 @@ class _LibraryPart(ArchComponent.Component):
                         # Nothing meaningful to seed: execute() writes the
                         # builder's answer in once the shape exists.
                         default = None
+                        if is_new:
+                            new_auto.append(name)
                     if default is not None:
                         setattr(obj, name, default)
             if reseed:
                 setattr(obj, PROP_AUTO_PARAMS,
                         [name for name, spec in specs.items()
-                         if spec.get("default") == partslib_manifest.AUTO])
+                         if name in names
+                         and spec.get("default") == partslib_manifest.AUTO])
+            elif new_auto:
+                # A param the library gained since the document was saved
+                # must start out DERIVED, or the builder receives 0.
+                setattr(obj, PROP_AUTO_PARAMS,
+                        existing_auto + [name for name in new_auto
+                                         if name not in existing_auto])
         finally:
             self._reseeding = False
         # Non-destructive fix for a part switch that declares fewer
@@ -235,7 +249,7 @@ class _LibraryPart(ArchComponent.Component):
         # does nothing. Hide anything in the "Parameters" group `resolved`
         # does not declare, and un-hide what it does - idempotent, and using
         # getGroupOfProperty() so this only ever touches properties in that
-        # PartId or anything inherited from
+        # group, never PartId or anything inherited from
         # ArchComponent.
         for existing in obj.PropertiesList:
             if obj.getGroupOfProperty(existing) == _PARAMS_GROUP:
@@ -307,17 +321,22 @@ class _LibraryPart(ArchComponent.Component):
         # the same reentrancy _declareParamProperties() guards against, and
         # guarded the same way.
         if auto:
-            measured = partslib_geometry.measure(shape)
-            self._reseeding = True
             try:
-                for name in auto:
-                    if name in measured and name in obj.PropertiesList:
-                        setattr(obj, name, measured[name])
-            finally:
-                self._reseeding = False
+                measured = partslib_geometry.measure(shape)
+                self._reseeding = True
+                try:
+                    for name in auto:
+                        if name in measured and name in obj.PropertiesList:
+                            setattr(obj, name, measured[name])
+                finally:
+                    self._reseeding = False
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: cannot write derived params for %s: %s\n"
+                    % (obj.Label, exc))
 
     def onChanged(self, obj, prop):
-        """Changing a Parameter property rebuilds too.
+        """Changing a Parameter property rebuilds.
 
         FreeCAD fires onChanged() for every property as it restores a
         document, so this must not react while "Restore" is in obj.State, or
