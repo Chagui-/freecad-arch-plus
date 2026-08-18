@@ -247,8 +247,12 @@ unaffected by the fallback.
       below the primary fields, including the dimmed italic derived field
       **Doors**. Edit **Doors** and confirm it becomes active rather than
       dimmed; click **Reset** and confirm it returns to the derived state.
+- [ ] **C3.** Edit a primary parameter while the part is still in the panel
+      (for example, set cabinet **Width** to `800`). Confirm a fresh cached
+      preview image appears for the new parameter set under the part's
+      `.cache/` folder, rather than reusing the old preview.
 
-### Task 10 parameter checks
+### Parameter checks
 
 These are the focused checks for the parameter form and object state:
 
@@ -260,17 +264,12 @@ These are the focused checks for the parameter form and object state:
 - [ ] **P3.** Expanding the form shows **WorktopThickness**, **KickHeight**
       and a dimmed italic derived **Doors** field; editing **Doors** un-dims it.
 - [ ] **P4.** **Reset** restores every field and re-dims **Doors**.
-- [ ] **P5.** A television shows **Size (in)** and a **Mounting** dropdown;
-      choosing **Wall-mounted** makes **Place in 3D view** host it on a wall.
-- [ ] **P6.** Grid cards read `Width | Depth | Height` under the part name.
-- [ ] **P7.** A placed object's **Parameters** group is present and no
-      legacy selector is shown.
-- [ ] **P8.** Setting cabinet **Width** to `800` gives the derived **Doors**
-      value `2`.
+- [ ] **P8.** Setting cabinet **Width** to `800` rebuilds the cabinet with two
+      door leaves; count the leaves in the preview geometry.
 - [ ] **P9.** Pin **Doors** to `3` and confirm the pinned value survives
       recompute.
-- [ ] **P10.** **Reload from library** restores the derived **Doors** value
-      (`2` at width `800`) rather than retaining the pin.
+- [ ] **P10.** **Reload from library** restores the cabinet geometry to two
+      door leaves and discards the pinned value.
 - [ ] **P11.** Open an old document: its shape remains unchanged and its
       legacy selector is hidden.
 - [ ] **P12.** A selected television's **Mounting** option changes its host
@@ -290,8 +289,15 @@ These are the focused checks for the parameter form and object state:
       populated, and `IfcType` = `Furniture`. A **Parameters** group is
       present and no legacy selector is shown.
 - [ ] **D3.** Change the object's **Width** to `800` in the property editor.
-      It rebuilds in place and keeps its position. The derived **Doors** value
-      is `2` at that width.
+      It rebuilds in place and keeps its position; the cabinet geometry has two
+      door leaves.
+- [ ] **D8.** Select a television in the browser. It shows **Size (in)** and a
+      **Mounting** dropdown; choosing **Wall-mounted** makes **Place in 3D
+      view** host it on a wall.
+- [ ] **D9.** Confirm grid cards read `Width | Depth | Height` under the part
+      name.
+- [ ] **D10.** Select a placed object. Its **Parameters** group is present and
+      no legacy selector is shown.
 - [ ] **D4 (brief check 12).** Select the WC in the panel, click
       **Place in 3D view**, then click a wall face. It lands at the wall
       base + 400 mm and orients to the wall.
@@ -321,7 +327,6 @@ These are the focused checks for the parameter form and object state:
       (3) the MDI area switches back to the ArchPlus Library tab
       automatically, landing you back where you started rather than
       leaving you on the 3D view tab.
-
 
 ## Part E — IFC properties and export round-trip (deferred, Task 10)
 
@@ -357,8 +362,9 @@ These are the focused checks for the parameter form and object state:
 - [ ] **F3 (Check 2 from the Task 10/11 fix round — derived values restore
       safely).** Place a Base cabinet, pin **Doors** to `3`, and confirm the
       custom value survives recompute. Right-click → **Reload from library**.
-      **Expected:** Reload succeeds, the derived **Doors** value returns to the
-      builder's answer (`2` for width `800`), and no exception/traceback appears.
+      **Expected:** Reload succeeds, the cabinet geometry returns to two door
+      leaves for width `800`, the pin is discarded, and no exception/traceback
+      appears.
 - [ ] **F4 (deferred, Task 11).** Right-click a placed part, choose
       **Reload from library** after having renamed/deleted its `id` from
       the library entirely (simulate by temporarily renaming the part's

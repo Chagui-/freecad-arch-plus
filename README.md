@@ -236,10 +236,11 @@ a manufacturer's download, or something too organic to describe in code.
   one is a hard error, not a silent pass. `room` is multi-valued (a list);
   `function` and `element` take a single string.
 - `params` become editable properties on the placed object. Types:
-  `Length`, `Angle`, `Integer`, `Bool`, `String`.
+  `Length`, `Angle`, `Integer`, `Bool`, `String`, `Choice`.
 - `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
   `offset` is millimetres from that surface — e.g. a wall cabinet uses
   `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
+
 | key | meaning |
 |---|---|
 | `params.<name>.ui` | `"primary"` shows the param in the browser panel. Absent means it sits behind **More parameters**. |
