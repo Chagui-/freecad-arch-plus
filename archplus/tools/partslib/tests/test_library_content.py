@@ -187,8 +187,9 @@ def test_every_local_builder_imports_and_exposes_build():
 
 
 def _entry(index, part_id):
+    """Match either a full id or a part folder within any family."""
     for entry in index["entries"]:
-        if entry["id"] == part_id or entry["id"] == "basic/" + part_id:
+        if entry["id"] == part_id or entry["id"].endswith("/" + part_id):
             return entry
     raise AssertionError("no such part %r" % (part_id,))
 

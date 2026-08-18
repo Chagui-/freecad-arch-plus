@@ -43,3 +43,19 @@ The brief's helper calls use bare IDs such as `base-cabinet`, while this reposit
 ## Files
 
 Modified manifests and builders under `archplus/tools/partslib/library/basic/`, plus `archplus/tools/partslib/tests/test_library_content.py`.
+
+## Correction follow-up
+
+Changed `_entry()` to match either a full id or a part folder name within any family using `entry["id"].endswith("/" + part_id)`, and added a docstring documenting that deliberate tolerance. This removes the hardcoded `basic/` family assumption while preserving the bare-slug helper interface for later tasks.
+
+Covering test command and output:
+
+`uvx --with pytest pytest archplus/tools/partslib/tests/test_library_content.py -q`
+
+`16 passed in 17.81s`
+
+Full-suite command and output:
+
+`uvx --with pytest pytest archplus -q`
+
+`222 passed in 21.04s`
