@@ -19,15 +19,18 @@
   "params": {
     "BowlWidth": {
       "type": "Length",
-      "default": 380
+      "default": 380,
+      "ui": "primary"
     },
     "BowlDepth": {
       "type": "Length",
-      "default": 700
+      "default": 700,
+      "ui": "primary"
     },
     "BowlHeight": {
       "type": "Length",
-      "default": 400
+      "default": 400,
+      "ui": "primary"
     },
     "TankWidth": {
       "type": "Length",

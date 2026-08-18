@@ -21,11 +21,13 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 600
+      "default": 600,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 800
+      "default": 800,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
@@ -40,33 +42,6 @@
     "host": "wall",
     "offset": 1000
   },
-  "variants": [
-    {
-      "label": "600 x 800",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 600
-        },
-        "Height": {
-          "type": "Length",
-          "default": 800
-        }
-      }
-    },
-    {
-      "label": "900 x 700",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 900
-        },
-        "Height": {
-          "type": "Length",
-          "default": 700
-        }
-      }
-    }
-  ],
+
   "geometry": {}
 }

@@ -17,15 +17,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 450
+      "default": 450,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 450
+      "default": 450,
+      "ui": "primary"
     },
     "SeatHeight": {
       "type": "Length",
-      "default": 450
+      "default": 450,
+      "ui": "primary"
     },
     "SeatThickness": {
       "type": "Length",

@@ -18,15 +18,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 400
+      "default": 400,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 350
+      "default": 350,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 500
+      "default": 500,
+      "ui": "primary"
     },
     "DrawerCount": {
       "type": "Integer",
@@ -37,41 +40,6 @@
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "Compact",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 400
-        },
-        "Depth": {
-          "type": "Length",
-          "default": 350
-        },
-        "Height": {
-          "type": "Length",
-          "default": 500
-        }
-      }
-    },
-    {
-      "label": "Standard",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 450
-        },
-        "Depth": {
-          "type": "Length",
-          "default": 400
-        },
-        "Height": {
-          "type": "Length",
-          "default": 550
-        }
-      }
-    }
-  ],
+
   "geometry": {}
 }

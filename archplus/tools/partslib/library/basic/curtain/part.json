@@ -22,11 +22,13 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1600
+      "default": 1600,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 2200
+      "default": 2200,
+      "ui": "primary"
     },
     "Fullness": {
       "type": "Length",

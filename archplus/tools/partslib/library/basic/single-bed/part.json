@@ -18,11 +18,13 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1050
+      "default": 1050,
+      "ui": "primary"
     },
     "Length": {
       "type": "Length",
-      "default": 2000
+      "default": 2000,
+      "ui": "primary"
     },
     "MattressHeight": {
       "type": "Length",
@@ -38,7 +40,8 @@
     },
     "BaseHeight": {
       "type": "Length",
-      "default": 200
+      "default": 200,
+      "ui": "primary"
     },
     "PillowCount": {
       "type": "Integer",

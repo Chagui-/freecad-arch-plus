@@ -20,15 +20,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 600
+      "default": 600,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 600
+      "default": 600,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 720
+      "default": 720,
+      "ui": "primary"
     },
     "ReturnWidth": {
       "type": "Length",

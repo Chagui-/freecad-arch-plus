@@ -313,6 +313,9 @@ def test_a_wall_mounted_television_is_wall_hosted():
     data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
     params = partslib_manifest.merge_params(data, {"Mounting": "wall"})
     assert partslib_manifest.resolve_placement(data, params)["host"] == "wall"
+    # The old 65-inch wall variant used 1050; approved design deliberately
+    # collapses both sizes to one 1100 offset, so per-size offsets must fail.
+    assert partslib_manifest.resolve_placement(data, params)["offset"] == 1100
 
 
 def test_television_size_drives_the_panel_dimensions():
@@ -323,3 +326,43 @@ def test_television_size_drives_the_panel_dimensions():
 
 def test_curtain_folds_are_derived():
     assert _params("curtain")["FoldCount"] is None
+
+
+def test_no_shipped_manifest_declares_variants():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        assert "variants" not in data, (
+            "%s still declares variants" % (entry["id"],))
+
+
+def test_every_part_marks_at_least_one_primary_param_explicitly():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        marked = [name for name, spec
+                  in partslib_manifest.param_specs(data).items()
+                  if (spec or {}).get("ui") == "primary"]
+        assert marked, "%s marks no ui:primary param" % (entry["id"],)
+
+
+def test_every_primary_param_name_is_declared():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        specs = partslib_manifest.param_specs(data)
+        for name in partslib_manifest.primary_params(data):
+            assert name in specs, (
+                "%s marks unknown primary %r" % (entry["id"], name))
+
+
+def test_a_bath_width_screen_is_reachable_at_walk_in_height():
+    # The old list offered "Bath screen" (800 x 1400) and two walk-in widths
+    # at 1900, so an 800-wide screen at 1900 could not be expressed at all.
+    index = _scan()
+    data = partslib_manifest.load_manifest(
+        _entry(index, "shower-screen")["path"])
+    merged = partslib_manifest.merge_params(
+        data, {"Width": 800, "Height": 1900})
+    assert merged["Width"] == 800
+    assert merged["Height"] == 1900
