@@ -15,75 +15,18 @@
     ]
   },
   "params": {
-    "Width": {
-      "type": "Length",
-      "default": 1200
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 800
-    },
-    "Height": {
-      "type": "Length",
-      "default": 750
-    },
-    "TopThickness": {
-      "type": "Length",
-      "default": 30
-    },
-    "LegRadius": {
-      "type": "Length",
-      "default": 35
-    },
-    "ApronHeight": {
-      "type": "Length",
-      "default": 70
-    }
+    "Width": { "type": "Length", "default": 1200, "ui": "primary" },
+    "Depth": { "type": "Length", "default": 800, "ui": "primary" },
+    "Height": { "type": "Length", "default": 750 },
+    "SeatCount": { "type": "Integer", "default": "auto", "label": "Seats" },
+    "TopThickness": { "type": "Length", "default": 30 },
+    "LegRadius": { "type": "Length", "default": 35 },
+    "ApronHeight": { "type": "Length", "default": 70 }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "4-seat",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1200
-        },
-        "Depth": {
-          "type": "Length",
-          "default": 800
-        }
-      }
-    },
-    {
-      "label": "6-seat",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1600
-        },
-        "Depth": {
-          "type": "Length",
-          "default": 900
-        }
-      }
-    },
-    {
-      "label": "8-seat",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 2000
-        },
-        "Depth": {
-          "type": "Length",
-          "default": 1000
-        }
-      }
-    }
-  ],
+
   "geometry": {}
 }

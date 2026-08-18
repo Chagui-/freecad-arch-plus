@@ -17,70 +17,20 @@
     ]
   },
   "params": {
-    "Width": {
-      "type": "Length",
-      "default": 1600
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 900
-    },
-    "SeatHeight": {
-      "type": "Length",
-      "default": 420
-    },
-    "BackHeight": {
-      "type": "Length",
-      "default": 400
-    },
-    "BackThickness": {
-      "type": "Length",
-      "default": 250
-    },
-    "ArmWidth": {
-      "type": "Length",
-      "default": 220
-    },
-    "ArmHeight": {
-      "type": "Length",
-      "default": 620
-    },
-    "SeatCount": {
-      "type": "Integer",
-      "default": 2
-    }
+    "SeatCount": { "type": "Integer", "default": 2, "ui": "primary",
+                   "label": "Seats" },
+    "Width": { "type": "Length", "default": "auto", "ui": "primary" },
+    "Depth": { "type": "Length", "default": 900, "ui": "primary" },
+    "SeatHeight": { "type": "Length", "default": 420 },
+    "BackHeight": { "type": "Length", "default": 400 },
+    "BackThickness": { "type": "Length", "default": 250 },
+    "ArmWidth": { "type": "Length", "default": 220 },
+    "ArmHeight": { "type": "Length", "default": 620 }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "2-seat",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1600
-        },
-        "SeatCount": {
-          "type": "Integer",
-          "default": 2
-        }
-      }
-    },
-    {
-      "label": "3-seat",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1900
-        },
-        "SeatCount": {
-          "type": "Integer",
-          "default": 3
-        }
-      }
-    }
-  ],
+
   "geometry": {}
 }

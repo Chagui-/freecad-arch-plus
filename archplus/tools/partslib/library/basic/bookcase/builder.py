@@ -16,7 +16,12 @@ def build(params, assets, ctx):
     width = float(params.get("Width", 900))
     depth = float(params.get("Depth", 300))
     height = float(params.get("Height", 1800))
-    shelf_count = max(int(params.get("ShelfCount", 4)), 0)
+    shelf_count = params.get("ShelfCount")
+    if shelf_count is None:
+        # A shelf bay is about 450mm, and the top of the carcass is not a
+        # shelf, so an 1800 case carries three.
+        shelf_count = int(height // 450) - 1
+    shelf_count = max(int(shelf_count), 0)
 
     wall = 20.0
     back_thickness = 10.0

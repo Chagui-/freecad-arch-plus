@@ -247,3 +247,21 @@ def test_every_auto_param_is_derived_by_its_builder():
             assert "is None" in source, (
                 "%s declares %s as auto but its builder never tests for None"
                 % (entry["id"], name))
+
+
+def test_derived_furniture_params_are_declared_auto():
+    for part_id, name in (("sofa", "Width"),
+                          ("dining-table", "SeatCount"),
+                          ("chest-of-drawers", "Height"),
+                          ("bookcase", "ShelfCount"),
+                          ("media-unit", "ShelfCount")):
+        assert _params(part_id)[name] is None, (
+            "%s should declare %s as auto" % (part_id, name))
+
+
+def test_furniture_parts_declare_no_variants():
+    index = _scan()
+    for part_id in ("sofa", "dining-table", "chest-of-drawers",
+                    "bookcase", "media-unit"):
+        data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+        assert "variants" not in data

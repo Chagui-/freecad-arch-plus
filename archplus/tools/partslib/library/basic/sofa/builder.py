@@ -19,14 +19,19 @@ def build(params, assets, ctx):
     lifting the frame off the floor is what stops it looking poured."""
     import Part
 
-    width = float(params.get("Width", 1900))
+    seat_count = max(int(params.get("SeatCount", 2)), 1)
+    width = params.get("Width")
+    if width is None:
+        # 300mm of extra body per seat over a 1300mm single-seat shell - the
+        # 1600 two-seater and 1900 three-seater sold everywhere.
+        width = 1000.0 + 300.0 * seat_count
+    width = float(width)
     depth = float(params.get("Depth", 900))
     seat_height = float(params.get("SeatHeight", 420))
     back_height = float(params.get("BackHeight", 400))
     back_thickness = float(params.get("BackThickness", 250))
     arm_width = float(params.get("ArmWidth", 220))
     arm_height = float(params.get("ArmHeight", 620))
-    seat_count = max(int(params.get("SeatCount", 2)), 1)
 
     inner_width = max(width - 2 * arm_width, 100.0)
     foot_height = min(55.0, seat_height * 0.13)
