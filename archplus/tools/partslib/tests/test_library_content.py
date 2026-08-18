@@ -223,8 +223,10 @@ def test_every_auto_param_is_derived_by_its_builder():
     # The suite cannot call build() - the builders reach shapes.py, which
     # needs Part - so a forgotten derivation would otherwise surface only
     # inside FreeCAD, as int(None). Reading the source is the weaker but
-    # available check: the param must be fetched and tested for None.
+    # available check: each auto param must either be consumed by build(),
+    # with its own nearby None test, or be reported by derived_params().
     import io
+    import sys
 
     index = _scan()
     for entry in index["entries"]:
@@ -240,13 +242,39 @@ def test_every_auto_param_is_derived_by_its_builder():
             % (entry["id"],))
         with io.open(builder_path, "r", encoding="utf8") as handle:
             source = handle.read()
+        lines = source.splitlines()
+        builder = partslib_geometry.load_local_builder(entry["dir"])
+        module = sys.modules[builder.__module__]
+        reporter = getattr(module, "derived_params", None)
+        reported = reporter({}) if callable(reporter) else {}
         for name in auto:
-            assert 'params.get("%s")' % name in source, (
-                "%s declares %s as auto but its builder never reads it"
+            fetch = 'params.get("%s")' % name
+            consumed = False
+            for line_no, line in enumerate(lines):
+                if fetch not in line:
+                    continue
+                nearby = "\n".join(lines[line_no:line_no + 3])
+                if "is None" in nearby:
+                    consumed = True
+                    break
+            assert consumed or name in reported, (
+                "%s declares %s as auto but it is neither consumed by build() "
+                "with an associated None test nor reported by derived_params()"
                 % (entry["id"], name))
-            assert "is None" in source, (
-                "%s declares %s as auto but its builder never tests for None"
-                % (entry["id"], name))
+
+
+def test_dining_table_reports_seats_for_its_shipped_sizes():
+    # The one derivation the suite can actually execute: it is pure Python in
+    # a module-level function, so it needs no Part and no FreeCAD.
+    index = _scan()
+    builder_dir = _entry(index, "dining-table")["dir"]
+    module = partslib_geometry.load_local_builder(builder_dir).__module__
+    import sys
+    derived = sys.modules[module].derived_params
+    assert derived({"Width": 1200})["SeatCount"] == 4
+    assert derived({"Width": 1600})["SeatCount"] == 6
+    assert derived({"Width": 2000})["SeatCount"] == 8
+    assert derived({"Width": 300})["SeatCount"] == 2      # clamped floor
 
 
 def test_derived_furniture_params_are_declared_auto():
