@@ -117,8 +117,11 @@ visibility between params. Nothing in the 31 shipped parts needs them.
 `ifcProperties` merging disappears with variants — a part declares one block.
 No shipped part varied it.
 
-`geometry.build_shape(manifest, part_dir, overrides)` drops the `resolved`
-argument and the `variantLabel` component of its cache key. Auto params enter
+`geometry.build_shape(manifest, part_dir, overrides)` renames its first
+parameter from `resolved` to `manifest` — there is no longer a resolved
+variant, only the manifest — and drops the `variantLabel` component of its
+cache key. `select_builder(resolved, part_dir)`, whose first argument is
+already documented as retained-but-unread, is renamed to match. Auto params enter
 the key as `None`, which is correct: a pinned 800 and an auto value that
 computes to 800 are different objects to the user, and keying them apart costs
 nothing.
@@ -141,8 +144,11 @@ if door_count is None:
 door_count = max(int(door_count), 0)
 ```
 
-`builders/__init__.py` documents it: a param may arrive as `None`, meaning
-derive it.
+Each part's builder is its own `library/basic/<part>/builder.py`, discovered
+by file presence (`geometry.select_builder`), so there is no registry to
+update — the change is local to the twelve parts that need it. README §2b
+("Write a builder") and the `build_shape` docstring gain the rule: a declared
+param may arrive as `None`, meaning derive it.
 
 `index.py` entries drop `"variants"` and carry the whole `params` block, so the
 grid renders without opening every manifest. `CACHE_VERSION` → 2: the entry
@@ -280,12 +286,11 @@ Notes on the structurally interesting rows:
 The other 11 parts declare no variants and need only `ui: "primary"` marks plus
 key reordering.
 
-**Builders touched (12):** `kitchen.base_cabinet`, `kitchen.wall_cabinet`,
-`kitchen.gas_hob`, `furniture.wardrobe`, `furniture.sofa`,
-`furniture.dining_table`, `furniture.bookcase`, `furniture.media_unit`,
-`furniture.chest_of_drawers`, `fittings.curtain`, `fittings.television`,
-`sanitary.vanity`. Each gains one `if params.get(X) is None:` derivation,
-stated once, replacing the dead `.get(name, default)` fallback.
+**Builders touched (12)**, each at `library/basic/<part>/builder.py`:
+`base-cabinet`, `wall-cabinet`, `gas-hob`, `wardrobe`, `sofa`,
+`dining-table`, `bookcase`, `media-unit`, `chest-of-drawers`, `curtain`,
+`television`, `vanity`. Each gains one `if params.get(X) is None:`
+derivation, stated once, replacing the dead `.get(name, default)` fallback.
 
 ## 8. Testing
 
@@ -329,3 +334,6 @@ modules, so what remains is property plumbing.
   amendment note pointing here, rather than being silently rewritten.
 - `docs/PARTS-LIBRARY-VERIFICATION.md` replaces its variant-switching steps with
   param-editing ones.
+- `README.md` §2a (the manifest reference) documents `ui`, `label`,
+  `default: "auto"` and `options`, and drops `variants`; §2b documents that a
+  param may arrive as `None`.
