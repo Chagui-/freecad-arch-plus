@@ -96,7 +96,7 @@ def test_ensure_thumbnail_returns_none_when_freecad_is_unimportable(tmp_path, mo
     # to "no thumbnail", never to an exception reaching the caller.
     monkeypatch.setitem(sys.modules, "FreeCAD", None)
     entry = {"id": "nope", "dir": str(tmp_path)}
-    resolved = {"geometry": {"builder": "demo.box"}, "params": {}}
+    resolved = {"geometry": {}, "params": {}}
     assert pt.ensure_thumbnail(entry, resolved) is None
 
 
@@ -118,7 +118,7 @@ def test_ensure_thumbnail_does_not_rebuild_a_part_already_marked_failed(
     # asserting inside the monkeypatched build_shape proves it is never
     # even attempted, not just that the render is skipped.
     entry = {"id": "always-fails", "dir": str(tmp_path)}
-    resolved = {"geometry": {"builder": "demo.box"}, "params": {}}
+    resolved = {"geometry": {}, "params": {}}
     path = pt.thumbnail_path(entry["dir"])
     pt.mark_render_failed(path)
 
@@ -137,7 +137,7 @@ def test_ensure_thumbnail_marks_failure_after_a_failed_render(
     # to show for it), so a second call would take the short-circuit path
     # above instead of rebuilding again.
     entry = {"id": "renders-nowhere", "dir": str(tmp_path)}
-    resolved = {"geometry": {"builder": "demo.box"}, "params": {}}
+    resolved = {"geometry": {}, "params": {}}
     path = pt.thumbnail_path(entry["dir"])
 
     monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())

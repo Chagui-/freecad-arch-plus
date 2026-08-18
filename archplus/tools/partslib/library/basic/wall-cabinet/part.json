@@ -68,7 +68,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "kitchen.wall_cabinet"
-  }
+  "geometry": {}
 }

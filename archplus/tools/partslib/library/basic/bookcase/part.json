@@ -3,26 +3,69 @@
   "id": "bookcase",
   "name": "Bookcase",
   "description": "Parametric open-front bookcase with shelf dividers and a toe-kick recess.",
-  "keywords": ["bookcase", "shelving", "storage", "office", "parametric"],
+  "keywords": [
+    "bookcase",
+    "shelving",
+    "storage",
+    "office",
+    "parametric"
+  ],
   "facets": {
     "function": "Storage",
     "element": "Bookcase",
-    "room": ["Office"]
+    "room": [
+      "Office"
+    ]
   },
   "params": {
-    "Width": { "type": "Length", "default": 800 },
-    "Depth": { "type": "Length", "default": 300 },
-    "Height": { "type": "Length", "default": 1800 },
-    "ShelfCount": { "type": "Integer", "default": 3 }
+    "Width": {
+      "type": "Length",
+      "default": 800
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 300
+    },
+    "Height": {
+      "type": "Length",
+      "default": 1800
+    },
+    "ShelfCount": {
+      "type": "Integer",
+      "default": 3
+    }
   },
-  "placement": { "host": "floor", "offset": 0 },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
   "variants": [
-    { "label": "800 mm", "params": {
-        "Width": { "type": "Length", "default": 800 },
-        "ShelfCount": { "type": "Integer", "default": 3 } } },
-    { "label": "1200 mm", "params": {
-        "Width": { "type": "Length", "default": 1200 },
-        "ShelfCount": { "type": "Integer", "default": 4 } } }
+    {
+      "label": "800 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 800
+        },
+        "ShelfCount": {
+          "type": "Integer",
+          "default": 3
+        }
+      }
+    },
+    {
+      "label": "1200 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1200
+        },
+        "ShelfCount": {
+          "type": "Integer",
+          "default": 4
+        }
+      }
+    }
   ],
-  "geometry": { "builder": "furniture.bookcase" }
+  "geometry": {}
 }

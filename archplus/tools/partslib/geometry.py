@@ -9,11 +9,10 @@
 
 import importlib
 import os
-import re
 
+from . import asset
 from . import manifest as partslib_manifest
 
-BUILDER_PACKAGE = "archplus.tools.partslib.builders"
 CACHE_DIRNAME = ".cache"
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,32 +20,6 @@ LIBRARY_DIR = os.path.join(_DIR, "library")
 LIBRARY_PACKAGE = "archplus.tools.partslib.library"
 BUILDER_MODULE = "builder"
 BUILDER_FILENAME = BUILDER_MODULE + ".py"
-
-_SYMBOL_RE = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$")
-
-
-def resolve_builder(symbol):
-    """Turn a "module.function" symbol into a callable.
-
-    Only names inside the archplus.tools.partslib.builders package resolve. Anything
-    path-like, dotted deeper than one level, or absent raises ValueError."""
-    if not isinstance(symbol, str) or not _SYMBOL_RE.match(symbol):
-        raise ValueError("invalid builder symbol %r" % (symbol,))
-
-    module_name, function_name = symbol.split(".")
-    try:
-        module = importlib.import_module(
-            "%s.%s" % (BUILDER_PACKAGE, module_name))
-    except ImportError as exc:
-        raise ValueError("unknown builder module %r: %s" % (module_name, exc))
-
-    builder = getattr(module, function_name, None)
-    if (function_name.startswith("_")
-            or function_name not in vars(module)
-            or not callable(builder)):
-        raise ValueError("builder %r has no callable %r"
-                         % (module_name, function_name))
-    return builder
 
 
 def has_local_builder(part_dir):
@@ -105,17 +78,15 @@ def load_local_builder(part_dir):
 def select_builder(resolved, part_dir):
     """The callable that builds this part.
 
-    Local-first: a part's own builder.py wins. The manifest's `builder`
-    symbol is a transitional fallback while builders move into part folders
-    (see the plan's Tasks 5-8); once every part has a builder.py it is
-    removed and the last resort is the stock asset builder, which is what an
-    asset-only part - one shipping no code at all - uses."""
+    The file on disk decides: a part with its own builder.py uses it, and a
+    part without one is asset-only and uses the stock asset builder. The
+    manifest names nothing, so it cannot point at code anywhere - which is a
+    stronger guarantee than the symbol it replaced, because "this part ships
+    no executable code" is now the absence of a file rather than a claim
+    that has to be kept true."""
     if has_local_builder(part_dir):
         return load_local_builder(part_dir)
-    symbol = (resolved.get("geometry") or {}).get("builder")
-    if symbol:
-        return resolve_builder(symbol)
-    return resolve_builder("asset.single")
+    return asset.single
 
 
 class AssetLoader:

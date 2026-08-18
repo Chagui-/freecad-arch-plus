@@ -76,7 +76,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "furniture.chest_of_drawers"
-  }
+  "geometry": {}
 }

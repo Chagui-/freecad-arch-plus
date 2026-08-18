@@ -49,7 +49,5 @@
     "host": "floor",
     "offset": 0
   },
-  "geometry": {
-    "builder": "fittings.floor_lamp"
-  }
+  "geometry": {}
 }

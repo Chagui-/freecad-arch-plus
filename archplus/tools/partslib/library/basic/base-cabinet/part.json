@@ -89,7 +89,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "kitchen.base_cabinet"
-  }
+  "geometry": {}
 }

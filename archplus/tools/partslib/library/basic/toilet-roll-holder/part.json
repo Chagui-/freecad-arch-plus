@@ -52,7 +52,5 @@
     "host": "wall",
     "offset": 700
   },
-  "geometry": {
-    "builder": "sanitary.toilet_roll_holder"
-  }
+  "geometry": {}
 }

@@ -3,27 +3,73 @@
   "id": "shower-base",
   "name": "Shower base",
   "description": "Parametric shower tray with a recessed floor (base only - no enclosure).",
-  "keywords": ["shower", "tray", "base", "bathroom", "parametric"],
+  "keywords": [
+    "shower",
+    "tray",
+    "base",
+    "bathroom",
+    "parametric"
+  ],
   "facets": {
     "function": "Sanitary",
     "element": "Shower",
-    "room": ["Bathroom"]
+    "room": [
+      "Bathroom"
+    ]
   },
   "params": {
-    "Width": { "type": "Length", "default": 900 },
-    "Depth": { "type": "Length", "default": 900 },
-    "Height": { "type": "Length", "default": 100 },
-    "RimThickness": { "type": "Length", "default": 40 },
-    "RecessDepth": { "type": "Length", "default": 40 }
+    "Width": {
+      "type": "Length",
+      "default": 900
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 900
+    },
+    "Height": {
+      "type": "Length",
+      "default": 100
+    },
+    "RimThickness": {
+      "type": "Length",
+      "default": 40
+    },
+    "RecessDepth": {
+      "type": "Length",
+      "default": 40
+    }
   },
-  "placement": { "host": "floor", "offset": 0 },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
   "variants": [
-    { "label": "900 x 900 mm", "params": {
-        "Width": { "type": "Length", "default": 900 },
-        "Depth": { "type": "Length", "default": 900 } } },
-    { "label": "1200 x 900 mm", "params": {
-        "Width": { "type": "Length", "default": 1200 },
-        "Depth": { "type": "Length", "default": 900 } } }
+    {
+      "label": "900 x 900 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 900
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 900
+        }
+      }
+    },
+    {
+      "label": "1200 x 900 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1200
+        },
+        "Depth": {
+          "type": "Length",
+          "default": 900
+        }
+      }
+    }
   ],
-  "geometry": { "builder": "sanitary.shower_base" }
+  "geometry": {}
 }

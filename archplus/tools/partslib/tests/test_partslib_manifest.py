@@ -165,9 +165,16 @@ def test_multi_valued_facet_accepts_a_bare_string():
     assert errors == []
 
 
-def test_geometry_without_builder_is_an_error():
+def test_geometry_with_no_builder_field_is_not_an_error():
+    # The field is gone from the schema: which code runs is decided by
+    # whether the part folder holds a builder.py, not by anything named here.
     errors, _ = pm.validate_manifest(_part(geometry={}), FACETS)
-    assert any("builder" in e for e in errors)
+    assert errors == []
+
+
+def test_non_object_geometry_is_an_error():
+    errors, _ = pm.validate_manifest(_part(geometry="nope"), FACETS)
+    assert any("geometry" in e for e in errors)
 
 
 def test_unknown_top_level_field_is_a_warning_not_an_error():

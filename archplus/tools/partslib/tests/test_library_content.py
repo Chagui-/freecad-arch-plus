@@ -56,13 +56,15 @@ def test_every_entry_facet_value_exists_in_the_shipped_vocabulary():
                     % (entry["id"], item, facet_name))
 
 
-def test_every_entry_geometry_builder_resolves():
+def test_every_entry_resolves_to_a_builder():
+    # Local builder.py or the asset fallback - every part must end up with a
+    # callable, and the fallback path must not raise for a part that has no
+    # builder.py of its own.
     index = _scan()
     for entry in index["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        # Must not raise. Local builders are intentionally allowed to replace
-        # the transitional family symbol one part at a time.
-        partslib_geometry.select_builder(manifest, entry["dir"])
+        assert callable(partslib_geometry.select_builder(
+            manifest, entry["dir"])), entry["id"]
 
 
 def test_every_part_variant_labels_are_non_empty_and_unique():

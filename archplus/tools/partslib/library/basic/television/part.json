@@ -114,7 +114,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "fittings.television"
-  }
+  "geometry": {}
 }

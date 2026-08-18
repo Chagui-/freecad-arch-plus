@@ -26,7 +26,7 @@ def _part(part_id, name, **over):
         "name": name,
         "facets": {"function": "Sanitary", "element": "WC",
                    "room": ["Bathroom"]},
-        "geometry": {"builder": "asset.single"},
+        "geometry": {},
     }
     data.update(over)
     return data
@@ -52,8 +52,7 @@ def _unnamed_part(name, **over):
         "name": name,
         "facets": {"function": "Seating", "element": "Chair",
                    "room": ["Kitchen"]},
-        "geometry": {"builder": "asset.single",
-                     "assets": {"body": "chair.brep"}},
+        "geometry": {"assets": {"body": "chair.brep"}},
     }
     data.update(over)
     return data

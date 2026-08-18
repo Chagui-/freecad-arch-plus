@@ -6,47 +6,6 @@ import pytest
 from archplus.tools.partslib import geometry as pg
 
 
-@pytest.mark.parametrize("symbol", [
-    "asset",                      # no function part
-    "",                           # empty
-    "asset.single.extra",         # too many parts
-    "../evil.run",                # path traversal
-    "/abs/path.run",              # absolute path
-    "partslib.builders.asset.single",  # package prefix not allowed
-])
-def test_malformed_builder_symbols_are_rejected(symbol):
-    with pytest.raises(ValueError):
-        pg.resolve_builder(symbol)
-
-
-def test_unknown_builder_module_is_rejected():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("nosuchmodule.single")
-
-
-def test_unknown_builder_function_is_rejected():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.nosuchfunction")
-
-
-def test_stock_asset_builder_resolves():
-    assert callable(pg.resolve_builder("asset.single"))
-
-
-def test_demo_builder_resolves():
-    assert callable(pg.resolve_builder("demo.box"))
-
-
-def test_dunder_attribute_is_not_resolved_as_a_builder():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.__class__")
-
-
-def test_dunder_init_is_not_resolved_as_a_builder():
-    with pytest.raises(ValueError):
-        pg.resolve_builder("asset.__init__")
-
-
 def test_forward_slash_traversal_asset_name_is_rejected():
     # Must be the containment rejection specifically, not the unrelated
     # "missing asset file" ValueError a broken check could fall through to.
@@ -114,9 +73,9 @@ def _clean_shape_cache():
     pg.clear_shape_cache()
 
 
-def _manifest(builder="demo.box", params=None, variant=None):
+def _manifest(params=None, variant=None):
     data = {
-        "geometry": {"builder": builder},
+        "geometry": {},
         "params": params or {"Width": {"type": "Length", "default": 100}},
     }
     if variant is not None:
@@ -315,24 +274,26 @@ def test_has_local_builder_reports_file_presence(fixture_library):
     assert pg.has_local_builder(str(without)) is False
 
 
-def test_a_local_builder_wins_over_a_manifest_symbol(fixture_library):
-    # This is what lets the migration proceed one part at a time: the moment
-    # a part's builder.py lands it takes over, and a part without one still
-    # resolves through its symbol.
-    part = fixture_library / "basic" / "television"
-    _write_builder(part, "    return 'local'")
+def test_a_part_without_a_builder_py_falls_back_to_the_asset_builder(
+        fixture_library):
+    # A part shipping no code at all IS an asset-only part. The absence of
+    # builder.py is the guarantee, rather than a manifest string claiming it.
+    from archplus.tools.partslib import asset
 
-    resolved = {"geometry": {"builder": "asset.single"}, "params": {}}
-    builder = pg.select_builder(resolved, str(part))
-
-    assert builder(None, None, None) == "local"
-
-
-def test_a_part_with_no_local_builder_uses_its_symbol(fixture_library):
     part = fixture_library / "basic" / "vendor-chair"
     part.mkdir(parents=True)
 
-    resolved = {"geometry": {"builder": "asset.single"}, "params": {}}
+    assert pg.select_builder({"geometry": {}}, str(part)) is asset.single
 
-    assert pg.select_builder(resolved, str(part)) is pg.resolve_builder(
-        "asset.single")
+
+def test_a_manifest_builder_symbol_is_ignored(fixture_library):
+    # The field is gone from the schema; a stale one must not resurrect a
+    # resolution path that no longer exists.
+    from archplus.tools.partslib import asset
+
+    part = fixture_library / "basic" / "vendor-chair"
+    part.mkdir(parents=True)
+
+    resolved = {"geometry": {"builder": "anything.at.all"}}
+
+    assert pg.select_builder(resolved, str(part)) is asset.single

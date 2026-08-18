@@ -78,7 +78,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "fittings.curtain"
-  }
+  "geometry": {}
 }

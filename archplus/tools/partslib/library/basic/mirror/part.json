@@ -69,7 +69,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "fittings.mirror"
-  }
+  "geometry": {}
 }

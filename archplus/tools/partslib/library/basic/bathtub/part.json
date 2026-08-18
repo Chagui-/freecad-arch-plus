@@ -3,23 +3,65 @@
   "id": "bathtub",
   "name": "Bathtub",
   "description": "Parametric rounded rectangular tub shell.",
-  "keywords": ["bathtub", "tub", "bath", "bathroom", "parametric"],
+  "keywords": [
+    "bathtub",
+    "tub",
+    "bath",
+    "bathroom",
+    "parametric"
+  ],
   "facets": {
     "function": "Sanitary",
     "element": "Bathtub",
-    "room": ["Bathroom"]
+    "room": [
+      "Bathroom"
+    ]
   },
   "params": {
-    "Width": { "type": "Length", "default": 1700 },
-    "Depth": { "type": "Length", "default": 700 },
-    "Height": { "type": "Length", "default": 550 },
-    "WallThickness": { "type": "Length", "default": 60 },
-    "BottomThickness": { "type": "Length", "default": 80 }
+    "Width": {
+      "type": "Length",
+      "default": 1700
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 700
+    },
+    "Height": {
+      "type": "Length",
+      "default": 550
+    },
+    "WallThickness": {
+      "type": "Length",
+      "default": 60
+    },
+    "BottomThickness": {
+      "type": "Length",
+      "default": 80
+    }
   },
-  "placement": { "host": "floor", "offset": 0 },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
   "variants": [
-    { "label": "1700 mm", "params": { "Width": { "type": "Length", "default": 1700 } } },
-    { "label": "1800 mm", "params": { "Width": { "type": "Length", "default": 1800 } } }
+    {
+      "label": "1700 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1700
+        }
+      }
+    },
+    {
+      "label": "1800 mm",
+      "params": {
+        "Width": {
+          "type": "Length",
+          "default": 1800
+        }
+      }
+    }
   ],
-  "geometry": { "builder": "sanitary.bathtub" }
+  "geometry": {}
 }

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# The stock asset builder. A part backed by a downloaded STEP/BREP file needs
-# no code of its own - it names this builder and supplies metadata, which is
-# what makes third-party content safe: an asset-only part executes no
-# library-supplied code at all.
+# The stock builder for a part that ships no code of its own. A part folder
+# with no builder.py IS an asset-only part: the absence of the file is what
+# guarantees nothing from that folder executes, rather than a manifest
+# string claiming it. That is the property that could let a user-supplied
+# library be admitted as data only.
 
 ASSET_NAME = "body"
 

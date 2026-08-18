@@ -80,7 +80,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "furniture.side_table"
-  }
+  "geometry": {}
 }

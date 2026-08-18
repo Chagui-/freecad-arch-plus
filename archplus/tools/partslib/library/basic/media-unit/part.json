@@ -80,7 +80,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "furniture.media_unit"
-  }
+  "geometry": {}
 }

@@ -44,7 +44,5 @@
     "host": "wall",
     "offset": 1500
   },
-  "geometry": {
-    "builder": "kitchen.corner_wall_cabinet"
-  }
+  "geometry": {}
 }

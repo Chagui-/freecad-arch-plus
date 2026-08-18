@@ -48,7 +48,5 @@
     "host": "floor",
     "offset": 0
   },
-  "geometry": {
-    "builder": "kitchen.oven_cabinet"
-  }
+  "geometry": {}
 }

@@ -81,7 +81,5 @@
       }
     }
   ],
-  "geometry": {
-    "builder": "sanitary.shower_screen"
-  }
+  "geometry": {}
 }

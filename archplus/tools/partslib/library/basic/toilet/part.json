@@ -3,21 +3,53 @@
   "id": "toilet",
   "name": "Toilet",
   "description": "Common-size close-coupled WC: oval bowl with a cistern tank behind it.",
-  "keywords": ["toilet", "wc", "pan", "cistern", "bathroom"],
+  "keywords": [
+    "toilet",
+    "wc",
+    "pan",
+    "cistern",
+    "bathroom"
+  ],
   "facets": {
     "function": "Sanitary",
     "element": "WC",
-    "room": ["Bathroom"]
+    "room": [
+      "Bathroom"
+    ]
   },
   "params": {
-    "BowlWidth": { "type": "Length", "default": 380 },
-    "BowlDepth": { "type": "Length", "default": 700 },
-    "BowlHeight": { "type": "Length", "default": 400 },
-    "TankWidth": { "type": "Length", "default": 370 },
-    "TankDepth": { "type": "Length", "default": 200 },
-    "TankHeight": { "type": "Length", "default": 400 },
-    "SeatThickness": { "type": "Length", "default": 45 }
+    "BowlWidth": {
+      "type": "Length",
+      "default": 380
+    },
+    "BowlDepth": {
+      "type": "Length",
+      "default": 700
+    },
+    "BowlHeight": {
+      "type": "Length",
+      "default": 400
+    },
+    "TankWidth": {
+      "type": "Length",
+      "default": 370
+    },
+    "TankDepth": {
+      "type": "Length",
+      "default": 200
+    },
+    "TankHeight": {
+      "type": "Length",
+      "default": 400
+    },
+    "SeatThickness": {
+      "type": "Length",
+      "default": 45
+    }
   },
-  "placement": { "host": "floor", "offset": 0 },
-  "geometry": { "builder": "sanitary.toilet" }
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {}
 }

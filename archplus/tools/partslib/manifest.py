@@ -158,11 +158,11 @@ def validate_manifest(data, facets):
     errors.extend(_validate_part_facets(data.get("facets"), facets))
 
     geometry = data.get("geometry")
-    if geometry is not None:
-        if not isinstance(geometry, dict):
-            errors.append("geometry must be an object")
-        elif not isinstance(geometry.get("builder"), str):
-            errors.append("geometry has no 'builder'")
+    if geometry is not None and not isinstance(geometry, dict):
+        # `geometry` stays required - it carries `assets` and `transform` -
+        # but it names no builder. Which code runs is decided by whether the
+        # part folder holds a builder.py, so there is nothing here to check.
+        errors.append("geometry must be an object")
 
     for field in data:
         if field not in KNOWN_FIELDS:

@@ -43,7 +43,5 @@
     "host": "wall",
     "offset": 1600
   },
-  "geometry": {
-    "builder": "sanitary.towel_hook"
-  }
+  "geometry": {}
 }
