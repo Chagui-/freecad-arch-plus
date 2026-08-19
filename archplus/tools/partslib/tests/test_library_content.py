@@ -319,6 +319,35 @@ def test_a_curtain_is_just_a_width_and_a_height():
     assert sorted(_params("curtain")) == ["Height", "Width"]
 
 
+def test_the_curtain_fabric_is_a_wave_not_a_row_of_bulges():
+    # The fabric is a thin sheet whose plane waves in and out - not the fat
+    # overlapping cylinders it used to be. The sampler that lays out that
+    # wave is pure math with no Part dependency, so it is exercised here,
+    # headlessly, rather than trusted from inside FreeCAD.
+    from archplus.tools.partslib.library.basic.curtain import builder
+
+    span, folds, fullness, thickness = 1500.0, 12, 110.0, 12.0
+    points = builder._serpentine_samples(span, folds, fullness, thickness)
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+
+    # The wave runs the whole span and starts and ends on the centreline,
+    # where the fabric meets the rail's end caps.
+    assert xs[0] == 0.0
+    assert xs[-1] == span
+    assert abs(ys[0] - fullness / 2.0) < 1e-9
+    assert abs(ys[-1] - fullness / 2.0) < 1e-9
+    # Monotonic along the rail: the sheet never doubles back on itself.
+    assert xs == sorted(xs)
+    # Wave plus its own thickness stays inside the fullness envelope.
+    assert min(ys) >= thickness / 2.0 - 1e-9
+    assert max(ys) <= fullness - thickness / 2.0 + 1e-9
+    # Twelve folds means twelve alternating bulges - not twelve tubes.
+    bulges = sum(1 for i in range(1, len(ys) - 1)
+                 if (ys[i] - ys[i - 1]) * (ys[i + 1] - ys[i]) < 0)
+    assert bulges == folds
+
+
 def test_no_shipped_manifest_declares_variants():
     index = _scan()
     for entry in index["entries"]:
