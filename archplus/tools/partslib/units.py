@@ -128,7 +128,15 @@ def parse_length(text, unit):
     Deliberately strict. A length field is the one place in the panel where
     a misread number silently builds the wrong part, so every case that
     could mean two things - a bare number beside a united one, a comma in
-    front of exactly three digits - is refused rather than guessed."""
+    front of exactly three digits - is refused rather than guessed.
+
+    The comma rule is this function's answer when nothing else can
+    disambiguate. Inside a QDoubleSpinBox it is often not reached: Qt strips
+    the locale's own group separator before valueFromText() is called, so
+    under an English locale "1,500" arrives here as "1500" and means 1500,
+    while "1,5" arrives intact and means 1.5. That is the right answer in
+    both cases - the refusal is the backstop for the caller that has no
+    locale to consult."""
     cleaned = _clean(text)
     if not cleaned:
         return None

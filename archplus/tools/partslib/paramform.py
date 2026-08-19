@@ -84,8 +84,14 @@ class ParamForm(QtGui.QWidget):
         primary = [name for name in (primary or []) if name in self._specs]
         secondary = [name for name in self._specs if name not in primary]
 
-        for column, name in enumerate(primary):
-            self._addField(self._primaryRow, 0, column, name)
+        # One field per ROW, not primary params side by side. The sidebar is
+        # 240-340 px wide (gui.py), so three label+field pairs across left
+        # each spinbox about 40 px - too narrow to show "180.0 cm", let alone
+        # with its spin arrows, and narrowing the pane clipped it further. A
+        # row each gives every field the sidebar's full width and does not
+        # care how many params a part declares.
+        for row, name in enumerate(primary):
+            self._addField(self._primaryRow, row, 0, name)
         for row, name in enumerate(secondary):
             self._addField(self._moreRow, row, 0, name)
 
@@ -163,6 +169,9 @@ class ParamForm(QtGui.QWidget):
         self._widgets[name] = widget
         grid.addWidget(caption, row, column * 2)
         grid.addWidget(widget, row, column * 2 + 1)
+        # Whatever space the row has beyond the caption belongs to the field.
+        grid.setColumnStretch(column * 2, 0)
+        grid.setColumnStretch(column * 2 + 1, 1)
 
     def _onEdited(self, name):
         if name in self._auto:
@@ -201,6 +210,19 @@ class LengthSpinBox(QtGui.QDoubleSpinBox):
         self.setRange(0.0, partslib_units.from_mm(MAX_LENGTH_MM, unit))
         self.setToolTip("In %s. Another unit can be typed in full, "
                         "e.g. 18 mm, 1 m, 2 ft, 5' 6\"." % unit)
+        # Ask for room for the widest value this field can hold, so a layout
+        # squeezes something else instead of silently clipping the unit off
+        # the end of the number.
+        self.setMinimumWidth(self._widthFor(self.textFromValue(self.maximum())))
+
+    def _widthFor(self, text):
+        """Pixels needed for `text` plus the spin arrows and frame."""
+        try:
+            metrics = self.fontMetrics()
+            width = metrics.horizontalAdvance(text)
+        except Exception:
+            return 0
+        return width + 36
 
     def unit(self):
         return self._unit
@@ -221,7 +243,13 @@ class LengthSpinBox(QtGui.QDoubleSpinBox):
         millimetres = partslib_units.parse_length(text, self._unit)
         if millimetres is None:
             return self.value()          # refuse it; keep what was there
-        return partslib_units.from_mm(millimetres, self._unit)
+        # Rounded to the precision the field DISPLAYS. Qt keeps whatever this
+        # returns, so without it "2 ft" showed 61.0 cm while holding 609.6 mm
+        # - the field saying one thing and the part being built as another,
+        # which is the whole complaint that got the W/D/H readout deleted.
+        # decimals() is chosen so a millimetre still survives the rounding.
+        return round(partslib_units.from_mm(millimetres, self._unit),
+                     self.decimals())
 
     def validate(self, text, position):
         if partslib_units.parse_length(text, self._unit) is not None:

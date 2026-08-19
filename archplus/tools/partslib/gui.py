@@ -8,7 +8,7 @@
 #     a room header) drills into screen two.
 #   - "results": a clickable breadcrumb ("All > Bathroom > Toilets"), a
 #     search field, a card grid of parts, and a detail sidebar (preview,
-#     name, parameter form, W/D/H, description, Place in 3D view).
+#     name, parameter form, description, Place in 3D view).
 #
 # PartsLibraryPanel itself is a plain QWidget that knows nothing about docks
 # or MDI sub-windows - showPanel() below is the one place that hosts it, and
@@ -33,7 +33,6 @@ _DIR = os.path.dirname(__file__)     # archplus/tools/partslib/ itself
 from . import index as partslib_index
 from . import theme as partslib_theme
 from . import thumbs as partslib_thumbs
-from . import units as partslib_units
 
 # partslib_object is imported lazily, inside the functions that need it
 # (refresh(), _onPlace()) rather than here at module scope. It imports
@@ -391,7 +390,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.addWidget(splitter, 1)
 
     def _buildDetail(self, layout):
-        """Preview, name, parameter form, measurements, description, Place."""
+        """Preview, name, parameter form, description, Place."""
         self.preview = self._makePreviewWidget()
         self.preview.setMinimumHeight(_PREVIEW_HEIGHT)
         layout.addWidget(self.preview)
@@ -415,11 +414,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._paramTimer.setInterval(250)
         self._paramTimer.timeout.connect(self._refreshPreview)
 
-        self.metrics = QtGui.QLabel("")
-        metricsFont = QtGui.QFont("Monospace")
-        metricsFont.setStyleHint(QtGui.QFont.TypeWriter)
-        self.metrics.setFont(metricsFont)
-        layout.addWidget(self.metrics)
+        # There used to be a W/D/H readout here, measured from the built
+        # shape. It went because it earned its keep only when it disagreed
+        # with the fields above it - and disagreeing is exactly what a
+        # measurement of the real geometry does: the vanity's 85 cm Height is
+        # a 105 cm part once its backsplash and tap are counted. A user reads
+        # a second set of W/D/H as the same numbers restated, so a 1 mm
+        # difference reads as a bug rather than as information. The fields are
+        # the part's dimensions now; this label only reports a failed build.
+        self.buildError = QtGui.QLabel("")
+        self.buildError.setWordWrap(True)
+        layout.addWidget(self.buildError)
 
         self.description = QtGui.QLabel("")
         self.description.setWordWrap(True)
@@ -981,7 +986,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         if entry is None:
             self.detailName.setText("")
             self.paramForm.setSpecs({}, [])
-            self.metrics.setText("")
+            self.buildError.setText("")
             self.description.setText("")
             return
 
@@ -1009,7 +1014,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         return entry, manifest, self.paramForm.values()
 
     def _refreshPreview(self):
-        """Build the selected parameters and show them with measurements."""
+        """Build the selected parameters and show the result."""
         from . import geometry as partslib_geometry
         from . import manifest as partslib_manifest
 
@@ -1022,8 +1027,9 @@ class PartsLibraryPanel(QtGui.QWidget):
             shape = partslib_geometry.build_shape(
                 manifest, entry["dir"], overrides)
         except Exception as exc:
-            self.metrics.setText("Cannot build this part: %s" % exc)
+            self.buildError.setText("Cannot build this part: %s" % exc)
             return
+        self.buildError.setText("")
         timer.mark("build")
 
         # An "auto" param can only be one of the shape's own dimensions
@@ -1032,16 +1038,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # us. This is what the derived_params() hook used to be for, back
         # when a count could be declared auto and no measurement could
         # reach it.
-        metrics = partslib_geometry.measure(shape)
-        self.paramForm.setDerived(metrics)
-        # Same unit as the fields above it: a summary that reads in a
-        # different unit from the parameters it summarises is a bug report
-        # waiting to happen.
-        unit = partslib_units.display_unit(None, partslib_units.is_imperial())
-        self.metrics.setText(
-            "W %s   D %s   H %s"
-            % tuple(partslib_units.format_length(metrics[axis], unit)
-                    for axis in ("Width", "Depth", "Height")))
+        self.paramForm.setDerived(partslib_geometry.measure(shape))
 
         if _PREVIEW_LIVE:
             try:

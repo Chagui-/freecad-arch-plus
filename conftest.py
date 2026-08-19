@@ -65,6 +65,18 @@ class _FakeDoubleSpinBox(_FakeWidget):
     def toolTip(self):
         return self._tip
 
+    def minimum(self):
+        return self._min
+
+    def maximum(self):
+        return self._max
+
+    def setMinimumWidth(self, pixels):
+        # No font metrics exist headlessly, so LengthSpinBox's sizing falls
+        # back to 0 here. What the tests cover is that asking for a width
+        # cannot raise; the pixel arithmetic itself is GUI-only.
+        self._minimum_width = pixels
+
 
 # --- Fake geometry kernel objects -----------------------------------------
 class _Vector:

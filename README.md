@@ -124,12 +124,11 @@ message instead of a blank void.
   group it declares.
 - **Search** — a live search box filters the grid by name, keyword and
   description as you type.
-- **Live preview with derived measurements** — selecting a part shows a 3D
-  preview and a `W × D × H` readout measured from the built shape, never
-  authored by hand, so the stated size can never disagree with the geometry.
+- **Live preview** — selecting a part builds it and shows a 3D preview.
 - **Declared parameters** — parts expose primary parameters in the browser and
   keep additional parameters behind **More parameters**; editing them rebuilds
-  the shape and measurements in place.
+  the shape in place. A parameter declared `"auto"` is measured back off the
+  built shape, so a derived dimension can never disagree with the geometry.
 - **Host-aware click-to-place** — click **Place**, then click a floor or
   wall face: the part drops to the correct height for its declared host
   (e.g. a wall-hung WC lands at the wall base plus its mounting height) and

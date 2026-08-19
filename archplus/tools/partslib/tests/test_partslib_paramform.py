@@ -40,7 +40,9 @@ def test_the_displayed_text_carries_the_unit():
 def test_a_typed_unit_is_converted_into_the_fields_unit():
     field = _field("cm")
     assert field.valueFromText("18 mm") == 1.8
-    assert field.valueFromText("2 ft") == 60.96
+    # 2 ft is 60.96 cm, taken at the precision the field shows - see
+    # test_a_typed_value_is_taken_at_the_precision_the_field_shows.
+    assert field.valueFromText("2 ft") == 61.0
 
 
 def test_text_that_is_not_a_length_keeps_the_value_the_field_had():
@@ -81,3 +83,24 @@ def test_a_length_past_the_cap_is_clamped_rather_than_built():
     field = _field("cm")
     field.setMmValue(10 * pf.MAX_LENGTH_MM)
     assert field.mmValue() == pf.MAX_LENGTH_MM
+
+
+def test_a_typed_value_is_taken_at_the_precision_the_field_shows():
+    # Real Qt keeps whatever valueFromText returns without rounding it to
+    # decimals(), so "2 ft" in a centimetre field displayed 61.0 cm while
+    # holding 609.6 mm. The field must not show one number and build another:
+    # 61.0 cm is what the user is looking at, so 610 mm is what it means.
+    field = _field("cm")
+    assert field.valueFromText("2 ft") == 61.0
+    field.setValue(field.valueFromText("2 ft"))
+    assert field.mmValue() == 610.0
+
+
+def test_rounding_to_the_shown_precision_keeps_a_millimetre_intact():
+    # The decimals are chosen so 1 mm survives (see units.LENGTH_UNITS), so
+    # rounding to them must not cost a millimetre anywhere.
+    for unit in ("mm", "cm", "m", "in", "ft"):
+        field = _field(unit)
+        assert abs(field.valueFromText("18 mm")
+                   - pf.partslib_units.from_mm(18, unit)) < 0.51 / (
+                       pf.partslib_units.factor(unit)), unit
