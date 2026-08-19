@@ -373,3 +373,66 @@ def test_builder_filename_constant_matches_index():
     from archplus.tools.partslib import index as px
 
     assert pg.BUILDER_FILENAME == px.BUILDER_FILENAME
+
+
+# -- measure ----------------------------------------------------------------
+# Part.Shape.BoundBox is CONSERVATIVE: OCC bounds the control points of a
+# curved surface rather than the surface, so a rounded part measures larger
+# than it is. Against the real FreeCAD 1.1 kernel the shipped library
+# overshoots by up to 9.9 mm (bathtub: 1709.89 for a declared 1700) and by
+# 0.61 mm on the king bed. measure() feeds the derived "auto" params written
+# back onto a placed part, so that overshoot becomes a stored dimension.
+
+class _Box:
+    def __init__(self, x, y, z):
+        self.XLength, self.YLength, self.ZLength = x, y, z
+
+
+class _MeasurableShape:
+    """A shape whose loose and tight bounding boxes disagree, as a real
+    filleted shape's do."""
+
+    def __init__(self):
+        self.BoundBox = _Box(1709.89, 700.13, 600.0)
+        self.optimal_calls = 0
+
+    def optimalBoundingBox(self, *args):
+        self.optimal_calls += 1
+        return _Box(1700.0, 700.0, 600.0)
+
+
+def test_measure_reports_the_tight_bounding_box():
+    assert pg.measure(_MeasurableShape()) == {
+        "Width": 1700.0, "Depth": 700.0, "Height": 600.0}
+
+
+def test_measure_falls_back_to_the_loose_box_when_the_tight_one_fails():
+    class _Failing(_MeasurableShape):
+        def optimalBoundingBox(self, *args):
+            raise RuntimeError("no triangulation")
+
+    assert pg.measure(_Failing())["Width"] == 1709.89
+
+
+def test_measure_falls_back_when_the_shape_has_no_tight_box_at_all():
+    class _Old:
+        BoundBox = _Box(1709.89, 700.13, 600.0)
+
+    assert pg.measure(_Old())["Width"] == 1709.89
+
+
+def test_the_tight_box_is_computed_once_per_shape():
+    # It costs about as much as building the shape (330 ms on the king bed),
+    # and browsing re-measures a shape the build cache already returned.
+    shape = _MeasurableShape()
+    pg.measure(shape)
+    pg.measure(shape)
+    assert shape.optimal_calls == 1
+
+
+def test_clearing_the_cache_forgets_remembered_measurements():
+    shape = _MeasurableShape()
+    pg.measure(shape)
+    pg.clear_shape_cache()
+    pg.measure(shape)
+    assert shape.optimal_calls == 2

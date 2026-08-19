@@ -175,9 +175,52 @@ def measure(shape):
     names come from partslib_manifest.derived_metric_names() so there is one
     definition of what "derived" means, mapped in order onto the bounding
     box's X/Y/Z extents."""
-    box = shape.BoundBox
+    box = _tight_bounding_box(shape)
     lengths = (box.XLength, box.YLength, box.ZLength)
     return dict(zip(partslib_manifest.derived_metric_names(), lengths))
+
+
+def _tight_bounding_box(shape):
+    """The shape's REAL extent, not Part.Shape.BoundBox.
+
+    BoundBox is conservative: OCC bounds the control points of a curved
+    surface rather than the surface itself, so anything rounded measures
+    bigger than it is. Against FreeCAD 1.1 the shipped library overshoots by
+    up to 9.9 mm - the bathtub's declared 1700 measures 1709.89 - and even
+    the king bed is out by 0.61 mm, which is why a bed whose Width field read
+    180.0 cm was summarised as 180.1 cm.
+
+    That is not a cosmetic difference. measure() is what a derived "auto"
+    param is written back from, so a loose box becomes a stored dimension on
+    a placed part.
+
+    optimalBoundingBox() costs about as much as building the shape (330 ms of
+    the king bed's 685 ms), so the answer is remembered per shape: browsing
+    re-measures shapes the build cache is already handing back. The cache
+    holds the shape itself, which is what keeps its id() from being recycled
+    under a later shape while the entry lives."""
+    remembered = _MEASURE_CACHE.get(id(shape))
+    if remembered is not None:
+        return remembered[1]
+    try:
+        box = shape.optimalBoundingBox()
+    except Exception:
+        # AttributeError for a FreeCAD without the method, anything else for
+        # a shape it cannot tessellate: a loose measurement beats refusing to
+        # report a size at all.
+        return shape.BoundBox
+    _remember_measurement(shape, box)
+    return box
+
+
+def _remember_measurement(shape, box):
+    key = id(shape)
+    if key in _MEASURE_CACHE:
+        return
+    _MEASURE_CACHE[key] = (shape, box)
+    _MEASURE_CACHE_ORDER.append(key)
+    while len(_MEASURE_CACHE_ORDER) > _SHAPE_CACHE_LIMIT:
+        _MEASURE_CACHE.pop(_MEASURE_CACHE_ORDER.pop(0), None)
 
 
 # Session cache of built shapes, keyed by everything that determines the
@@ -187,9 +230,15 @@ _SHAPE_CACHE = {}
 _SHAPE_CACHE_ORDER = []
 _SHAPE_CACHE_LIMIT = 96
 
+# id(shape) -> (shape, tight bounding box). See _tight_bounding_box for why
+# the shape is held alongside its measurement.
+_MEASURE_CACHE = {}
+_MEASURE_CACHE_ORDER = []
+
 
 def clear_shape_cache():
-    """Forget every remembered shape, and every imported part builder.
+    """Forget every remembered shape and measurement, and every imported
+    part builder.
 
     Called whenever the library is rescanned. A part's params are part of
     the cache key, so editing a manifest already misses the cache - but
@@ -203,6 +252,8 @@ def clear_shape_cache():
     instead of appearing to do nothing until FreeCAD restarts."""
     _SHAPE_CACHE.clear()
     del _SHAPE_CACHE_ORDER[:]
+    _MEASURE_CACHE.clear()
+    del _MEASURE_CACHE_ORDER[:]
     _forget_library_builders()
 
 
