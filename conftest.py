@@ -21,6 +21,63 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 
+# --- Qt widget stand-ins (installed into the fake PySide below) -----------
+class _FakeWidget:
+    """Enough QWidget for a panel class statement to execute."""
+
+    def __init__(self, parent=None):
+        self._parent = parent
+
+
+class _FakeDoubleSpinBox(_FakeWidget):
+    """QDoubleSpinBox as far as LengthSpinBox uses it.
+
+    setValue() rounds to decimals() and clamps to the range because the real
+    widget does, and LengthSpinBox's millimetre round-trip depends on both."""
+
+    def __init__(self, parent=None):
+        _FakeWidget.__init__(self, parent)
+        self._value = 0.0
+        self._decimals = 2
+        self._min = 0.0
+        self._max = 99.99
+        self._tip = ""
+
+    def setDecimals(self, places):
+        self._decimals = int(places)
+
+    def decimals(self):
+        return self._decimals
+
+    def setRange(self, low, high):
+        self._min, self._max = float(low), float(high)
+
+    def setValue(self, value):
+        value = round(float(value), self._decimals)
+        self._value = max(self._min, min(self._max, value))
+
+    def value(self):
+        return self._value
+
+    def setToolTip(self, text):
+        self._tip = text
+
+    def toolTip(self):
+        return self._tip
+
+    def minimum(self):
+        return self._min
+
+    def maximum(self):
+        return self._max
+
+    def setMinimumWidth(self, pixels):
+        # No font metrics exist headlessly, so LengthSpinBox's sizing falls
+        # back to 0 here. What the tests cover is that asking for a width
+        # cannot raise; the pixel arithmetic itself is GUI-only.
+        self._minimum_width = pixels
+
+
 # --- Fake geometry kernel objects -----------------------------------------
 class _Vector:
     def __init__(self, x=0.0, y=0.0, z=0.0):
@@ -114,11 +171,21 @@ def _install_fakes():
     freecadgui.addCommand = lambda name, obj: None
     sys.modules["FreeCADGui"] = freecadgui
 
-    # PySide.QtGui / QtCore — bare placeholders; widgets are never built in the
-    # tested code paths.
+    # PySide.QtGui / QtCore — placeholders. Most widgets are never built in
+    # the tested code paths, but paramform.LengthSpinBox subclasses
+    # QDoubleSpinBox and carries real logic (the millimetre boundary and the
+    # validator states), so the stand-in below implements the parts of that
+    # class the logic leans on: rounding to decimals() and clamping to the
+    # range, both of which real QDoubleSpinBox.setValue() does.
     pyside = types.ModuleType("PySide")
     qtgui = types.ModuleType("PySide.QtGui")
     qtcore = types.ModuleType("PySide.QtCore")
+    qtgui.QWidget = _FakeWidget
+    qtgui.QDoubleSpinBox = _FakeDoubleSpinBox
+    qtgui.QValidator = types.SimpleNamespace(
+        Invalid="invalid", Intermediate="intermediate",
+        Acceptable="acceptable")
+    qtcore.Signal = lambda *a, **k: None
     pyside.QtGui = qtgui
     pyside.QtCore = qtcore
     sys.modules["PySide"] = pyside

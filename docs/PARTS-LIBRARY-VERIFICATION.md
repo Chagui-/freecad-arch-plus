@@ -196,9 +196,9 @@ unaffected by the fallback.
 - [ ] **B7.** Clear the search. Select **Base cabinet** in the grid. The
       detail sidebar shows a preview, the part name, primary parameter labels
       and the description. Its grid card reads `Width | Depth | Height`.
-- [ ] **B8.** In the parameter form, type `800` into **Width**. The value is
-      accepted and the preview/readout changes to `W 800` after one debounced
-      rebuild, not once per keystroke.
+- [ ] **B8.** In the parameter form, type `80` into **Width** (the fields are
+      in centimetres). The value is accepted and the preview rebuilds to an
+      800 mm cabinet after one debounced rebuild, not once per keystroke.
 - [ ] **B9 (empty/error safety).** Confirm no traceback ever appeared while
       opening the panel and browsing this session — the categories screen,
       breadcrumb, grid and sidebar all rendered without a Python console
@@ -238,8 +238,7 @@ unaffected by the fallback.
 - [ ] **C1 (the preview half of B7).** With Base cabinet selected, confirm
       the detail sidebar shows a rendered still image of the part (not a
       live/rotatable 3D view — that is expected on FreeCAD 1.1, see the
-      caveat above), alongside the name, parameter form, measurements and
-      description. Confirm the Report view shows at most ONE
+      caveat above), alongside the name, parameter form and description. Confirm the Report view shows at most ONE
       "live 3D preview is unavailable on this FreeCAD build" warning for the
       whole session, not one per part selected. The bar for this check is
       "the sidebar shows a still preview", not "the live preview embeds".
@@ -259,8 +258,8 @@ These are the focused checks for the parameter form and object state:
 - [ ] **P1.** Selecting a base cabinet shows **Width**, **Depth** and
       **Height** as editable fields, with **More parameters** collapsed beneath
       them.
-- [ ] **P2.** Typing `800` into **Width** rebuilds the preview once, not once
-      per keystroke, and updates the W/D/H readout.
+- [ ] **P2.** Typing `80` into **Width** rebuilds the preview once, not once
+      per keystroke.
 - [ ] **P3.** Expanding the form shows **WorktopThickness**, **KickHeight**
       and a dimmed italic derived **Doors** field; editing **Doors** un-dims it.
 - [ ] **P4.** **Reset** restores every field and re-dims **Doors**.
@@ -274,6 +273,43 @@ These are the focused checks for the parameter form and object state:
       legacy selector is hidden.
 - [ ] **P12.** A selected television's **Mounting** option changes its host
       placement without changing the part's other parameters.
+
+### Display-unit checks
+
+Length fields are pinned to centimetres (inches under an imperial schema),
+not to the FreeCAD unit schema itself — `part.json` and every property on a
+placed part stay in millimetres. Only U1 and U2 can be checked headlessly;
+the rest need the real widget, and U3 is the one piece of this whose
+FreeCAD-side answer no test can prove (`units.is_imperial()` reads the live
+schema through an API this project cannot exercise outside the app).
+
+- [ ] **U1.** Selecting a base cabinet shows **Width** as `60.0 cm`, not
+      `600 mm`, one field per row, with the value AND its unit fully visible.
+      Drag the splitter to make the sidebar as narrow as it goes and confirm
+      nothing is clipped.
+- [ ] **U2.** Type `800 mm` into **Width**. The field settles on `80.0 cm`
+      and the preview rebuilds to an 800 mm cabinet. Repeat with `2 ft`
+      (→ `60.96 cm`) and, in a `"` field, `5' 6"`.
+- [ ] **U3.** Set **Edit → Preferences → General → Units** to
+      *Building US (ft-in)* and reselect the part. Every length field now
+      reads in inches (**Width** ≈ `23.62 in`). Switch back to *Standard (mm)* and reselect: the fields return to
+      centimetres — NOT to millimetres, which is the point of pinning them.
+      If a metric schema ever shows inches, `units.is_imperial()` misread the
+      schema; report the schema name.
+- [ ] **U4.** Type nonsense (`abc`) into a length field and press Tab. The
+      field keeps the value it had; it does not fall to `0` and does not
+      rebuild the part.
+- [ ] **U6.** Type `2 ft` into a centimetre **Width** field. It settles on
+      `61.0 cm` and the part is built 610 mm wide - the number shown is the
+      number built, not 60.96 cm rounded for display.
+- [ ] **U7.** Select the **King bed**. Its **Width** field reads `180.0 cm`
+      and the placed part measures 1800 mm, not 1800.61 mm. (This is the
+      overshoot that used to make the deleted W/D/H readout say `180.1 cm`;
+      `geometry.measure()` now uses the tight bounding box.)
+- [ ] **U5.** Place the part, select it, and confirm the property editor's
+      **Width** still shows the FreeCAD unit schema's own unit (millimetres
+      under *Standard*). The panel is the only surface that pins a unit; a
+      placed part remains an ordinary `App::PropertyLength`.
 
 ## Part D — Placement
 
