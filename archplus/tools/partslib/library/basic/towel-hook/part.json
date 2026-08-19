@@ -31,14 +31,6 @@
       "type": "Length",
       "default": 65,
       "ui": "primary"
-    },
-    "PlateDepth": {
-      "type": "Length",
-      "default": 12
-    },
-    "ArmDiameter": {
-      "type": "Length",
-      "default": 14
     }
   },
   "placement": {

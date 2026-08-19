@@ -35,18 +35,6 @@
     "BackHeight": {
       "type": "Length",
       "default": 460
-    },
-    "BackThickness": {
-      "type": "Length",
-      "default": 220
-    },
-    "ArmWidth": {
-      "type": "Length",
-      "default": 200
-    },
-    "ArmHeight": {
-      "type": "Length",
-      "default": 640
     }
   },
   "placement": {

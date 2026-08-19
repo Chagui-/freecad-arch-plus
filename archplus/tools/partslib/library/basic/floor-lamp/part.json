@@ -33,18 +33,6 @@
       "type": "Length",
       "default": 300,
       "ui": "primary"
-    },
-    "StemDiameter": {
-      "type": "Length",
-      "default": 30
-    },
-    "ShadeHeight": {
-      "type": "Length",
-      "default": 320
-    },
-    "ShadeTopDiameter": {
-      "type": "Length",
-      "default": 260
     }
   },
   "placement": {

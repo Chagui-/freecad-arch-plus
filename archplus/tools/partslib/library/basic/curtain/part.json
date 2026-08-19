@@ -29,23 +29,6 @@
       "type": "Length",
       "default": 2200,
       "ui": "primary"
-    },
-    "Fullness": {
-      "type": "Length",
-      "default": 110
-    },
-    "RailDiameter": {
-      "type": "Length",
-      "default": 28
-    },
-    "HeaderHeight": {
-      "type": "Length",
-      "default": 60
-    },
-    "FoldCount": {
-      "type": "Integer",
-      "default": "auto",
-      "label": "Folds"
     }
   },
   "placement": {

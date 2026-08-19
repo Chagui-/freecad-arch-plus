@@ -32,22 +32,6 @@
       "type": "Length",
       "default": 900,
       "ui": "primary"
-    },
-    "WorktopThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "KickHeight": {
-      "type": "Length",
-      "default": 100
-    },
-    "ReturnWidth": {
-      "type": "Length",
-      "default": 600
-    },
-    "ReturnDepth": {
-      "type": "Length",
-      "default": 600
     }
   },
   "placement": {

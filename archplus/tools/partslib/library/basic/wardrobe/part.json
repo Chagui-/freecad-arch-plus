@@ -18,8 +18,7 @@
   "params": {
     "Width": { "type": "Length", "default": 1000, "ui": "primary" },
     "Height": { "type": "Length", "default": 2000, "ui": "primary" },
-    "Depth": { "type": "Length", "default": 600, "ui": "primary" },
-    "DoorCount": { "type": "Integer", "default": "auto", "label": "Doors" }
+    "Depth": { "type": "Length", "default": 600, "ui": "primary" }
   },
   "placement": {
     "host": "floor",

@@ -31,10 +31,7 @@
       }
     },
     "Width": { "type": "Length", "default": "auto" },
-    "Height": { "type": "Length", "default": "auto" },
-    "PanelThickness": { "type": "Length", "default": 60 },
-    "BezelWidth": { "type": "Length", "default": 18 },
-    "StandHeight": { "type": "Length", "default": 90 }
+    "Height": { "type": "Length", "default": "auto" }
   },
   "placement": {
     "host": "floor",

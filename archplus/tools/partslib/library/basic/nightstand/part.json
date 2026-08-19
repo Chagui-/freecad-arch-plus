@@ -30,10 +30,6 @@
       "type": "Length",
       "default": 500,
       "ui": "primary"
-    },
-    "DrawerCount": {
-      "type": "Integer",
-      "default": 2
     }
   },
   "placement": {

@@ -32,22 +32,6 @@
       "type": "Length",
       "default": 550,
       "ui": "primary"
-    },
-    "TopThickness": {
-      "type": "Length",
-      "default": 25
-    },
-    "LegSize": {
-      "type": "Length",
-      "default": 45
-    },
-    "ShelfHeight": {
-      "type": "Length",
-      "default": 140
-    },
-    "DrawerHeight": {
-      "type": "Length",
-      "default": 90
     }
   },
   "placement": {

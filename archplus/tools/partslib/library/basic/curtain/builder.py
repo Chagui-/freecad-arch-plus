@@ -25,11 +25,8 @@ def build(params, assets, ctx):
     fullness = float(params.get("Fullness", 110))
     rail_diameter = float(params.get("RailDiameter", 28))
     header_height = float(params.get("HeaderHeight", 60))
-    fold_count = params.get("FoldCount")
-    if fold_count is None:
-        # One fold roughly every 133mm of rail: 1600 gives 12, 2400 gives 18.
-        fold_count = int(width // 133)
-    fold_count = max(int(fold_count), 2)
+    # One fold roughly every 133mm of rail: 1600 gives 12, 2400 gives 18.
+    fold_count = max(int(width // 133), 2)
 
     fabric_height = max(height - header_height, 10.0)
     # The rail is what defines the part's Width; the fabric hangs inside it,

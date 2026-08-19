@@ -21,9 +21,7 @@
     "BurnerCount": { "type": "Integer", "default": 4, "ui": "primary",
                      "label": "Burners" },
     "Width": { "type": "Length", "default": "auto", "ui": "primary" },
-    "Depth": { "type": "Length", "default": 520, "ui": "primary" },
-    "PlateThickness": { "type": "Length", "default": 40 },
-    "BurnerHeight": { "type": "Length", "default": 25 }
+    "Depth": { "type": "Length", "default": 520, "ui": "primary" }
   },
   "placement": {
     "host": "floor",

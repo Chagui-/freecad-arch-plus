@@ -31,14 +31,6 @@
       "type": "Length",
       "default": 550,
       "ui": "primary"
-    },
-    "WallThickness": {
-      "type": "Length",
-      "default": 60
-    },
-    "BottomThickness": {
-      "type": "Length",
-      "default": 80
     }
   },
   "placement": {

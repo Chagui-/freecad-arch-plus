@@ -19,8 +19,7 @@
   "params": {
     "Width": { "type": "Length", "default": 800, "ui": "primary" },
     "Height": { "type": "Length", "default": 1800, "ui": "primary" },
-    "Depth": { "type": "Length", "default": 300, "ui": "primary" },
-    "ShelfCount": { "type": "Integer", "default": "auto", "label": "Shelves" }
+    "Depth": { "type": "Length", "default": 300, "ui": "primary" }
   },
   "placement": {
     "host": "floor",

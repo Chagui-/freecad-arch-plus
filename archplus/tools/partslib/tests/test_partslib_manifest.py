@@ -466,9 +466,26 @@ def test_auto_default_is_rejected_outside_integer_and_length(kind):
 
 @pytest.mark.parametrize("kind", pm.AUTO_PARAM_TYPES)
 def test_auto_default_is_accepted_on_integer_and_length(kind):
-    data = _part(params={"P": {"type": kind, "default": "auto"}})
+    data = _part(params={"Width": {"type": kind, "default": "auto"}})
     errors, _warnings = pm.validate_manifest(data, FACETS)
     assert errors == []
+
+
+@pytest.mark.parametrize("name", pm.AUTO_PARAM_NAMES)
+def test_auto_default_is_accepted_on_a_measurable_dimension(name):
+    data = _part(params={name: {"type": "Length", "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
+
+
+@pytest.mark.parametrize("name", ["DoorCount", "ShelfCount", "BasinWidth"])
+def test_auto_default_is_rejected_on_anything_a_shape_cannot_report(name):
+    # A derived count has nothing to measure, so object.py's write-back
+    # leaves it at 0 in the property editor forever. Declaring one is now
+    # an error rather than a control that silently does not work.
+    data = _part(params={name: {"type": "Integer", "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any(name in e and "auto" in e for e in errors)
 
 
 def test_choice_param_without_options_is_an_error():

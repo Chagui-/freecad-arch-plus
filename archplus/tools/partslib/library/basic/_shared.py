@@ -72,37 +72,38 @@ def pulls(width, height, door_count, base_z, y, vertical=True):
     return pulls
 
 
-def table(params, assets, ctx):
+def table(params, assets, ctx, top_thickness=30.0, leg_radius=30.0,
+          apron_height=70.0, shelf_height=0.0):
     """A rectangular top on 4 square legs, tied by an apron frame.
 
-    Params: Width, Depth, Height, TopThickness, LegRadius, ApronHeight,
-    ApronThickness, ApronInset, ShelfHeight (mm).
+    Params: Width, Depth, Height (mm). The proportions arrive as keyword
+    arguments rather than params, because they are what distinguishes one
+    table from another rather than anything a user sets: a coffee table is
+    a dining table with a shallower apron and a lower shelf, and that is a
+    fact about coffee tables, not a preference.
 
     Legs are square posts, not turned cylinders: a thin cylinder renders as
     a wire at thumbnail size, while a square post of the same nominal size
-    keeps a lit face and a shadowed one. `LegRadius` still drives the size
-    (it is the half-width of the post) so existing manifests need no edit.
+    keeps a lit face and a shadowed one. `leg_radius` still drives the
+    size - it is the half-width of the post.
 
     The apron is what separates a table from a slab on sticks. It is built
     as four rails rather than one solid block: a block under the top just
     reads as a thicker top, whereas an open frame leaves the daylight
     between the legs that the eye actually uses to read the shape.
 
-    `ShelfHeight` adds a lower shelf between the legs when non-zero - the
+    `shelf_height` adds a lower shelf between the legs when non-zero - the
     detail that most distinguishes a coffee table from a scaled-down dining
     table, which is otherwise the same object."""
     width = float(params.get("Width", 1600))
     depth = float(params.get("Depth", 900))
     height = float(params.get("Height", 750))
-    top_thickness = min(float(params.get("TopThickness", 30)), height - 10)
-    leg_radius = float(params.get("LegRadius", 30))
+    top_thickness = min(top_thickness, height - 10)
 
     leg_height = max(height - top_thickness, 10.0)
-    apron_height = min(float(params.get("ApronHeight", 70)),
-                       leg_height * 0.35)
-    apron_thickness = float(params.get("ApronThickness", 22))
-    apron_inset = float(params.get("ApronInset", 45))
-    shelf_height = float(params.get("ShelfHeight", 0))
+    apron_height = min(apron_height, leg_height * 0.35)
+    apron_thickness = 22.0
+    apron_inset = 45.0
 
     top = sh.rounded_box(width, depth, top_thickness, radius=20)
     top = sh.soften_top(top, 5)
@@ -163,7 +164,10 @@ def bed(params, assets, ctx):
     headboard_height = float(params.get("HeadboardHeight", 900))
     headboard_thickness = float(params.get("HeadboardThickness", 60))
     base_height = float(params.get("BaseHeight", 200))
-    pillow_count = max(int(params.get("PillowCount", 2)), 0)
+    # A single bed takes one pillow across, a double or wider takes two.
+    # Nobody specifies this; it follows from the width, and getting it
+    # wrong is what made a single bed look like a small double.
+    pillow_count = 1 if width < 1400 else 2
 
     # Divan base, inset all round so it reads as a plinth the mattress
     # overhangs rather than as one continuous block with the mattress.

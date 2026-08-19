@@ -20,11 +20,8 @@ def build(params, assets, ctx):
     top_thickness = float(params.get("TopThickness", 25))
     plinth_height = float(params.get("PlinthHeight", 60))
     door_width = float(params.get("DoorWidth", 420))
-    shelf_count = params.get("ShelfCount")
-    if shelf_count is None:
-        # One open bay per metre of run: 1600 gives one, 2000 gives two.
-        shelf_count = int(width // 1000)
-    shelf_count = max(int(shelf_count), 0)
+    # One open bay per metre of run: 1600 gives one, 2000 gives two.
+    shelf_count = max(int(width // 1000), 0)
 
     carcass_height = height - top_thickness
     door_width = min(door_width, width * 0.35)

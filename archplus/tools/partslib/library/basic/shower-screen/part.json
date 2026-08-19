@@ -27,14 +27,6 @@
       "type": "Length",
       "default": 1900,
       "ui": "primary"
-    },
-    "GlassThickness": {
-      "type": "Length",
-      "default": 8
-    },
-    "ProfileWidth": {
-      "type": "Length",
-      "default": 30
     }
   },
   "placement": {

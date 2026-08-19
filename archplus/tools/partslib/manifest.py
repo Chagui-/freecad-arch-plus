@@ -30,6 +30,24 @@ PARAM_TYPES = ("Length", "Angle", "Integer", "Bool", "String", "Choice")
 # sentinel itself).
 AUTO_PARAM_TYPES = ("Integer", "Length")
 
+# ...and only on the three dimensions a built shape can actually report.
+#
+# This is the lesson of the first pass at params, where "auto" was allowed
+# on anything. A derived DIMENSION works: the shape has a bounding box, so
+# object.py can measure what the builder decided and write it back, and the
+# property editor shows a real number. A derived COUNT does not: no shape
+# reports how many doors it has, so DoorCount, ShelfCount, FoldCount and
+# SeatCount all sat at 0 in the property editor forever - a control that
+# looked broken and was.
+#
+# The counts were not worth rescuing, because they were the wrong shape of
+# question. "auto" earns its keep when a count the user KNOWS (a 55" screen,
+# a 4-burner hob, a 3-drawer chest) yields a dimension they would otherwise
+# have to look up. Running it the other way - deriving a count from a
+# dimension the user already set - only shows them arithmetic. So a builder
+# that wants a count now simply decides it, with no property involved.
+AUTO_PARAM_NAMES = ("Width", "Depth", "Height")
+
 # How many params a part that marks none gets promoted to the browser panel.
 PRIMARY_FALLBACK = 3
 
@@ -224,10 +242,17 @@ def _validate_params(declared):
                 "param %r has unknown type %r (expected one of: %s)"
                 % (name, kind, ", ".join(PARAM_TYPES)))
             continue
-        if spec.get("default") == AUTO and kind not in AUTO_PARAM_TYPES:
-            errors.append(
-                "param %r: an \"auto\" default is only valid on %s params"
-                % (name, " and ".join(AUTO_PARAM_TYPES)))
+        if spec.get("default") == AUTO:
+            if kind not in AUTO_PARAM_TYPES:
+                errors.append(
+                    "param %r: an \"auto\" default is only valid on %s params"
+                    % (name, " and ".join(AUTO_PARAM_TYPES)))
+            elif name not in AUTO_PARAM_NAMES:
+                errors.append(
+                    "param %r: an \"auto\" default is only valid on %s, the "
+                    "dimensions a built shape can report; derive anything "
+                    "else in the builder without declaring a param"
+                    % (name, ", ".join(AUTO_PARAM_NAMES)))
         if kind == "Choice":
             options = spec.get("options")
             if not isinstance(options, dict) or not options:

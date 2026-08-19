@@ -32,14 +32,6 @@
       "type": "Length",
       "default": 720,
       "ui": "primary"
-    },
-    "ReturnWidth": {
-      "type": "Length",
-      "default": 350
-    },
-    "ReturnDepth": {
-      "type": "Length",
-      "default": 350
     }
   },
   "placement": {

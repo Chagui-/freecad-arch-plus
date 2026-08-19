@@ -30,14 +30,6 @@
     "Height": {
       "type": "Length",
       "default": 100
-    },
-    "RimThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "RecessDepth": {
-      "type": "Length",
-      "default": 40
     }
   },
   "placement": {

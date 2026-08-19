@@ -20,12 +20,7 @@
   "params": {
     "Width": { "type": "Length", "default": 600, "ui": "primary" },
     "Depth": { "type": "Length", "default": 500, "ui": "primary" },
-    "Height": { "type": "Length", "default": 850 },
-    "BasinWidth": { "type": "Length", "default": "auto" },
-    "BasinDepth": { "type": "Length", "default": 300 },
-    "BasinRecess": { "type": "Length", "default": 120 },
-    "BacksplashHeight": { "type": "Length", "default": 100 },
-    "DoorCount": { "type": "Integer", "default": 2, "label": "Doors" }
+    "Height": { "type": "Length", "default": 850 }
   },
   "placement": {
     "host": "floor",

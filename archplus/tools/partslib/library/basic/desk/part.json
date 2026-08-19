@@ -32,22 +32,6 @@
       "type": "Length",
       "default": 750,
       "ui": "primary"
-    },
-    "TopThickness": {
-      "type": "Length",
-      "default": 30
-    },
-    "PedestalWidth": {
-      "type": "Length",
-      "default": 400
-    },
-    "PanelThickness": {
-      "type": "Length",
-      "default": 30
-    },
-    "DrawerCount": {
-      "type": "Integer",
-      "default": 3
     }
   },
   "placement": {

@@ -28,14 +28,6 @@
       "type": "Length",
       "default": 800,
       "ui": "primary"
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 30
-    },
-    "FrameWidth": {
-      "type": "Length",
-      "default": 35
     }
   },
   "placement": {

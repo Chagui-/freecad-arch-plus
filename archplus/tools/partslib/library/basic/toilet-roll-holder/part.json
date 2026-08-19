@@ -32,22 +32,6 @@
       "type": "Length",
       "default": 70,
       "ui": "primary"
-    },
-    "PlateDepth": {
-      "type": "Length",
-      "default": 12
-    },
-    "RollDiameter": {
-      "type": "Length",
-      "default": 115
-    },
-    "RollWidth": {
-      "type": "Length",
-      "default": 100
-    },
-    "CoreDiameter": {
-      "type": "Length",
-      "default": 45
     }
   },
   "placement": {

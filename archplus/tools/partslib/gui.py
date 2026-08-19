@@ -21,7 +21,6 @@
 
 import os
 import shutil
-import sys
 import tempfile
 
 
@@ -1026,27 +1025,14 @@ class PartsLibraryPanel(QtGui.QWidget):
             return
         timer.mark("build")
 
+        # An "auto" param can only be one of the shape's own dimensions
+        # (manifest.AUTO_PARAM_NAMES), so measuring the built shape reports
+        # every one of them - there is nothing else for a builder to tell
+        # us. This is what the derived_params() hook used to be for, back
+        # when a count could be declared auto and no measurement could
+        # reach it.
         metrics = partslib_geometry.measure(shape)
-        derived = {}
-        try:
-            builder = partslib_geometry.load_local_builder(entry["dir"])
-        except Exception:
-            builder = None
-        if builder is not None:
-            reporter = getattr(
-                sys.modules.get(builder.__module__),
-                "derived_params", None)
-            if callable(reporter):
-                try:
-                    derived.update(reporter(
-                        partslib_manifest.merge_params(manifest, overrides))
-                        or {})
-                except Exception as exc:
-                    FreeCAD.Console.PrintWarning(
-                        "ArchPlus: %s cannot report derived params: %s\n"
-                        % (entry["id"], exc))
-        derived.update(metrics)
-        self.paramForm.setDerived(derived)
+        self.paramForm.setDerived(metrics)
         self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
                              % (metrics["Width"], metrics["Depth"],
                                 metrics["Height"]))

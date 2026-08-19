@@ -30,21 +30,9 @@
       "default": 450,
       "ui": "primary"
     },
-    "SeatThickness": {
-      "type": "Length",
-      "default": 40
-    },
     "BackHeight": {
       "type": "Length",
       "default": 450
-    },
-    "BackThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "LegRadius": {
-      "type": "Length",
-      "default": 18
     }
   },
   "placement": {

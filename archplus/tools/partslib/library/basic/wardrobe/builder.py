@@ -11,12 +11,9 @@ def build(params, assets, ctx):
     width = float(params.get("Width", 1200))
     depth = float(params.get("Depth", 600))
     height = float(params.get("Height", 2000))
-    door_count = params.get("DoorCount")
-    if door_count is None:
-        # A wardrobe leaf runs about 600mm, and never fewer than two, so the
-        # carcass reads as a wardrobe rather than a tall cupboard.
-        door_count = max(2, int(-(-int(width) // 600)))
-    door_count = max(int(door_count), 1)
+    # A wardrobe leaf runs about 600mm, and never fewer than two, so the
+    # carcass reads as a wardrobe rather than a tall cupboard.
+    door_count = max(2, int(-(-int(width) // 600)))
 
     cornice_height = min(40.0, height * 0.025)
     # Overhang built INWARD: the cornice is the full advertised Width/Depth

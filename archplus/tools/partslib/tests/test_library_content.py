@@ -185,14 +185,21 @@ def _params(part_id, overrides=None):
     return partslib_manifest.merge_params(data, overrides)
 
 
-def test_derived_kitchen_and_sanitary_params_are_declared_auto():
-    for part_id, name in (("base-cabinet", "DoorCount"),
-                          ("wall-cabinet", "DoorCount"),
-                          ("wardrobe", "DoorCount"),
-                          ("gas-hob", "Width"),
-                          ("vanity", "BasinWidth")):
-        assert _params(part_id)[name] is None, (
-            "%s should declare %s as auto" % (part_id, name))
+def test_a_hobs_width_follows_its_burner_count():
+    # The only kitchen derivation left, and the shape "auto" is now limited
+    # to: a count the user knows (4 burners) yielding a dimension they would
+    # otherwise look up (600mm).
+    assert _params("gas-hob")["Width"] is None
+    assert _params("gas-hob")["BurnerCount"] == 4
+
+
+def test_cabinet_door_counts_are_not_parameters():
+    # They used to be declared "auto", which meant the property editor
+    # showed 0 forever: no shape can report how many doors it has, so the
+    # write-back had nothing to measure. The builder decides instead.
+    for part_id in ("base-cabinet", "wall-cabinet", "wardrobe"):
+        assert "DoorCount" not in _params(part_id), (
+            "%s should let its builder decide the door count" % (part_id,))
 
 
 def test_kitchen_and_sanitary_parts_declare_no_variants():
@@ -207,8 +214,8 @@ def test_every_auto_param_is_derived_by_its_builder():
     # The suite cannot call build() - the builders reach shapes.py, which
     # needs Part - so a forgotten derivation would otherwise surface only
     # inside FreeCAD, as int(None). Reading the source is the weaker but
-    # available check: each auto param must either be consumed by build(),
-    # with its own nearby None test, or be reported by derived_params().
+    # available check: each auto param must be consumed by build() with its
+    # own nearby None test.
     import io
     import sys
 
@@ -227,10 +234,6 @@ def test_every_auto_param_is_derived_by_its_builder():
         with io.open(builder_path, "r", encoding="utf8") as handle:
             source = handle.read()
         lines = source.splitlines()
-        builder = partslib_geometry.load_local_builder(entry["dir"])
-        module = sys.modules[builder.__module__]
-        reporter = getattr(module, "derived_params", None)
-        reported = reporter({}) if callable(reporter) else {}
         for name in auto:
             fetch = 'params.get("%s")' % name
             consumed = False
@@ -241,34 +244,34 @@ def test_every_auto_param_is_derived_by_its_builder():
                 if "is None" in nearby:
                     consumed = True
                     break
-            assert consumed or name in reported, (
-                "%s declares %s as auto but it is neither consumed by build() "
-                "with an associated None test nor reported by derived_params()"
+            assert consumed, (
+                "%s declares %s as auto but build() never tests it for None, "
+                "so the builder would reach int(None) in FreeCAD"
                 % (entry["id"], name))
 
 
-def test_dining_table_reports_seats_for_its_shipped_sizes():
-    # The one derivation the suite can actually execute: it is pure Python in
-    # a module-level function, so it needs no Part and no FreeCAD.
-    index = _scan()
-    builder_dir = _entry(index, "dining-table")["dir"]
-    module = partslib_geometry.load_local_builder(builder_dir).__module__
-    import sys
-    derived = sys.modules[module].derived_params
-    assert derived({"Width": 1200})["SeatCount"] == 4
-    assert derived({"Width": 1600})["SeatCount"] == 6
-    assert derived({"Width": 2000})["SeatCount"] == 8
-    assert derived({"Width": 300})["SeatCount"] == 2      # clamped floor
+def test_derived_furniture_dimensions_are_declared_auto():
+    # Both survivors run the same way round: a count the user knows drives a
+    # dimension they would otherwise have to look up.
+    for part_id, count, dimension in (("sofa", "SeatCount", "Width"),
+                                      ("chest-of-drawers", "DrawerCount",
+                                       "Height")):
+        merged = _params(part_id)
+        assert merged[dimension] is None, (
+            "%s should declare %s as auto" % (part_id, dimension))
+        assert merged[count] is not None, (
+            "%s needs a real %s to derive %s from"
+            % (part_id, count, dimension))
 
 
-def test_derived_furniture_params_are_declared_auto():
-    for part_id, name in (("sofa", "Width"),
-                          ("dining-table", "SeatCount"),
-                          ("chest-of-drawers", "Height"),
-                          ("bookcase", "ShelfCount"),
-                          ("media-unit", "ShelfCount")):
-        assert _params(part_id)[name] is None, (
-            "%s should declare %s as auto" % (part_id, name))
+def test_shelf_and_seat_counts_are_not_parameters():
+    # Counts derived FROM a dimension the user already set are arithmetic,
+    # not a control - and no shape can report them, so they read 0.
+    for part_id, name in (("bookcase", "ShelfCount"),
+                          ("media-unit", "ShelfCount"),
+                          ("dining-table", "SeatCount")):
+        assert name not in _params(part_id), (
+            "%s should let its builder decide %s" % (part_id, name))
 
 
 def test_furniture_parts_declare_no_variants():
@@ -309,8 +312,10 @@ def test_television_size_drives_the_panel_dimensions():
     assert merged["Height"] is None
 
 
-def test_curtain_folds_are_derived():
-    assert _params("curtain")["FoldCount"] is None
+def test_a_curtain_is_just_a_width_and_a_height():
+    # Fullness, rail diameter, header height and fold count were all things
+    # nobody specifies about a curtain; the builder decides them now.
+    assert sorted(_params("curtain")) == ["Height", "Width"]
 
 
 def test_no_shipped_manifest_declares_variants():

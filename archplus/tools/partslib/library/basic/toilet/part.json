@@ -31,22 +31,6 @@
       "type": "Length",
       "default": 400,
       "ui": "primary"
-    },
-    "TankWidth": {
-      "type": "Length",
-      "default": 370
-    },
-    "TankDepth": {
-      "type": "Length",
-      "default": 200
-    },
-    "TankHeight": {
-      "type": "Length",
-      "default": 400
-    },
-    "SeatThickness": {
-      "type": "Length",
-      "default": 45
     }
   },
   "placement": {

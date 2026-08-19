@@ -17,12 +17,11 @@ def build(params, assets, ctx):
     height = float(params.get("Height", 900))
     worktop = float(params.get("WorktopThickness", 40))
     kick_height = float(params.get("KickHeight", 100))
-    door_count = params.get("DoorCount")
-    if door_count is None:
-        # One door below 700mm; from 700mm up a single leaf is too wide
-        # to swing in a galley, so the carcass is split.
-        door_count = 1 if width < 700 else 2
-    door_count = max(int(door_count), 0)
+    # One door below 700mm; from 700mm up a single leaf is too wide to
+    # swing in a galley, so the carcass is split. The rule follows the
+    # width rather than being asked for: a door count that disagrees with
+    # the carcass it hangs on is never what anyone wanted.
+    door_count = 1 if width < 700 else 2
 
     overhang = min(20.0, depth * 0.04)
     carcass_depth = depth - overhang

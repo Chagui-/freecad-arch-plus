@@ -22,9 +22,7 @@
                      "label": "Drawers" },
     "Width": { "type": "Length", "default": 900, "ui": "primary" },
     "Depth": { "type": "Length", "default": 450, "ui": "primary" },
-    "Height": { "type": "Length", "default": "auto", "ui": "primary" },
-    "TopThickness": { "type": "Length", "default": 30 },
-    "PlinthHeight": { "type": "Length", "default": 70 }
+    "Height": { "type": "Length", "default": "auto", "ui": "primary" }
   },
   "placement": {
     "host": "floor",

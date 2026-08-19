@@ -7,8 +7,9 @@ def build(params, assets, ctx):
     """A close-coupled back-to-wall WC: a D-shaped pan under a closed seat,
     with a full-height cistern, a flat lid and a recessed flush button.
 
-    Params: BowlWidth, BowlDepth, BowlHeight, TankWidth, TankDepth,
-    TankHeight, SeatThickness (mm). Ships as a single common size - see the
+    Params: BowlWidth, BowlDepth, BowlHeight (mm). The cistern and the
+    seat are fixed: both are standard components, not things a drawing
+    specifies. Ships as a single common size - see the
     manifest.
 
     Total height is BowlHeight + TankHeight; the seat sits within the
@@ -18,9 +19,13 @@ def build(params, assets, ctx):
     bowl_width = float(params.get("BowlWidth", 380))
     bowl_depth = float(params.get("BowlDepth", 480))
     bowl_height = float(params.get("BowlHeight", 400))
-    tank_width = float(params.get("TankWidth", 380))
-    tank_depth = float(params.get("TankDepth", 150))
-    tank_height = float(params.get("TankHeight", 350))
+    # A close-coupled cistern is a standard object, not a design choice,
+    # so these are fixed. The figures are the ones the manifest declared
+    # while they were parameters - changing them here would resize every
+    # toilet already placed in a document.
+    tank_width = 370.0
+    tank_depth = 200.0
+    tank_height = 400.0
 
     seat_thickness = float(params.get("SeatThickness", 45))
 
