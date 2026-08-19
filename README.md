@@ -236,7 +236,10 @@ a manufacturer's download, or something too organic to describe in code.
   one is a hard error, not a silent pass. `room` is multi-valued (a list);
   `function` and `element` take a single string.
 - `params` become editable properties on the placed object. Types:
-  `Length`, `Angle`, `Integer`, `Bool`, `String`, `Choice`.
+  `Length`, `Angle`, `Integer`, `Bool`, `String`, `Choice`. Declare only what
+  a drawing or a schedule would actually name — a part averages three. Every
+  proportion the builder can scale from those (panel thicknesses, leg sizes,
+  door and shelf counts) belongs in the builder, not here.
 - `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
   `offset` is millimetres from that surface — e.g. a wall cabinet uses
   `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
@@ -245,19 +248,19 @@ a manufacturer's download, or something too organic to describe in code.
 |---|---|
 | `params.<name>.ui` | `"primary"` shows the param in the browser panel. Absent means it sits behind **More parameters**. |
 | `params.<name>.label` | Display name. The key itself stays the builder argument and the property name. |
-| `params.<name>.default` | A number, a string, or `"auto"` — meaning the builder derives it. |
+| `params.<name>.default` | A number, a string, or `"auto"` — meaning the builder derives it. Only `Width`, `Depth` and `Height` may be `"auto"`: those are what a built shape can be measured for, so the derived value can be read back into the property editor. Anything else would show 0 forever, so derive it in the builder without declaring a param. |
 | `params.<name>.options` | `Choice` only: ordered value to `{label, placement?}`. A selected option's `placement` merges per key over the part's. |
 
 ```json
 "params": {
-  "Width":     { "type": "Length",  "default": 600,    "ui": "primary" },
-  "DoorCount": { "type": "Integer", "default": "auto", "label": "Doors" },
-  "Mounting":  { "type": "Choice",  "default": "stand", "ui": "primary",
-                 "options": {
-                   "stand": { "label": "On stand" },
-                   "wall":  { "label": "Wall-mounted",
-                              "placement": { "host": "wall", "offset": 1100 } }
-                 } }
+  "ScreenSize": { "type": "Integer", "default": 55,     "ui": "primary" },
+  "Width":      { "type": "Length",  "default": "auto" },
+  "Mounting":   { "type": "Choice",  "default": "stand", "ui": "primary",
+                  "options": {
+                    "stand": { "label": "On stand" },
+                    "wall":  { "label": "Wall-mounted",
+                               "placement": { "host": "wall", "offset": 1100 } }
+                  } }
 }
 ```
 
