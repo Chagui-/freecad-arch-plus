@@ -18,58 +18,14 @@
     ]
   },
   "params": {
-    "Width": {
-      "type": "Length",
-      "default": 600
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 520
-    },
-    "PlateThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "BurnerHeight": {
-      "type": "Length",
-      "default": 25
-    },
-    "BurnerCount": {
-      "type": "Integer",
-      "default": 4
-    }
+    "BurnerCount": { "type": "Integer", "default": 4, "ui": "primary",
+                     "label": "Burners" },
+    "Width": { "type": "Length", "default": "auto", "ui": "primary" },
+    "Depth": { "type": "Length", "default": 520, "ui": "primary" }
   },
   "placement": {
     "host": "floor",
     "offset": 860
   },
-  "variants": [
-    {
-      "label": "4 burner",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 600
-        },
-        "BurnerCount": {
-          "type": "Integer",
-          "default": 4
-        }
-      }
-    },
-    {
-      "label": "5 burner",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 750
-        },
-        "BurnerCount": {
-          "type": "Integer",
-          "default": 5
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

@@ -19,31 +19,18 @@
   "params": {
     "BowlWidth": {
       "type": "Length",
-      "default": 380
+      "default": 380,
+      "ui": "primary"
     },
     "BowlDepth": {
       "type": "Length",
-      "default": 700
+      "default": 700,
+      "ui": "primary"
     },
     "BowlHeight": {
       "type": "Length",
-      "default": 400
-    },
-    "TankWidth": {
-      "type": "Length",
-      "default": 370
-    },
-    "TankDepth": {
-      "type": "Length",
-      "default": 200
-    },
-    "TankHeight": {
-      "type": "Length",
-      "default": 400
-    },
-    "SeatThickness": {
-      "type": "Length",
-      "default": 45
+      "default": 400,
+      "ui": "primary"
     }
   },
   "placement": {

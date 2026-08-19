@@ -80,7 +80,7 @@ def load_local_builder(part_dir):
     return builder
 
 
-def select_builder(resolved, part_dir):
+def select_builder(manifest, part_dir):
     """The callable that builds this part.
 
     The file on disk decides: a part with its own builder.py uses it, and a
@@ -90,7 +90,7 @@ def select_builder(resolved, part_dir):
     no executable code" is now the absence of a file rather than a claim
     that has to be kept true.
 
-    `resolved` is retained deliberately for call-site stability and is no
+    `manifest` is retained deliberately for call-site stability and is no
     longer read here."""
     if has_local_builder(part_dir):
         return load_local_builder(part_dir)
@@ -223,13 +223,21 @@ def _remember_shape(key, shape):
         _SHAPE_CACHE.pop(_SHAPE_CACHE_ORDER.pop(0), None)
 
 
-def build_shape(resolved, part_dir, overrides=None):
-    """Build one resolved variant's shape, reusing an identical earlier build.
+def build_shape(manifest, part_dir, overrides=None):
+    """Build one manifest's shape, reusing an identical earlier build.
 
     `overrides` is an optional {paramName: value} map - typically an
     inserted object's current Parameter property values - merged over the
     manifest's declared defaults by partslib_manifest.merge_params(), which
     also drops anything the manifest does not declare.
+
+    A param declared with the default "auto" reaches the builder as None.
+    That is the builder's instruction to derive the value from the other
+    params - "an 800mm cabinet has two doors" is design knowledge that
+    belongs in the part's builder.py, not enumerated in its manifest.
+    Builders must therefore test `params.get(name) is None` rather than
+    relying on `params.get(name, fallback)`, whose fallback can no longer
+    fire: the key is always present.
 
     THE CACHE. Building is not cheap: a drawer chest is roughly 27 sequential
     OCC booleans and measured over a second. It is also called far more often
@@ -242,23 +250,22 @@ def build_shape(resolved, part_dir, overrides=None):
     which builder (module AND qualname - part_dir alone already determines
     the builder today, since each folder has at most one build(), but
     keeping the qualname in the key is harmless and stays correct if a
-    builder is ever composed from more than one in-process callable), which
-    variant, and the fully merged params. Anything a user can change from
-    the UI changes the key, so a stale hit is not reachable by editing a
-    Parameter or switching a variant.
+    builder is ever composed from more than one in-process callable), and
+    the fully merged params. Anything a user can change from the UI
+    changes the key, so a stale hit is not reachable by editing a
+    Parameter.
 
     Callers get a COPY. A shape handed to a document object becomes that
     object's, and a caller free to mutate what it was given would otherwise
     corrupt the entry for everyone after it. Copying a finished solid is
     still far cheaper than rebuilding one."""
-    geometry = resolved.get("geometry") or {}
-    builder = select_builder(resolved, part_dir)
-    params = partslib_manifest.merge_params(resolved, overrides)
+    geometry = manifest.get("geometry") or {}
+    builder = select_builder(manifest, part_dir)
+    params = partslib_manifest.merge_params(manifest, overrides)
 
     key = (os.path.abspath(part_dir),
            getattr(builder, "__module__", "") + "."
            + getattr(builder, "__qualname__", ""),
-           resolved.get("variantLabel"),
            repr(sorted(params.items(), key=lambda item: item[0])),
            repr(sorted((geometry.get("assets") or {}).items())))
 

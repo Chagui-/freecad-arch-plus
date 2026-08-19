@@ -195,83 +195,19 @@ def test_load_manifest_raises_on_bad_json(tmp_path):
         pm.load_manifest(str(path))
 
 
-def _part_with_variants():
-    return _part(
-        params={"Width": {"type": "Length", "default": 360}},
-        ifcProperties={"Manufacturer": "Pset_X;;IfcLabel;;Geberit"},
-        variants=[
-            {"label": "360 mm",
-             "assets": {"body": "wc-360.brep"},
-             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204060"}},
-            {"label": "490 mm",
-             "assets": {"body": "wc-490.brep"},
-             "params": {"Width": {"type": "Length", "default": 490}},
-             "ifcProperties": {"ModelReference": "Pset_X;;IfcLabel;;204070"}},
-        ])
+def test_a_manifest_declaring_variants_is_rejected():
+    data = _part_with_ui()
+    data["variants"] = [{"label": "800 mm"}]
+    errors, _warnings = pm.validate_manifest(data, {})
+    assert any("variants" in error for error in errors)
 
 
-def test_part_without_variants_has_one_default():
-    assert pm.variant_labels(_part()) == ["Default"]
-
-
-def test_variant_labels_are_listed_in_declared_order():
-    assert pm.variant_labels(_part_with_variants()) == ["360 mm", "490 mm"]
-
-
-def test_resolving_default_variant_returns_the_part_unchanged():
-    resolved = pm.resolve_variant(_part(), "Default")
-    assert resolved["geometry"]["assets"] == {"body": "wc-360.brep"}
-
-
-def test_variant_assets_override_part_assets():
-    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
-    assert resolved["geometry"]["assets"] == {"body": "wc-490.brep"}
-
-
-def test_variant_ifc_properties_merge_over_part_level():
-    resolved = pm.resolve_variant(_part_with_variants(), "360 mm")
-    assert resolved["ifcProperties"]["Manufacturer"] == "Pset_X;;IfcLabel;;Geberit"
-    assert resolved["ifcProperties"]["ModelReference"] == "Pset_X;;IfcLabel;;204060"
-
-
-def test_variant_params_override_part_params():
-    resolved = pm.resolve_variant(_part_with_variants(), "490 mm")
-    assert resolved["params"]["Width"]["default"] == 490
-
-
-def test_variant_placement_overrides_the_part_placement():
-    # A television on a stand is floor-hosted; the same television on a
-    # bracket is wall-hosted. Without placement in the merge that needs two
-    # catalogue entries for one product.
-    data = _part_with_variants()
-    data["placement"] = {"host": "floor", "offset": 0}
-    data["variants"][1]["placement"] = {"host": "wall", "offset": 1200}
-
-    mounted = pm.resolve_variant(data, "490 mm")
-    assert mounted["placement"] == {"host": "wall", "offset": 1200}
-    # The other variant still gets the part's own placement.
-    assert pm.resolve_variant(data, "360 mm")["placement"]["host"] == "floor"
-
-
-def test_variant_placement_merges_per_key():
-    # Setting only `host` must not drop the part's offset.
-    data = _part_with_variants()
-    data["placement"] = {"host": "floor", "offset": 150}
-    data["variants"][1]["placement"] = {"host": "wall"}
-
-    resolved = pm.resolve_variant(data, "490 mm")
-    assert resolved["placement"] == {"host": "wall", "offset": 150}
-
-
-def test_resolving_leaves_the_original_manifest_untouched():
-    data = _part_with_variants()
-    pm.resolve_variant(data, "490 mm")
-    assert data["geometry"]["assets"] == {"body": "wc-360.brep"}
-
-
-def test_unknown_variant_label_raises():
-    with pytest.raises(KeyError):
-        pm.resolve_variant(_part_with_variants(), "999 mm")
+def test_variants_is_an_error_not_an_ignored_unknown_field():
+    data = _part_with_ui()
+    data["variants"] = []
+    errors, warnings = pm.validate_manifest(data, {})
+    assert any("variants" in error for error in errors)
+    assert not any("variants" in warning for warning in warnings)
 
 
 def test_explicit_ifc_type_wins():
@@ -297,46 +233,44 @@ def test_ifc_type_falls_back_to_the_default():
 
 # -- param_specs / merge_params ---------------------------------------------
 
-def _resolved_with_params():
-    return pm.resolve_variant(_part_with_variants(), "490 mm")
+def _part_with_params():
+    return _part(params={"Width": {"type": "Length", "default": 490}})
 
 
-def test_param_specs_returns_the_resolved_params_block():
-    resolved = _resolved_with_params()
-    assert pm.param_specs(resolved) == {
-        "Width": {"type": "Length", "default": 490}}
+def test_param_specs_returns_the_declared_params_block():
+    assert pm.param_specs(_part_with_ui())["Width"] == {
+        "type": "Length", "default": 600, "ui": "primary"}
 
 
 def test_param_specs_is_empty_when_params_block_absent():
-    resolved = pm.resolve_variant(_part(), "Default")
-    assert pm.param_specs(resolved) == {}
+    assert pm.param_specs({"schema": 1, "name": "X"}) == {}
 
 
 def test_merge_params_uses_declared_defaults_with_no_overrides():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, None) == {"Width": 490}
-    assert pm.merge_params(resolved, {}) == {"Width": 490}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, None) == {"Width": 490}
+    assert pm.merge_params(manifest, {}) == {"Width": 490}
 
 
 def test_merge_params_override_replaces_the_default():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, {"Width": 750}) == {"Width": 750}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, {"Width": 750}) == {"Width": 750}
 
 
 def test_merge_params_none_override_falls_back_to_default():
-    resolved = _resolved_with_params()
-    assert pm.merge_params(resolved, {"Width": None}) == {"Width": 490}
+    manifest = _part_with_params()
+    assert pm.merge_params(manifest, {"Width": None}) == {"Width": 490}
 
 
 def test_merge_params_ignores_an_undeclared_override():
-    resolved = _resolved_with_params()
-    merged = pm.merge_params(resolved, {"Width": 750, "Bogus": 42})
+    manifest = _part_with_params()
+    merged = pm.merge_params(manifest, {"Width": 750, "Bogus": 42})
     assert merged == {"Width": 750}
     assert "Bogus" not in merged
 
 
 def test_merge_params_with_no_params_block_is_empty():
-    resolved = pm.resolve_variant(_part(), "Default")
+    resolved = _part()
     assert pm.merge_params(resolved, {"Width": 750}) == {}
 
 
@@ -373,3 +307,223 @@ def test_a_manifest_without_an_id_is_valid():
     del data["id"]
     errors, _warnings = pm.validate_manifest(data, FACETS)
     assert [e for e in errors if "id" in e] == []
+
+
+# -- primary_params ---------------------------------------------------------
+
+def _part_with_ui():
+    return {
+        "schema": 1, "name": "Cabinet",
+        "facets": {}, "geometry": {},
+        "params": {
+            "Width": {"type": "Length", "default": 600, "ui": "primary"},
+            "Depth": {"type": "Length", "default": 600, "ui": "primary"},
+            "KickHeight": {"type": "Length", "default": 100},
+            "DoorCount": {"type": "Integer", "default": "auto"},
+        },
+    }
+
+
+def test_primary_params_are_the_ones_marked_in_declared_order():
+    assert pm.primary_params(_part_with_ui()) == ["Width", "Depth"]
+
+
+def test_primary_params_falls_back_to_the_first_three_declared():
+    data = _part_with_ui()
+    for spec in data["params"].values():
+        spec.pop("ui", None)
+    assert pm.primary_params(data) == ["Width", "Depth", "KickHeight"]
+
+
+def test_primary_params_fallback_stops_at_what_exists():
+    data = {"params": {"Width": {"type": "Length", "default": 600}}}
+    assert pm.primary_params(data) == ["Width"]
+
+
+def test_primary_params_is_empty_when_no_params_declared():
+    assert pm.primary_params({"params": {}}) == []
+
+
+# -- "auto" defaults --------------------------------------------------------
+
+def test_merge_params_resolves_an_auto_default_to_none():
+    merged = pm.merge_params(_part_with_ui(), None)
+    assert merged["DoorCount"] is None
+    assert merged["Width"] == 600
+
+
+def test_merge_params_override_pins_an_auto_param():
+    merged = pm.merge_params(_part_with_ui(), {"DoorCount": 3})
+    assert merged["DoorCount"] == 3
+
+
+def test_merge_params_still_drops_an_undeclared_override():
+    merged = pm.merge_params(_part_with_ui(), {"Nonsense": 1})
+    assert "Nonsense" not in merged
+
+
+# -- Choice options and placement ------------------------------------------
+
+def _part_with_choice():
+    return {
+        "schema": 1, "name": "Television",
+        "facets": {}, "geometry": {},
+        "placement": {"host": "floor", "offset": 0},
+        "params": {
+            "ScreenSize": {"type": "Integer", "default": 55, "ui": "primary"},
+            "Mounting": {
+                "type": "Choice", "default": "stand", "ui": "primary",
+                "options": {
+                    "stand": {"label": "On stand"},
+                    "wall": {"label": "Wall-mounted",
+                             "placement": {"host": "wall", "offset": 1100}},
+                },
+            },
+        },
+    }
+
+
+def test_choice_options_returns_the_declared_map():
+    spec = _part_with_choice()["params"]["Mounting"]
+    assert list(pm.choice_options(spec)) == ["stand", "wall"]
+
+
+def test_choice_options_is_empty_for_a_non_choice_param():
+    assert pm.choice_options({"type": "Length", "default": 600}) == {}
+
+
+def test_resolve_placement_returns_the_part_block_when_no_option_overrides():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "stand"}) == {
+        "host": "floor", "offset": 0}
+
+
+def test_resolve_placement_merges_a_selected_option_over_the_part():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "wall"}) == {
+        "host": "wall", "offset": 1100}
+
+
+def test_resolve_placement_merges_per_key():
+    data = _part_with_choice()
+    data["params"]["Mounting"]["options"]["wall"]["placement"] = {
+        "host": "wall"}
+    assert pm.resolve_placement(data, {"Mounting": "wall"}) == {
+        "host": "wall", "offset": 0}
+
+
+def test_resolve_placement_ignores_an_unknown_option_value():
+    data = _part_with_choice()
+    assert pm.resolve_placement(data, {"Mounting": "nope"}) == {
+        "host": "floor", "offset": 0}
+
+
+def test_resolve_placement_never_mutates_the_manifest():
+    data = _part_with_choice()
+    pm.resolve_placement(data, {"Mounting": "wall"})
+    assert data["placement"] == {"host": "floor", "offset": 0}
+
+
+# -- params block validation ------------------------------------------------
+
+@pytest.mark.parametrize("kind", pm.PARAM_TYPES)
+def test_every_known_param_type_is_accepted(kind):
+    spec = {"type": kind, "default": 0}
+    if kind == "Choice":
+        spec = {"type": kind, "default": "stand",
+                "options": {"stand": {}, "wall": {}}}
+    errors, _warnings = pm.validate_manifest(_part(params={"P": spec}),
+                                             FACETS)
+    assert errors == []
+
+
+def test_params_block_must_be_an_object():
+    errors, _warnings = pm.validate_manifest(_part(params="nope"), FACETS)
+    assert any("params" in e for e in errors)
+
+
+def test_param_spec_must_be_an_object():
+    errors, _warnings = pm.validate_manifest(
+        _part(params={"Width": 600}), FACETS)
+    assert any("Width" in e for e in errors)
+
+
+def test_unknown_param_type_is_an_error():
+    data = _part(params={"Width": {"type": "Wavelength", "default": 600}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Width" in e and "Wavelength" in e for e in errors)
+
+
+@pytest.mark.parametrize("kind", ["Angle", "Bool", "String", "Choice"])
+def test_auto_default_is_rejected_outside_integer_and_length(kind):
+    spec = {"type": kind, "default": "auto"}
+    if kind == "Choice":
+        spec["options"] = {"stand": {}, "wall": {}}
+    errors, _warnings = pm.validate_manifest(_part(params={"P": spec}),
+                                             FACETS)
+    assert any("P" in e and "auto" in e for e in errors)
+
+
+@pytest.mark.parametrize("kind", pm.AUTO_PARAM_TYPES)
+def test_auto_default_is_accepted_on_integer_and_length(kind):
+    data = _part(params={"Width": {"type": kind, "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
+
+
+@pytest.mark.parametrize("name", pm.AUTO_PARAM_NAMES)
+def test_auto_default_is_accepted_on_a_measurable_dimension(name):
+    data = _part(params={name: {"type": "Length", "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
+
+
+@pytest.mark.parametrize("name", ["DoorCount", "ShelfCount", "BasinWidth"])
+def test_auto_default_is_rejected_on_anything_a_shape_cannot_report(name):
+    # A derived count has nothing to measure, so object.py's write-back
+    # leaves it at 0 in the property editor forever. Declaring one is now
+    # an error rather than a control that silently does not work.
+    data = _part(params={name: {"type": "Integer", "default": "auto"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any(name in e and "auto" in e for e in errors)
+
+
+def test_choice_param_without_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand"}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_param_with_empty_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": {}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_param_with_non_object_options_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": ["stand", "wall"]}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "options" in e for e in errors)
+
+
+def test_choice_default_not_a_declared_option_is_an_error():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "bracket",
+                                      "options": {"stand": {},
+                                                  "wall": {}}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Mounting" in e and "bracket" in e for e in errors)
+
+
+def test_choice_default_in_the_declared_options_is_valid():
+    data = _part(params={"Mounting": {"type": "Choice",
+                                      "default": "stand",
+                                      "options": {"stand": {},
+                                                  "wall": {}}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []

@@ -67,17 +67,6 @@ def test_every_entry_resolves_to_a_builder():
             manifest, entry["dir"])), entry["id"]
 
 
-def test_every_part_variant_labels_are_non_empty_and_unique():
-    index = _scan()
-    for entry in index["entries"]:
-        labels = entry["variants"]
-        assert labels, "entry %r has no variant labels at all" % (entry["id"],)
-        for label in labels:
-            assert label, "entry %r has an empty variant label" % (entry["id"],)
-        assert len(labels) == len(set(labels)), (
-            "entry %r has duplicate variant labels: %r" % (entry["id"], labels))
-
-
 def test_facets_json_is_valid():
     # The one thing the shipped library still asserts positively even with
     # zero parts: the vocabulary itself (library/facets.json) is well-formed.
@@ -114,13 +103,10 @@ def test_every_placement_host_is_a_known_host():
     from archplus.tools.partslib import placement as partslib_placement
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        for label in partslib_manifest.variant_labels(manifest):
-            resolved = partslib_manifest.resolve_variant(manifest, label)
-            placement = resolved.get("placement") or {}
-            host = placement.get("host", partslib_placement.DEFAULT_HOST)
-            assert host in partslib_placement.HOSTS, (
-                "%s (%s) declares unknown host %r"
-                % (entry["id"], label, host))
+        placement = manifest.get("placement") or {}
+        host = placement.get("host", partslib_placement.DEFAULT_HOST)
+        assert host in partslib_placement.HOSTS, (
+            "%s declares unknown host %r" % (entry["id"], host))
 
 
 def test_wall_and_ceiling_hosted_parts_exist():
@@ -131,9 +117,7 @@ def test_wall_and_ceiling_hosted_parts_exist():
     hosts = set()
     for entry in _scan()["entries"]:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        for label in partslib_manifest.variant_labels(manifest):
-            resolved = partslib_manifest.resolve_variant(manifest, label)
-            hosts.add((resolved.get("placement") or {}).get("host", "free"))
+        hosts.add((manifest.get("placement") or {}).get("host", "free"))
     assert "wall" in hosts
 
 
@@ -184,3 +168,191 @@ def test_every_local_builder_imports_and_exposes_build():
             "%s has no usable build()" % (entry["id"],))
         checked += 1
     assert checked > 0, "no part has a builder.py yet"
+
+
+def _entry(index, part_id):
+    """Match either a full id or a part folder within any family."""
+    for entry in index["entries"]:
+        if entry["id"] == part_id or entry["id"].endswith("/" + part_id):
+            return entry
+    raise AssertionError("no such part %r" % (part_id,))
+
+
+def _params(part_id, overrides=None):
+    """Merged params for one shipped part, as a builder would receive them."""
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+    return partslib_manifest.merge_params(data, overrides)
+
+
+def test_a_hobs_width_follows_its_burner_count():
+    # The only kitchen derivation left, and the shape "auto" is now limited
+    # to: a count the user knows (4 burners) yielding a dimension they would
+    # otherwise look up (600mm).
+    assert _params("gas-hob")["Width"] is None
+    assert _params("gas-hob")["BurnerCount"] == 4
+
+
+def test_cabinet_door_counts_are_not_parameters():
+    # They used to be declared "auto", which meant the property editor
+    # showed 0 forever: no shape can report how many doors it has, so the
+    # write-back had nothing to measure. The builder decides instead.
+    for part_id in ("base-cabinet", "wall-cabinet", "wardrobe"):
+        assert "DoorCount" not in _params(part_id), (
+            "%s should let its builder decide the door count" % (part_id,))
+
+
+def test_kitchen_and_sanitary_parts_declare_no_variants():
+    index = _scan()
+    for part_id in ("base-cabinet", "wall-cabinet", "wardrobe",
+                    "gas-hob", "vanity"):
+        data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+        assert "variants" not in data
+
+
+def test_every_auto_param_is_derived_by_its_builder():
+    # The suite cannot call build() - the builders reach shapes.py, which
+    # needs Part - so a forgotten derivation would otherwise surface only
+    # inside FreeCAD, as int(None). Reading the source is the weaker but
+    # available check: each auto param must be consumed by build() with its
+    # own nearby None test.
+    import io
+    import sys
+
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        auto = [name for name, spec
+                in partslib_manifest.param_specs(data).items()
+                if spec.get("default") == partslib_manifest.AUTO]
+        if not auto:
+            continue
+        builder_path = os.path.join(entry["dir"], "builder.py")
+        assert os.path.exists(builder_path), (
+            "%s declares auto params but ships no builder.py"
+            % (entry["id"],))
+        with io.open(builder_path, "r", encoding="utf8") as handle:
+            source = handle.read()
+        lines = source.splitlines()
+        for name in auto:
+            fetch = 'params.get("%s")' % name
+            consumed = False
+            for line_no, line in enumerate(lines):
+                if fetch not in line:
+                    continue
+                nearby = "\n".join(lines[line_no:line_no + 3])
+                if "is None" in nearby:
+                    consumed = True
+                    break
+            assert consumed, (
+                "%s declares %s as auto but build() never tests it for None, "
+                "so the builder would reach int(None) in FreeCAD"
+                % (entry["id"], name))
+
+
+def test_derived_furniture_dimensions_are_declared_auto():
+    # Both survivors run the same way round: a count the user knows drives a
+    # dimension they would otherwise have to look up.
+    for part_id, count, dimension in (("sofa", "SeatCount", "Width"),
+                                      ("chest-of-drawers", "DrawerCount",
+                                       "Height")):
+        merged = _params(part_id)
+        assert merged[dimension] is None, (
+            "%s should declare %s as auto" % (part_id, dimension))
+        assert merged[count] is not None, (
+            "%s needs a real %s to derive %s from"
+            % (part_id, count, dimension))
+
+
+def test_shelf_and_seat_counts_are_not_parameters():
+    # Counts derived FROM a dimension the user already set are arithmetic,
+    # not a control - and no shape can report them, so they read 0.
+    for part_id, name in (("bookcase", "ShelfCount"),
+                          ("media-unit", "ShelfCount"),
+                          ("dining-table", "SeatCount")):
+        assert name not in _params(part_id), (
+            "%s should let its builder decide %s" % (part_id, name))
+
+
+def test_furniture_parts_declare_no_variants():
+    index = _scan()
+    for part_id in ("sofa", "dining-table", "chest-of-drawers",
+                    "bookcase", "media-unit"):
+        data = partslib_manifest.load_manifest(_entry(index, part_id)["path"])
+        assert "variants" not in data
+
+
+def test_a_65_inch_television_on_a_stand_is_reachable():
+    # The cell the old flat variant list silently lacked: it shipped
+    # 55-on-stand, 55-wall and 65-wall, but never 65-on-stand.
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
+    params = partslib_manifest.merge_params(
+        data, {"ScreenSize": 65, "Mounting": "stand"})
+    assert params["ScreenSize"] == 65
+    assert params["Mounting"] == "stand"
+    assert partslib_manifest.resolve_placement(data, params) == {
+        "host": "floor", "offset": 0}
+
+
+def test_a_wall_mounted_television_is_wall_hosted():
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "television")["path"])
+    params = partslib_manifest.merge_params(data, {"Mounting": "wall"})
+    placement = partslib_manifest.resolve_placement(data, params)
+    assert placement["host"] == "wall"
+    # The old 65-inch wall variant used 1050; approved design deliberately
+    # collapses both sizes to one 1100 offset, so per-size offsets must fail.
+    assert placement["offset"] == 1100
+
+
+def test_television_size_drives_the_panel_dimensions():
+    merged = _params("television")
+    assert merged["Width"] is None
+    assert merged["Height"] is None
+
+
+def test_a_curtain_is_just_a_width_and_a_height():
+    # Fullness, rail diameter, header height and fold count were all things
+    # nobody specifies about a curtain; the builder decides them now.
+    assert sorted(_params("curtain")) == ["Height", "Width"]
+
+
+def test_no_shipped_manifest_declares_variants():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        assert "variants" not in data, (
+            "%s still declares variants" % (entry["id"],))
+
+
+def test_every_part_marks_at_least_one_primary_param_explicitly():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        marked = [name for name, spec
+                  in partslib_manifest.param_specs(data).items()
+                  if (spec or {}).get("ui") == "primary"]
+        assert marked, "%s marks no ui:primary param" % (entry["id"],)
+
+
+def test_every_primary_param_name_is_declared():
+    index = _scan()
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        specs = partslib_manifest.param_specs(data)
+        for name in partslib_manifest.primary_params(data):
+            assert name in specs, (
+                "%s marks unknown primary %r" % (entry["id"], name))
+
+
+def test_a_bath_width_screen_is_reachable_at_walk_in_height():
+    # The old list offered "Bath screen" (800 x 1400) and two walk-in widths
+    # at 1900, so an 800-wide screen at 1900 could not be expressed at all.
+    index = _scan()
+    data = partslib_manifest.load_manifest(
+        _entry(index, "shower-screen")["path"])
+    merged = partslib_manifest.merge_params(
+        data, {"Width": 800, "Height": 1900})
+    assert merged["Width"] == 800
+    assert merged["Height"] == 1900

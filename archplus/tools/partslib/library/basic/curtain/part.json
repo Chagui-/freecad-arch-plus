@@ -22,60 +22,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1600
+      "default": 1600,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 2200
-    },
-    "Fullness": {
-      "type": "Length",
-      "default": 110
-    },
-    "RailDiameter": {
-      "type": "Length",
-      "default": 28
-    },
-    "HeaderHeight": {
-      "type": "Length",
-      "default": 60
-    },
-    "FoldCount": {
-      "type": "Integer",
-      "default": 12
+      "default": 2200,
+      "ui": "primary"
     }
   },
   "placement": {
     "host": "wall",
     "offset": 2300
   },
-  "variants": [
-    {
-      "label": "1600 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1600
-        },
-        "FoldCount": {
-          "type": "Integer",
-          "default": 12
-        }
-      }
-    },
-    {
-      "label": "2400 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 2400
-        },
-        "FoldCount": {
-          "type": "Integer",
-          "default": 18
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

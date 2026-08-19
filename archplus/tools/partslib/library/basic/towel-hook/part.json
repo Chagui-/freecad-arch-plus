@@ -19,23 +19,18 @@
   "params": {
     "PlateWidth": {
       "type": "Length",
-      "default": 55
+      "default": 55,
+      "ui": "primary"
     },
     "PlateHeight": {
       "type": "Length",
-      "default": 55
-    },
-    "PlateDepth": {
-      "type": "Length",
-      "default": 12
+      "default": 55,
+      "ui": "primary"
     },
     "Projection": {
       "type": "Length",
-      "default": 65
-    },
-    "ArmDiameter": {
-      "type": "Length",
-      "default": 14
+      "default": 65,
+      "ui": "primary"
     }
   },
   "placement": {

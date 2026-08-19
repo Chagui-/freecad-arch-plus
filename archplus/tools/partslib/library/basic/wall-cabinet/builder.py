@@ -17,7 +17,9 @@ def build(params, assets, ctx):
     width = float(params.get("Width", 600))
     depth = float(params.get("Depth", 350))
     height = float(params.get("Height", 720))
-    door_count = max(int(params.get("DoorCount", 1)), 0)
+    # One door below 700mm; from 700mm up the carcass is split, same rule
+    # as the base cabinet it sits above.
+    door_count = 1 if width < 700 else 2
 
     # The carcass is set back by the handle's own projection, so a proud
     # handle still lands inside the Depth the catalogue advertises - the

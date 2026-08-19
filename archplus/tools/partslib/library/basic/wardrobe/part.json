@@ -16,59 +16,13 @@
     ]
   },
   "params": {
-    "Width": {
-      "type": "Length",
-      "default": 1000
-    },
-    "Depth": {
-      "type": "Length",
-      "default": 600
-    },
-    "Height": {
-      "type": "Length",
-      "default": 2000
-    },
-    "DoorCount": {
-      "type": "Integer",
-      "default": 2
-    }
+    "Width": { "type": "Length", "default": 1000, "ui": "primary" },
+    "Height": { "type": "Length", "default": 2000, "ui": "primary" },
+    "Depth": { "type": "Length", "default": 600, "ui": "primary" }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "1000 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1000
-        }
-      }
-    },
-    {
-      "label": "1200 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1200
-        }
-      }
-    },
-    {
-      "label": "1500 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1500
-        },
-        "DoorCount": {
-          "type": "Integer",
-          "default": 3
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

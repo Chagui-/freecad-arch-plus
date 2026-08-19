@@ -29,23 +29,22 @@ the Living/Bedroom additions) have NOT been seen in FreeCAD yet.
 
 Six of the new parts declare `host: wall` — wall cabinet, corner wall
 cabinet, mirror, towel hook, toilet roll holder, curtain — plus the
-television's wall-mounted variants. Until now every shipped part was
+television's wall-mounted mounting option. Until now every shipped part was
 `host: floor`, so `partslib_placement`'s wall branch (including its
 snap-to-host-base logic) has only ever run against synthetic unit-test
 data. **Placing a wall-hosted part against a real Arch wall is the single
 highest-value manual check on this branch.**
 
-Note also that `resolve_variant` now merges `placement`, so a variant can
-change its host — the television relies on this to be floor-hosted on a
-stand and wall-hosted on a bracket.
+Note also that a selected `Choice` option can merge `placement`, so a
+parameter can change its host — the television relies on this to be
+floor-hosted on a stand and wall-hosted on a bracket.
 
 There is no FreeCAD in the development environment, so automated
 verification stops at: (1) the headless `pytest -q` suite (manifests
 and facets are well-formed, every part folder's builder.py (where present)
-loads and exposes a callable build(), every
-variant-label list is non-empty and unique, every declared placement host
+loads and exposes a callable build(), every declared parameter is valid, every declared placement host
 is known, every facet icon exists on disk), and (2) a throwaway script that
-runs every part/variant's builder against a bounding-box-only stand-in for
+runs every part's builder against a bounding-box-only stand-in for
 `Part`/`FreeCAD` — confirming the Python executes without exceptions and
 that measured `W × D × H` figures match what each manifest advertises, but
 **not** that the real OCC boolean/fillet operations succeed. Every step
@@ -132,8 +131,7 @@ something you need to touch by hand.
 "the live preview", read it as "the panel opens and shows a still preview of
 the part" — that is the check that matters on this build. Confirming that
 `QuarterWidget` itself embeds live is not expected to pass on FreeCAD 1.1 and
-is no longer part of this checklist's bar for success. Grouping, search,
-variants, measurements, placement and everything else the panel does are
+is no longer part of this checklist's bar for success. Grouping, search, parameters, measurements, placement and everything else the panel does are
 unaffected by the fallback.
 
 ---
@@ -196,11 +194,11 @@ unaffected by the fallback.
 - [ ] **B6 (search).** From a results screen, type `toilet` in the search
       box. Only the WC remains, matched on its keyword.
 - [ ] **B7.** Clear the search. Select **Base cabinet** in the grid. The
-      detail sidebar on the right shows a preview, the part name, variant
-      chips, `W 600   D 560   H 720 mm`, and the description.
-- [ ] **B8.** Click the `800 mm` variant chip. It becomes the selected chip
-      (visually distinct from the others) and the measurements change to
-      `W 800`.
+      detail sidebar shows a preview, the part name, primary parameter labels
+      and the description. Its grid card reads `Width | Depth | Height`.
+- [ ] **B8.** In the parameter form, type `800` into **Width**. The value is
+      accepted and the preview/readout changes to `W 800` after one debounced
+      rebuild, not once per keystroke.
 - [ ] **B9 (empty/error safety).** Confirm no traceback ever appeared while
       opening the panel and browsing this session — the categories screen,
       breadcrumb, grid and sidebar all rendered without a Python console
@@ -240,16 +238,42 @@ unaffected by the fallback.
 - [ ] **C1 (the preview half of B7).** With Base cabinet selected, confirm
       the detail sidebar shows a rendered still image of the part (not a
       live/rotatable 3D view — that is expected on FreeCAD 1.1, see the
-      caveat above), alongside the name, variant chips, measurements and
+      caveat above), alongside the name, parameter form, measurements and
       description. Confirm the Report view shows at most ONE
       "live 3D preview is unavailable on this FreeCAD build" warning for the
       whole session, not one per part selected. The bar for this check is
       "the sidebar shows a still preview", not "the live preview embeds".
-- [ ] **C2 (deferred, Task 14).** Click the `1000 mm` variant chip while
-      still in the panel (not yet placed). The preview image updates to the
-      new width alongside the measurements (rendered fresh for that variant
-      and cached under the part's `.cache/` folder — check the folder now
-      contains a PNG named after the variant).
+- [ ] **C2.** Expand **More parameters**. Confirm the additional fields appear
+      below the primary fields, including the dimmed italic derived field
+      **Doors**. Edit **Doors** and confirm it becomes active rather than
+      dimmed; click **Reset** and confirm it returns to the derived state.
+- [ ] **C3.** Edit a primary parameter while the part is still in the panel
+      (for example, set cabinet **Width** to `800`). Confirm a fresh cached
+      preview image appears for the new parameter set under the part's
+      `.cache/` folder, rather than reusing the old preview.
+
+### Parameter checks
+
+These are the focused checks for the parameter form and object state:
+
+- [ ] **P1.** Selecting a base cabinet shows **Width**, **Depth** and
+      **Height** as editable fields, with **More parameters** collapsed beneath
+      them.
+- [ ] **P2.** Typing `800` into **Width** rebuilds the preview once, not once
+      per keystroke, and updates the W/D/H readout.
+- [ ] **P3.** Expanding the form shows **WorktopThickness**, **KickHeight**
+      and a dimmed italic derived **Doors** field; editing **Doors** un-dims it.
+- [ ] **P4.** **Reset** restores every field and re-dims **Doors**.
+- [ ] **P8.** Setting cabinet **Width** to `800` rebuilds the cabinet with two
+      door leaves; count the leaves in the preview geometry.
+- [ ] **P9.** Pin **Doors** to `3` and confirm the pinned value survives
+      recompute.
+- [ ] **P10.** **Reload from library** restores the cabinet geometry to two
+      door leaves and discards the pinned value.
+- [ ] **P11.** Open an old document: its shape remains unchanged and its
+      legacy selector is hidden.
+- [ ] **P12.** A selected television's **Mounting** option changes its host
+      placement without changing the part's other parameters.
 
 ## Part D — Placement
 
@@ -261,11 +285,19 @@ unaffected by the fallback.
       object named "Base cabinet" appears in the tree — expand it and
       confirm it has **no children**.
 - [ ] **D2 (brief check 10).** Select it. In the property editor confirm
-      `PartId` = `base-cabinet` (greyed out/read-only), `Variant` = `800 mm`
-      (or whichever variant was selected at placement time), `Description`
-      is populated, `IfcType` = `Furniture`.
-- [ ] **D3 (brief check 11).** Change `Variant` to `1000 mm` in the property
-      editor. The object rebuilds in place and keeps its position.
+      `PartId` = `base-cabinet` (greyed out/read-only), `Description` is
+      populated, and `IfcType` = `Furniture`. A **Parameters** group is
+      present and no legacy selector is shown.
+- [ ] **D3.** Change the object's **Width** to `800` in the property editor.
+      It rebuilds in place and keeps its position; the cabinet geometry has two
+      door leaves.
+- [ ] **D8.** Select a television in the browser. It shows **Size (in)** and a
+      **Mounting** dropdown; choosing **Wall-mounted** makes **Place in 3D
+      view** host it on a wall.
+- [ ] **D9.** Confirm grid cards read `Width | Depth | Height` under the part
+      name.
+- [ ] **D10.** Select a placed object. Its **Parameters** group is present and
+      no legacy selector is shown.
 - [ ] **D4 (brief check 12).** Select the WC in the panel, click
       **Place in 3D view**, then click a wall face. It lands at the wall
       base + 400 mm and orients to the wall.
@@ -295,47 +327,6 @@ unaffected by the fallback.
       (3) the MDI area switches back to the ArchPlus Library tab
       automatically, landing you back where you started rather than
       leaving you on the 3D view tab.
-- [ ] **D8 (parts-library branch — editable dimensions).** Select the placed
-      Base cabinet (any variant). In the property editor, confirm a new
-      **Parameters** group appears alongside **Part**, containing `Width`,
-      `Depth`, `Height` as editable (not read-only) Length properties. Change
-      `Width` to `750` — a size the manifest's shipped variants (600/800/
-      1000 mm) do not offer. The object rebuilds in place at 750 mm (check
-      both the property editor and the 3D view) and its placement is
-      unchanged. This proves the dimension is genuinely editable, not just
-      re-picking a shipped variant.
-- [ ] **D9 (parts-library branch — variant reseed).** With the object still
-      at `Width = 750` from D8, change `Variant` to `1000 mm`. Confirm
-      `Width` snaps to `1000` (the new variant's declared default) rather
-      than staying at `750` — switching `Variant` deliberately discards
-      hand-edited Parameter values, since a variant is a different catalogue
-      product and a surviving stale edit would match no entry in it. Edit
-      `Width` to a custom value again, then switch `Variant` to yet another
-      label: confirm it reseeds again, with no console error and no
-      duplicate/lingering rebuild artefacts — this exercises the guard
-      around one Variant change re-seeding several Parameter properties at
-      once.
-- [ ] **D10 (fix round — reload discards hand-edits too).** Place a fresh
-      Base cabinet and edit `Width` to a custom value (e.g. `750`, not one
-      of the shipped variants). Right-click the object → **Reload from
-      library**, leaving `Variant` untouched (the same variant is still
-      selected — this is the common case, and the one the fix targets).
-      Confirm `Width` snaps back to the current variant's manifest default
-      rather than staying at `750` — "Reload from library" means "take the
-      library's current truth", so it must discard hand-edits exactly like
-      switching `Variant` does, not only when the cascade from reassigning
-      `Variant` happens to fire.
-- [ ] **D11 (fix round — no dead editable field survives a variant
-      switch).** Pick (or temporarily edit a `part.json` to create) a part
-      whose variants declare a different set of params — e.g. one variant
-      with `Width`/`Depth`/`Height` and another that drops one of them.
-      Place it on the first variant and confirm all its params show as
-      editable fields in the **Parameters** group. Switch to the variant
-      that declares fewer params. Confirm the now-undeclared property is no
-      longer visible in the property editor (hidden, not deleted) rather
-      than lingering as a field that silently does nothing. Switch back to
-      the first variant: confirm the property reappears as editable. If you
-      edited a `part.json` for this check, revert it afterwards.
 
 ## Part E — IFC properties and export round-trip (deferred, Task 10)
 
@@ -350,12 +341,11 @@ unaffected by the fallback.
       objects export with `IfcType` = `Furniture` (cabinet) and
       `Sanitary Terminal` (WC) respectively.
 
-## Part F — Reload from library and stale-variant handling (deferred, Tasks 11)
+## Part F — Reload from library and derived-parameter handling (deferred, Tasks 11)
 
 - [ ] **F1 (brief check 14).** Right-click the placed Base cabinet in the
       tree → **Reload from library** runs without error.
-- [ ] **F2 (Check 1 from the Task 10/11 fix round — no silent rebuild on
-      document open).**
+- [ ] **F2 (no silent rebuild on document open).**
       1. Note the current shape/dimensions of the placed Base cabinet.
       2. Save the document and close it.
       3. On disk, edit `library/basic/base-cabinet/part.json` and change
@@ -368,22 +358,12 @@ unaffected by the fallback.
          the geometry updates to the new dimension from the edited
          `part.json`. Revert your edit to `part.json` afterwards so the
          shipped content matches what is committed.
-- [ ] **F3 (Check 2 from the Task 10/11 fix round — stale variant remaps
-      safely).**
-      1. Place a Base cabinet and set `Variant` to a non-first value (e.g.
-         `1000 mm`).
-      2. Save and close the document.
-      3. On disk, temporarily remove the `1000 mm` entry from
-         `variants` in `library/basic/base-cabinet/part.json` (leaving
-         `600 mm` and `800 mm`).
-      4. Reopen the document — the cached shape and `Variant` label may
-         still show the now-stale `1000 mm` string.
-      5. Right-click → **Reload from library**. **Expected:** it succeeds,
-         `Variant` remaps to the first remaining label (`600 mm`), a
-         `PrintWarning` appears in the Report view naming the missing
-         variant and its replacement, and — the key assertion — **no
-         exception/traceback appears** anywhere. Restore the removed
-         variant in `part.json` afterwards.
+- [ ] **F3 (derived values restore safely).** Place a Base cabinet and set
+      its **Width** to `800` in the property editor. Pin **Doors** to `3` and
+      confirm the custom value survives recompute. Right-click →
+      **Reload from library**. **Expected:** Reload succeeds, the cabinet
+      geometry returns to two door leaves (the derived value for width `800`),
+      the pin is discarded, and no exception/traceback appears.
 - [ ] **F4 (deferred, Task 11).** Right-click a placed part, choose
       **Reload from library** after having renamed/deleted its `id` from
       the library entirely (simulate by temporarily renaming the part's

@@ -9,4 +9,7 @@ from .. import _shared
 
 
 def build(params, assets, ctx):
-    return _shared.table(params, assets, ctx)
+    # A shallower apron and a lower shelf are what make this a coffee
+    # table rather than a short dining table.
+    return _shared.table(params, assets, ctx,
+                         apron_height=55.0, shelf_height=120.0)

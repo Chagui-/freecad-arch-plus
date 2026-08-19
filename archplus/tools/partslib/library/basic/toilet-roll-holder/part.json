@@ -20,31 +20,18 @@
   "params": {
     "PlateWidth": {
       "type": "Length",
-      "default": 50
+      "default": 50,
+      "ui": "primary"
     },
     "PlateHeight": {
       "type": "Length",
-      "default": 50
-    },
-    "PlateDepth": {
-      "type": "Length",
-      "default": 12
+      "default": 50,
+      "ui": "primary"
     },
     "ArmLength": {
       "type": "Length",
-      "default": 70
-    },
-    "RollDiameter": {
-      "type": "Length",
-      "default": 115
-    },
-    "RollWidth": {
-      "type": "Length",
-      "default": 100
-    },
-    "CoreDiameter": {
-      "type": "Length",
-      "default": 45
+      "default": 70,
+      "ui": "primary"
     }
   },
   "placement": {

@@ -18,31 +18,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1050
+      "default": 1050,
+      "ui": "primary"
     },
     "Length": {
       "type": "Length",
-      "default": 2000
-    },
-    "MattressHeight": {
-      "type": "Length",
-      "default": 250
-    },
-    "HeadboardHeight": {
-      "type": "Length",
-      "default": 900
-    },
-    "HeadboardThickness": {
-      "type": "Length",
-      "default": 60
+      "default": 2000,
+      "ui": "primary"
     },
     "BaseHeight": {
       "type": "Length",
-      "default": 200
-    },
-    "PillowCount": {
-      "type": "Integer",
-      "default": 1
+      "default": 200,
+      "ui": "primary"
     }
   },
   "placement": {

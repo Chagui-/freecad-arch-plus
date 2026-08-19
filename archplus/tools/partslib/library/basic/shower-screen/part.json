@@ -20,65 +20,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 900
+      "default": 900,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 1900
-    },
-    "GlassThickness": {
-      "type": "Length",
-      "default": 8
-    },
-    "ProfileWidth": {
-      "type": "Length",
-      "default": 30
+      "default": 1900,
+      "ui": "primary"
     }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "Bath screen",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 800
-        },
-        "Height": {
-          "type": "Length",
-          "default": 1400
-        }
-      }
-    },
-    {
-      "label": "Walk-in 900 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 900
-        },
-        "Height": {
-          "type": "Length",
-          "default": 1900
-        }
-      }
-    },
-    {
-      "label": "Walk-in 1200 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1200
-        },
-        "Height": {
-          "type": "Length",
-          "default": 1900
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

@@ -15,10 +15,15 @@ def build(params, assets, ctx):
     it is meaningless on a 450mm nightstand."""
     width = float(params.get("Width", 900))
     depth = float(params.get("Depth", 450))
-    height = float(params.get("Height", 800))
+    drawer_count = max(int(params.get("DrawerCount", 3)), 0)
+    height = params.get("Height")
+    if height is None:
+        # 200mm per drawer over a 200mm plinth-and-top allowance: 3 drawers
+        # give 800, 4 give 1000.
+        height = 200.0 + 200.0 * drawer_count
+    height = float(height)
     top_thickness = float(params.get("TopThickness", 30))
     plinth_height = float(params.get("PlinthHeight", 70))
-    drawer_count = max(int(params.get("DrawerCount", 3)), 0)
 
     overhang = min(14.0, width * 0.02)
     carcass_width = width - 2 * overhang

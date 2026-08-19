@@ -20,27 +20,18 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 600
+      "default": 600,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 600
+      "default": 600,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 900
-    },
-    "WorktopThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "KickHeight": {
-      "type": "Length",
-      "default": 100
-    },
-    "OvenHeight": {
-      "type": "Length",
-      "default": 590
+      "default": 900,
+      "ui": "primary"
     }
   },
   "placement": {

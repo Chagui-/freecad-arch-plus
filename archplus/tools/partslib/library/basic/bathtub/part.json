@@ -19,48 +19,23 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1700
+      "default": 1700,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 700
+      "default": 700,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 550
-    },
-    "WallThickness": {
-      "type": "Length",
-      "default": 60
-    },
-    "BottomThickness": {
-      "type": "Length",
-      "default": 80
+      "default": 550,
+      "ui": "primary"
     }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "1700 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1700
-        }
-      }
-    },
-    {
-      "label": "1800 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1800
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

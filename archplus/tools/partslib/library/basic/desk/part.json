@@ -20,56 +20,23 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1200
+      "default": 1200,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 700
+      "default": 700,
+      "ui": "primary"
     },
     "Height": {
       "type": "Length",
-      "default": 750
-    },
-    "TopThickness": {
-      "type": "Length",
-      "default": 30
-    },
-    "PedestalWidth": {
-      "type": "Length",
-      "default": 400
-    },
-    "PanelThickness": {
-      "type": "Length",
-      "default": 30
-    },
-    "DrawerCount": {
-      "type": "Integer",
-      "default": 3
+      "default": 750,
+      "ui": "primary"
     }
   },
   "placement": {
     "host": "floor",
     "offset": 0
   },
-  "variants": [
-    {
-      "label": "1200 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1200
-        }
-      }
-    },
-    {
-      "label": "1400 mm",
-      "params": {
-        "Width": {
-          "type": "Length",
-          "default": 1400
-        }
-      }
-    }
-  ],
   "geometry": {}
 }

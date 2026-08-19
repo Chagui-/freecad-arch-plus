@@ -12,18 +12,30 @@ from archplus.tools.partslib import shapes as sh
 def build(params, assets, ctx):
     """A flat-screen TV, on a pedestal stand or wall-mounted.
 
-    Params: Width, Height, PanelThickness, BezelWidth, StandHeight (mm),
-    Mounted (0 for a stand, 1 for a wall bracket).
+    Params: ScreenSize (diagonal inches), Mounting ("stand" or "wall"),
+    Width, Height, PanelThickness, BezelWidth, StandHeight (mm). Width and
+    Height are derived from ScreenSize unless pinned.
 
     `Height` is the panel alone; a stand adds `StandHeight` below it, so the
-    two variants measure differently on purpose - a wall-mounted set has no
+    two mountings measure differently on purpose - a wall-mounted set has no
     floor footprint to schedule."""
-    width = float(params.get("Width", 1230))
-    height = float(params.get("Height", 710))
-    panel = float(params.get("PanelThickness", 60))
     bezel = float(params.get("BezelWidth", 18))
+    screen_size = max(int(params.get("ScreenSize", 55)), 1)
+    # A screen is sold by its diagonal in inches at 16:9, so the panel's
+    # outside dimensions are that diagonal split into sides plus a bezel on
+    # each edge. 55 gives 1254 x 721, 65 gives 1475 x 845.
+    diagonal = screen_size * 25.4
+    width = params.get("Width")
+    if width is None:
+        width = diagonal * 16.0 / 18.357560 + 2.0 * bezel
+    width = float(width)
+    height = params.get("Height")
+    if height is None:
+        height = diagonal * 9.0 / 18.357560 + 2.0 * bezel
+    height = float(height)
+    panel = float(params.get("PanelThickness", 60))
     stand_height = float(params.get("StandHeight", 90))
-    mounted = int(params.get("Mounted", 0))
+    mounted = 1 if params.get("Mounting") == "wall" else 0
 
     base_z = 0.0 if mounted else stand_height
     # A stand's foot is far deeper than the panel, so the panel sits in the

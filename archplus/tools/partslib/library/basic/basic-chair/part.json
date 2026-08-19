@@ -17,31 +17,22 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 450
+      "default": 450,
+      "ui": "primary"
     },
     "Depth": {
       "type": "Length",
-      "default": 450
+      "default": 450,
+      "ui": "primary"
     },
     "SeatHeight": {
       "type": "Length",
-      "default": 450
-    },
-    "SeatThickness": {
-      "type": "Length",
-      "default": 40
+      "default": 450,
+      "ui": "primary"
     },
     "BackHeight": {
       "type": "Length",
       "default": 450
-    },
-    "BackThickness": {
-      "type": "Length",
-      "default": 40
-    },
-    "LegRadius": {
-      "type": "Length",
-      "default": 18
     }
   },
   "placement": {

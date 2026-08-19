@@ -21,27 +21,18 @@
   "params": {
     "Height": {
       "type": "Length",
-      "default": 1600
-    },
-    "BaseDiameter": {
-      "type": "Length",
-      "default": 300
-    },
-    "StemDiameter": {
-      "type": "Length",
-      "default": 30
-    },
-    "ShadeHeight": {
-      "type": "Length",
-      "default": 320
-    },
-    "ShadeTopDiameter": {
-      "type": "Length",
-      "default": 260
+      "default": 1600,
+      "ui": "primary"
     },
     "ShadeBottomDiameter": {
       "type": "Length",
-      "default": 380
+      "default": 380,
+      "ui": "primary"
+    },
+    "BaseDiameter": {
+      "type": "Length",
+      "default": 300,
+      "ui": "primary"
     }
   },
   "placement": {

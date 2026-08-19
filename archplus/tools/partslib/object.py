@@ -26,7 +26,7 @@ from . import index as partslib_index
 from . import manifest as partslib_manifest
 
 PROP_PART_ID = "PartId"
-PROP_VARIANT = "Variant"
+PROP_AUTO_PARAMS = "AutoParams"
 _PARAM_GROUP = "Part"
 _PARAMS_GROUP = "Parameters"
 
@@ -35,21 +35,55 @@ _PARAMS_GROUP = "Parameters"
 # an absent one, since the absent case still falls back to the manifest
 # default in build_shape() and builds correctly.
 #
-# "Enum" is intentionally absent, not merely unimplemented: the manifest
-# schema has no "options" field to declare an App::PropertyEnumeration's
-# allowed values, so there is no honest way to build one. A fallback that
-# only worked when a "default" happened to be present would raise instead
-# whenever it was absent, and do so at property-declaration time - the worst
-# possible moment, since it can be reached from onChanged()'s Variant branch
-# with nothing there to catch it. Refuse it the same as any unknown type
-# (skip + warn) until the schema grows an "options" field.
+# "Choice" maps to an enumeration whose allowed values come from the param's
+# own `options` map. That is why it is expressible now and was not before:
+# the schema previously had no way to declare them.
 _PARAM_PROPERTY_TYPES = {
     "Length": "App::PropertyLength",
     "Angle": "App::PropertyAngle",
     "Integer": "App::PropertyInteger",
     "Bool": "App::PropertyBool",
     "String": "App::PropertyString",
+    "Choice": "App::PropertyEnumeration",
 }
+
+# What a reseed resets an "auto" param property to when it discards a
+# pinned value: the type's own empty value, not the stale number the user
+# typed. execute()'s write-back immediately replaces it with the real
+# derived value for measured params; for the rest an honest 0 beats a
+# confident 3 that contradicts the geometry. Choice has no empty value,
+# which is one more reason manifest validation refuses "auto" there.
+_EMPTY_PARAM_VALUES = {
+    "Length": 0,
+    "Angle": 0,
+    "Integer": 0,
+    "Bool": False,
+    "String": "",
+}
+
+
+def _paramValue(obj, name, spec):
+    """One param property's value, as a builder expects it.
+
+    A Choice property holds the option LABEL, because that is what the user
+    reads in the property editor. Map it back to the stable value the
+    manifest and the builder use - by label first, then by position. The
+    positional fallback is for a library edited on disk mid-session."""
+    value = getattr(obj, name)
+    options = partslib_manifest.choice_options(spec)
+    if not options:
+        return value
+    for option_value, option in options.items():
+        if ((option or {}).get("label") or option_value) == value:
+            return option_value
+    try:
+        labels = list(obj.getEnumerationsOfProperty(name))
+        return list(options)[labels.index(value)]
+    except Exception:
+        FreeCAD.Console.PrintWarning(
+            "ArchPlus: param %r has unknown choice value %r; using %r\n"
+            % (name, value, list(options)[0]))
+        return list(options)[0]
 
 # Defined in geometry.py, which needs it for the builder containment guard
 # and must stay importable without FreeCAD. Re-exported here because
@@ -116,14 +150,14 @@ class _LibraryPart(ArchComponent.Component):
         self.Type = "LibraryPart"
 
     def setPartProperties(self, obj, resolved=None, reseed=False):
-        """Ensure PartId/Variant exist, and one property per declared param.
+        """Ensure PartId and one property per declared param.
 
         Safe to call repeatedly, including from onDocumentRestored: with
         `reseed` False (the default) an already-existing param property's
         value is never touched, only newly-declared params are added - a
-        hand-edited dimension must survive a save/reload. `reseed=True` is
-        the one path that deliberately overwrites every declared param back
-        to its manifest default; see onChanged()'s Variant branch."""
+        hand-edited dimension must survive a save/reload. `reseed=True` is the
+        one path that deliberately overwrites every declared param back
+        to its manifest default."""
         if PROP_PART_ID not in obj.PropertiesList:
             obj.addProperty("App::PropertyString", PROP_PART_ID, _PARAM_GROUP,
                             "Library part this object was created from",
@@ -132,9 +166,17 @@ class _LibraryPart(ArchComponent.Component):
         # FreeCAD does not round-trip the ReadOnly editor bit through the
         # FCStd - belt and braces alongside locked=True above.
         obj.setEditorMode(PROP_PART_ID, 1)  # read-only
-        if PROP_VARIANT not in obj.PropertiesList:
-            obj.addProperty("App::PropertyEnumeration", PROP_VARIANT,
-                            _PARAM_GROUP, "Which variant of the part to build")
+        if PROP_AUTO_PARAMS not in obj.PropertiesList:
+            obj.addProperty("App::PropertyStringList", PROP_AUTO_PARAMS,
+                            _PARAM_GROUP,
+                            "Params still derived by the builder",
+                            locked=True)
+        obj.setEditorMode(PROP_AUTO_PARAMS, 2)  # hidden
+        # A document written before params replaced variants still carries a
+        # Variant enumeration. Removing a document property is destructive,
+        # so it stays - but it must stop looking like a live control.
+        if "Variant" in obj.PropertiesList:
+            obj.setEditorMode("Variant", 2)  # hidden
         self._declareParamProperties(obj, resolved, reseed)
 
     def _declareParamProperties(self, obj, resolved, reseed):
@@ -149,7 +191,7 @@ class _LibraryPart(ArchComponent.Component):
         properties would otherwise trigger N rebuilds from inside this one
         call, on top of whatever rebuild the caller does afterwards. Setting
         self._reseeding for the duration collapses all of that down to the
-        single rebuild the caller (onChanged's Variant branch, or makePart)
+        single rebuild the caller (onChanged's parameter path, or makePart)
         performs explicitly once this returns.
         """
         specs = partslib_manifest.param_specs(resolved) if resolved else {}
@@ -166,6 +208,8 @@ class _LibraryPart(ArchComponent.Component):
         self._paramNames = names
         self._reseeding = True
         try:
+            existing_auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or [])
+            new_auto = []
             for name, spec in specs.items():
                 prop_type = _PARAM_PROPERTY_TYPES.get(spec.get("type"))
                 if prop_type is None:
@@ -179,25 +223,106 @@ class _LibraryPart(ArchComponent.Component):
                 if is_new:
                     obj.addProperty(prop_type, name, _PARAMS_GROUP,
                                     "Part parameter %r" % (name,))
+                options = partslib_manifest.choice_options(spec)
+                if options:
+                    # An enumeration needs its allowed values before its
+                    # value, or the assignment below has nothing to match.
+                    setattr(obj, name,
+                            [(opt or {}).get("label") or value
+                             for value, opt in options.items()])
                 if is_new or reseed:
-                    setattr(obj, name, spec.get("default"))
+                    default = spec.get("default")
+                    if options:
+                        default = ((options.get(default) or {}).get("label")
+                                   or default)
+                    if default == partslib_manifest.AUTO:
+                        # Nothing meaningful to seed: execute() writes the
+                        # builder's answer in once the shape exists.
+                        default = None
+                        if is_new:
+                            new_auto.append(name)
+                        if reseed:
+                            # Reload discards the pin, but without this the
+                            # property goes on DISPLAYING the pinned number
+                            # while AutoParams already says the value is
+                            # derived again - a cabinet showing Doors: 3
+                            # over two door leaves (verification F3).
+                            empty = _EMPTY_PARAM_VALUES.get(spec.get("type"))
+                            if empty is not None:
+                                setattr(obj, name, empty)
+                    if default is not None:
+                        setattr(obj, name, default)
+            if reseed:
+                setattr(obj, PROP_AUTO_PARAMS,
+                        [name for name, spec in specs.items()
+                         if name in names
+                         and spec.get("default") == partslib_manifest.AUTO])
+            elif new_auto:
+                # A param the library gained since the document was saved
+                # must start out DERIVED, or the builder receives 0.
+                setattr(obj, PROP_AUTO_PARAMS,
+                        existing_auto + [name for name in new_auto
+                                         if name not in existing_auto])
         finally:
             self._reseeding = False
-        # Non-destructive fix for a variant/part switch that declares fewer
+        # Non-destructive fix for a part switch that declares fewer
         # params than before: the now-undeclared property is never removed
         # (removing a document property is destructive and can break older
         # files), but it must stop being an editable field that silently
         # does nothing. Hide anything in the "Parameters" group `resolved`
         # does not declare, and un-hide what it does - idempotent, and using
         # getGroupOfProperty() so this only ever touches properties in that
-        # group, never PartId/Variant or anything inherited from
+        # group, never PartId or anything inherited from
         # ArchComponent.
         for existing in obj.PropertiesList:
             if obj.getGroupOfProperty(existing) == _PARAMS_GROUP:
                 obj.setEditorMode(existing, 0 if existing in names else 2)
 
+    def _applyParamOverrides(self, obj, manifest, overrides):
+        """Write the browser panel's param values onto a seeded object.
+
+        makePart() seeds every property to its manifest default first;
+        this then applies the values the panel collected, so the placed
+        object is the part the preview showed rather than a silent reset
+        to the defaults.
+
+        A Choice override arrives as the option's STABLE VALUE - that is
+        what ParamForm.values() reads back via itemData - while the
+        property stores the LABEL, so it is mapped through the same
+        choice_options() lookup _declareParamProperties performs when
+        seeding a default. Every name applied is removed from AutoParams:
+        a value the user typed is pinned by definition, the rule everywhere
+        else in this module. Names the manifest does not declare, names
+        with no property, and None values are skipped.
+
+        Assigning a param property fires onChanged, which rebuilds - the
+        same reentrancy _declareParamProperties guards against, guarded
+        the same way (the caller performs the one real rebuild)."""
+        overrides = overrides or {}
+        if not overrides:
+            return
+        specs = partslib_manifest.param_specs(manifest)
+        auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or [])
+        self._reseeding = True
+        try:
+            for name, value in overrides.items():
+                spec = specs.get(name)
+                if spec is None or value is None \
+                        or name not in obj.PropertiesList:
+                    continue
+                options = partslib_manifest.choice_options(spec)
+                if options and value in options:
+                    value = ((options.get(value) or {}).get("label")
+                             or value)
+                setattr(obj, name, value)
+                if name in auto:
+                    auto.remove(name)
+            setattr(obj, PROP_AUTO_PARAMS, auto)
+        finally:
+            self._reseeding = False
+
     def _resolveCurrent(self, obj):
-        """(resolved manifest) for obj's current PartId/Variant, or None.
+        """The manifest for obj's current PartId, or None.
 
         Only used to know which Parameter properties to declare or reseed -
         never touches obj.Shape, so it is safe to call from
@@ -211,9 +336,7 @@ class _LibraryPart(ArchComponent.Component):
         entry, _facets = found
         try:
             manifest = partslib_manifest.load_manifest(entry["path"])
-            return partslib_manifest.resolve_variant(
-                manifest, getattr(obj, PROP_VARIANT, None)
-                or partslib_manifest.DEFAULT_VARIANT_LABEL)
+            return manifest
         except Exception:
             return None
 
@@ -239,14 +362,14 @@ class _LibraryPart(ArchComponent.Component):
         entry, _facets = found
         try:
             manifest = partslib_manifest.load_manifest(entry["path"])
-            resolved = partslib_manifest.resolve_variant(
-                manifest, getattr(obj, PROP_VARIANT, None)
-                or partslib_manifest.DEFAULT_VARIANT_LABEL)
-            overrides = {name: getattr(obj, name)
-                        for name in getattr(self, "_paramNames", ())
-                        if name in obj.PropertiesList}
+            specs = partslib_manifest.param_specs(manifest)
+            auto = set(getattr(obj, PROP_AUTO_PARAMS, ()) or ())
+            overrides = {}
+            for name in getattr(self, "_paramNames", ()):
+                if name in obj.PropertiesList and name not in auto:
+                    overrides[name] = _paramValue(obj, name, specs.get(name))
             shape = partslib_geometry.build_shape(
-                resolved, entry["dir"], overrides)
+                manifest, entry["dir"], overrides)
         except Exception as exc:
             FreeCAD.Console.PrintError(
                 "ArchPlus: cannot rebuild %s: %s\n" % (obj.Label, exc))
@@ -256,29 +379,45 @@ class _LibraryPart(ArchComponent.Component):
         obj.Shape = shape
         obj.Placement = placement
 
+        # An "auto" param has no seeded value, so the editor would otherwise
+        # show a meaningless zero. The built shape is the only thing that
+        # knows what the builder actually derived, so its measurements are
+        # what get written back - which covers Width/Depth/Height, the
+        # dimensions users read. Assigning these fires onChanged() for each,
+        # the same reentrancy _declareParamProperties() guards against, and
+        # guarded the same way.
+        if auto:
+            try:
+                measured = partslib_geometry.measure(shape)
+                self._reseeding = True
+                try:
+                    for name in auto:
+                        if name in measured and name in obj.PropertiesList:
+                            setattr(obj, name, measured[name])
+                finally:
+                    self._reseeding = False
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: cannot write derived params for %s: %s\n"
+                    % (obj.Label, exc))
+
     def onChanged(self, obj, prop):
-        """Switching Variant re-seeds Parameters and rebuilds in place;
-        changing a Parameter property rebuilds too.
+        """Changing a Parameter property rebuilds.
 
         FreeCAD fires onChanged() for every property as it restores a
-        document, including Variant - so this must not react while
-        "Restore" is in obj.State, or opening a file would silently rebuild
-        from whatever the library currently contains, exactly what this
-        module's cache semantics forbid. Same guard as doors/object.py
-        and windows/object.py.
-
-        Variants are different products (design spec Sec 5.3): switching
-        Variant deliberately discards any hand-edited Parameter values by
-        re-seeding them from the new variant's declared defaults, rather
-        than risk an object whose dimensions match no catalogue entry."""
-        if prop == PROP_VARIANT:
-            if "Restore" not in obj.State:
-                self.setPartProperties(
-                    obj, self._resolveCurrent(obj), reseed=True)
-                self.execute(obj)
-        elif prop in getattr(self, "_paramNames", ()):
+        document, so this must not react while "Restore" is in obj.State, or
+        opening a file would silently rebuild from whatever the library
+        currently contains, exactly what this module's cache semantics forbid.
+        """
+        if prop in getattr(self, "_paramNames", ()):
             if ("Restore" not in obj.State
                     and not getattr(self, "_reseeding", False)):
+                auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or ())
+                if prop in auto:
+                    # Editing a derived field is what pins it. "Reload from
+                    # library" is the only way back to derived.
+                    auto.remove(prop)
+                    setattr(obj, PROP_AUTO_PARAMS, auto)
                 self.execute(obj)
         else:
             ArchComponent.Component.onChanged(self, obj, prop)
@@ -319,16 +458,20 @@ def _applyMetadata(obj, resolved, facets):
         obj.IfcProperties = dict(properties)
 
 
-def makePart(entry, facets, variant=None, placement=None):
-    """Create one library part object in the active document."""
+def makePart(entry, facets, placement=None, overrides=None):
+    """Create one library part object in the active document.
+
+    `overrides` is {name: value} for the parameters the browser panel's
+    user actually set (ParamForm.values(), which omits fields still
+    marked derived). Applied on top of the manifest-default seeding, so
+    what lands in the 3D view is what the preview rebuilt - and so a
+    Choice that carries a placement (e.g. a television's Mounting) cannot
+    disagree with the placement computed from the same value."""
     doc = FreeCAD.ActiveDocument
     if doc is None:
         raise RuntimeError("no active document")
 
     manifest = partslib_manifest.load_manifest(entry["path"])
-    labels = partslib_manifest.variant_labels(manifest)
-    variant = variant or labels[0]
-    resolved = partslib_manifest.resolve_variant(manifest, variant)
 
     obj = doc.addObject("Part::FeaturePython", "LibraryPart")
     _LibraryPart(obj)
@@ -337,17 +480,9 @@ def makePart(entry, facets, variant=None, placement=None):
 
     obj.Label = manifest.get("name", entry["id"])
     setattr(obj, PROP_PART_ID, entry["id"])
-    setattr(obj, PROP_VARIANT, labels)
-    setattr(obj, PROP_VARIANT, variant)
-    # Explicit, not left to the onChanged(Variant) cascade above: whether
-    # that cascade actually fires here depends on FreeCAD's PropertyEnumeration
-    # "did the value really change" semantics when `variant` is the list's
-    # first entry, which this file has no reliable way to assert headlessly.
-    # setPartProperties()/_declareParamProperties() are idempotent under
-    # reseed=True, so calling this explicitly is redundant-but-safe if the
-    # cascade already ran, and load-bearing if it did not.
-    obj.Proxy.setPartProperties(obj, resolved, reseed=True)
-    _applyMetadata(obj, resolved, facets)
+    obj.Proxy.setPartProperties(obj, manifest, reseed=True)
+    obj.Proxy._applyParamOverrides(obj, manifest, overrides)
+    _applyMetadata(obj, manifest, facets)
 
     if placement is not None:
         obj.Placement = placement
@@ -372,47 +507,11 @@ def reloadFromLibrary(obj):
     entry, facets = found
     try:
         manifest = partslib_manifest.load_manifest(entry["path"])
-        labels = partslib_manifest.variant_labels(manifest)
-
-        # Decide the label explicitly rather than relying on how a
-        # PropertyEnumeration reads back after being reassigned with the old
-        # selection missing from the new list - that readback is
-        # FreeCAD-version-dependent and can otherwise feed an unknown label
-        # into resolve_variant(), raising KeyError out of this Qt slot.
-        current = getattr(obj, PROP_VARIANT, None)
-        if current in labels:
-            variant = current
-        else:
-            variant = labels[0]
-            if current:
-                FreeCAD.Console.PrintWarning(
-                    "ArchPlus: variant %r of %s no longer exists; using %r "
-                    "instead\n" % (current, obj.Label, variant))
-
-        # Reassigning PROP_VARIANT fires onChanged(Variant) when FreeCAD
-        # considers the value to have actually changed, which would re-seed
-        # Parameter properties on its own - but for the by-far-most-common
-        # case here (reload with the same variant still selected), whether
-        # that cascade fires depends on FreeCAD's PropertyEnumeration
-        # "did the value really change" semantics, which this file has no
-        # reliable way to assert headlessly. Relying on it would mean a
-        # user's hand-edited Parameter value could survive "Reload from
-        # library" untouched, contradicting what this command promises: it
-        # means "take the library's current truth", so it must discard
-        # hand-edits exactly as an explicit Variant switch does.
-        setattr(obj, PROP_VARIANT, labels)
-        setattr(obj, PROP_VARIANT, variant)
-
-        resolved = partslib_manifest.resolve_variant(manifest, variant)
-        # Explicit, not left to the cascade above - same reasoning as
-        # makePart(). setPartProperties()/_declareParamProperties() are
-        # idempotent under reseed=True and guarded by self._reseeding
-        # against re-entrant rebuilds, so calling this explicitly is
-        # redundant-but-safe if the cascade above already ran, and
-        # load-bearing (discarding any hand-edited Parameter value) if it
-        # did not.
-        obj.Proxy.setPartProperties(obj, resolved, reseed=True)
-        _applyMetadata(obj, resolved, facets)
+        # Reload means "take the library's current truth", so it discards
+        # hand-edited Parameter values and returns every derived param to
+        # derived. reseed=True is what does both.
+        obj.Proxy.setPartProperties(obj, manifest, reseed=True)
+        _applyMetadata(obj, manifest, facets)
     except Exception as exc:
         FreeCAD.Console.PrintError(
             "ArchPlus: cannot reload %s: %s\n" % (obj.Label, exc))

@@ -8,7 +8,7 @@
 #     a room header) drills into screen two.
 #   - "results": a clickable breadcrumb ("All > Bathroom > Toilets"), a
 #     search field, a card grid of parts, and a detail sidebar (preview,
-#     name, variant chips, W/D/H, description, Place in 3D view).
+#     name, parameter form, W/D/H, description, Place in 3D view).
 #
 # PartsLibraryPanel itself is a plain QWidget that knows nothing about docks
 # or MDI sub-windows - showPanel() below is the one place that hosts it, and
@@ -20,7 +20,9 @@
 # placed.
 
 import os
-import re
+import shutil
+import tempfile
+
 
 import FreeCAD
 import FreeCADGui
@@ -54,6 +56,47 @@ _VIEW3D_CLASS = "Gui::View3DInventor"
 # "slow enough to be worth telling the user about". See
 # partslib_thumbs.Timer.
 _Timer = partslib_thumbs.Timer
+
+# Detail-pane previews, remembered in memory rather than written to disk.
+#
+# These used to land in each part's .cache/ directory, one JPEG per distinct
+# set of parameter values. Under variants that was a closed set - a handful
+# of named sizes per part, so the directory converged. Under free-form
+# params it is not: Width alone is a continuous Length, so every value
+# anybody types leaves a file behind that nothing ever removes. One evening
+# of trying television sizes left nine JPEGs in the library folder.
+#
+# A detail preview is a browsing artifact - it is worth having while the
+# panel is open and worthless afterwards - so it belongs in a bounded
+# in-memory cache that dies with the session, not in the source tree.
+# .cache/ is now the BREP cache's alone (see geometry.CACHE_DIRNAME).
+#
+# Keyed by (part id, parameter hash): the same part at the same parameters
+# renders once, and switching two values back and forth is free.
+_PREVIEW_CACHE = {}
+_PREVIEW_CACHE_ORDER = []
+_PREVIEW_CACHE_LIMIT = 48
+
+
+def _rememberPreview(key, pixmap):
+    """Cache one rendered preview, evicting the oldest past the limit."""
+    if key in _PREVIEW_CACHE:
+        return
+    _PREVIEW_CACHE[key] = pixmap
+    _PREVIEW_CACHE_ORDER.append(key)
+    while len(_PREVIEW_CACHE_ORDER) > _PREVIEW_CACHE_LIMIT:
+        _PREVIEW_CACHE.pop(_PREVIEW_CACHE_ORDER.pop(0), None)
+
+
+def clear_preview_cache():
+    """Forget every remembered preview.
+
+    Called on a rescan for the same reason the shape cache is dropped
+    there: params are part of the key, but an edited BUILDER or asset file
+    is not, so a preview can outlive the geometry it depicts."""
+    _PREVIEW_CACHE.clear()
+    del _PREVIEW_CACHE_ORDER[:]
+
 
 _THUMB_SIZE = 96
 
@@ -141,32 +184,7 @@ _STYLESHEET_TEMPLATE = """
         background-color: transparent;
         color: %(accent)s;
     }
-    QPushButton#VariantChip {
-        background-color: transparent;
-        color: %(text)s;
-        border: 1px solid %(border)s;
-        border-radius: 10px;
-        padding: 2px 10px;
-    }
-    QPushButton#VariantChip:checked {
-        background-color: transparent;
-        color: %(accent)s;
-        border: 1px solid %(accent)s;
-    }
-    QLabel#VariantCaption {
-        color: %(text_dim)s;
-        padding-right: 6px;
-    }
-    QComboBox#VariantCombo {
-        background-color: transparent;
-        color: %(text)s;
-        border: 1px solid %(border)s;
-        border-radius: 4px;
-        padding: 2px 6px;
-    }
-    QComboBox#VariantCombo:hover {
-        border: 1px solid %(accent)s;
-    }
+
     QPushButton#BreadcrumbSegment {
         background-color: transparent;
         color: %(text)s;
@@ -236,15 +254,6 @@ def _warnPreviewUnavailable(exc):
         "(%s); using a static image preview instead.\n" % (exc,))
 
 
-def _sanitizeVariantLabel(label):
-    """Turn a variant label ("800 mm") into a safe filename fragment.
-
-    Labels are free text from the manifest and may contain spaces or, in
-    principle, path characters ("/", ".."); this must never be used
-    unsanitised as part of a filename."""
-    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", label or "").strip("_")
-    return safe or "variant"
-
 
 def _clearLayout(layout):
     """Remove and delete every item/widget a layout holds, so it can be
@@ -290,13 +299,19 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.stack = QtGui.QStackedWidget()
         outer.addWidget(self.stack)
 
+        # Theme FIRST: _applyTheme() is what assigns self._tokens, and the
+        # detail pane hands those tokens to ParamForm as it is constructed.
+        # Building the screens first left that read hitting an attribute
+        # that did not exist yet. Nothing here touches a child widget - it
+        # reads the theme, sets the tokens and styles this panel - so it is
+        # safe before the screens exist.
+        self._applyTheme()
+
         self._buildCategoriesScreen()
         self._buildResultsScreen()
         self.stack.addWidget(self.categoriesScreen)
         self.stack.addWidget(self.resultsScreen)
         self.stack.setCurrentIndex(0)
-
-        self._applyTheme()
 
     def _buildCategoriesScreen(self):
         """Screen one: a scrollable stack of room cards, or - JOB2, empty
@@ -375,7 +390,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.addWidget(splitter, 1)
 
     def _buildDetail(self, layout):
-        """Preview, name, variant chips, measurements, description, Place."""
+        """Preview, name, parameter form, measurements, description, Place."""
         self.preview = self._makePreviewWidget()
         self.preview.setMinimumHeight(_PREVIEW_HEIGHT)
         layout.addWidget(self.preview)
@@ -388,15 +403,16 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.detailName.setWordWrap(True)
         layout.addWidget(self.detailName)
 
-        self.variantRow = QtGui.QHBoxLayout()
-        self.variantRow.setSpacing(4)
-        layout.addLayout(self.variantRow)
-        self.variantGroup = QtGui.QButtonGroup(self)
-        self.variantGroup.setExclusive(True)
-        self.variantGroup.buttonToggled.connect(self._onVariantChanged)
-        # Set by _setVariantChips when a part has enough variants to earn a
-        # dropdown instead of chips; None the rest of the time.
-        self.variantCombo = None
+        from . import paramform as partslib_paramform
+
+        self.paramForm = partslib_paramform.ParamForm(self, self._tokens)
+        self.paramForm.changed.connect(self._onParamsChanged)
+        layout.addWidget(self.paramForm)
+
+        self._paramTimer = QtCore.QTimer(self)
+        self._paramTimer.setSingleShot(True)
+        self._paramTimer.setInterval(250)
+        self._paramTimer.timeout.connect(self._refreshPreview)
 
         self.metrics = QtGui.QLabel("")
         metricsFont = QtGui.QFont("Monospace")
@@ -482,9 +498,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         # a cancelled thumbnail build gets another go.
         self._renderThumbnails = True
         # A rescan is the user saying "re-read the library", so remembered
-        # shapes go too - params are in the cache key, but an edited builder
-        # or asset file is not.
+        # shapes and previews go too - params are in both cache keys, but an
+        # edited builder or asset file is not.
         partslib_geometry.clear_shape_cache()
+        clear_preview_cache()
         index = partslib_object.libraryIndex(force=True)
         timer.mark("scan")
 
@@ -800,7 +817,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     def _makePartCard(self, entry):
         """Square thumbnail on top, name beneath, a small monospaced line of
-        variant labels - the card look used everywhere in the panel."""
+        primary parameter labels - the card look used everywhere in the panel."""
         card = QtGui.QFrame()
         card.setObjectName("PartCard")
         card.setProperty("selected", False)
@@ -836,18 +853,24 @@ class PartsLibraryPanel(QtGui.QWidget):
         name.setWordWrap(True)
         v.addWidget(name)
 
-        variants = QtGui.QLabel("  ".join(entry["variants"]))
-        variantsFont = QtGui.QFont("Monospace")
-        variantsFont.setStyleHint(QtGui.QFont.TypeWriter)
-        variantsFont.setPointSize(max(7, variantsFont.pointSize() - 1))
-        variants.setFont(variantsFont)
-        variants.setAlignment(QtCore.Qt.AlignHCenter)
-        variants.setWordWrap(True)
-        # Dim the variant line relative to the name, using this screen's own
+        from . import manifest as partslib_manifest
+
+        shaped = {"params": entry.get("params") or {}}
+        specs = partslib_manifest.param_specs(shaped)
+        adjustable = QtGui.QLabel(" | ".join(
+            (specs.get(name) or {}).get("label") or name
+            for name in partslib_manifest.primary_params(shaped)))
+        adjustableFont = QtGui.QFont("Monospace")
+        adjustableFont.setStyleHint(QtGui.QFont.TypeWriter)
+        adjustableFont.setPointSize(max(7, adjustableFont.pointSize() - 1))
+        adjustable.setFont(adjustableFont)
+        adjustable.setAlignment(QtCore.Qt.AlignHCenter)
+        adjustable.setWordWrap(True)
+        # Dim the parameter line relative to the name, using this screen's own
         # text_dim token (never QPalette - see _applyTheme's docstring for
         # why palette colours cannot be trusted here).
-        variants.setStyleSheet("color: %s;" % self._tokens["text_dim"])
-        v.addWidget(variants)
+        adjustable.setStyleSheet("color: %s;" % self._tokens["text_dim"])
+        v.addWidget(adjustable)
 
         return card
 
@@ -909,20 +932,18 @@ class PartsLibraryPanel(QtGui.QWidget):
         dialog.close()
 
     def _ensureGridThumbnail(self, entry):
-        """Render a fallback thumbnail for `entry`'s default variant.
+        """Render a fallback thumbnail for `entry`'s manifest defaults.
 
-        Resolved the same way `_resolvedSelection` does, but for the first
-        variant rather than whatever is currently selected in the detail
-        pane - the grid is not variant-specific. Must never raise: a bad
+        Resolve the manifest defaults for the grid rather than whatever is
+        currently selected in the detail pane - the grid is not parameter-
+        specific. Must never raise: a bad
         manifest or a failed render must still leave the entry's card
         visible by name, just with no icon."""
         from . import manifest as partslib_manifest
 
         try:
             manifest = partslib_manifest.load_manifest(entry["path"])
-            resolved = partslib_manifest.resolve_variant(
-                manifest, entry["variants"][0])
-            return partslib_thumbs.ensure_thumbnail(entry, resolved)
+            return partslib_thumbs.ensure_thumbnail(entry, manifest)
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
                 "ArchPlus: cannot render a thumbnail for %s: %s\n"
@@ -958,131 +979,60 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.placeButton.setEnabled(entry is not None)
         if entry is None:
             self.detailName.setText("")
-            self._setVariantChips([])
+            self.paramForm.setSpecs({}, [])
             self.metrics.setText("")
             self.description.setText("")
             return
 
         self.detailName.setText(entry["name"])
         self.description.setText(entry.get("description") or "")
-        self._setVariantChips(entry["variants"])
+        from . import manifest as partslib_manifest
+
+        shaped = {"params": entry.get("params") or {}}
+        self.paramForm.setSpecs(
+            partslib_manifest.param_specs(shaped),
+            partslib_manifest.primary_params(shaped))
         self._refreshPreview()
 
-    # Above this many variants, chips stop being a good control: they wrap
-    # onto several rows in a narrow sidebar and the labels ("Walk-in
-    # 1200 mm") are long enough that the row stops reading as a row.
-    MAX_VARIANT_CHIPS = 2
+    def _onParamsChanged(self):
+        self._paramTimer.start()
 
-    def _setVariantChips(self, labels):
-        """Rebuild the variant control for the current selection.
-
-        Three cases, because one control does not suit all of them:
-
-        - ONE label. A part with no declared variants gets the implicit
-          "Default", and a lone chip reading "Default" is pure noise - it
-          offers no choice and names nothing the user recognises. Show
-          nothing at all.
-        - TWO labels. Chips: both options visible at once, one click to
-          switch.
-        - MORE. A combo box, which stays one line however many there are
-          and however long their labels."""
-        for button in list(self.variantGroup.buttons()):
-            self.variantGroup.removeButton(button)
-            button.setParent(None)
-            button.deleteLater()
-        # _clearLayout deletes the widgets, so any surviving reference to
-        # the old combo would be a dangling C++ pointer.
-        self.variantCombo = None
-        _clearLayout(self.variantRow)
-
-        labels = list(labels or [])
-        if len(labels) < 2:
-            return
-
-        if len(labels) <= self.MAX_VARIANT_CHIPS:
-            for label in labels:
-                chip = QtGui.QPushButton(label)
-                chip.setObjectName("VariantChip")
-                chip.setCheckable(True)
-                chip.setCursor(QtCore.Qt.PointingHandCursor)
-                self.variantGroup.addButton(chip)
-                self.variantRow.addWidget(chip)
-            self.variantRow.addStretch(1)
-
-            buttons = self.variantGroup.buttons()
-            if buttons:
-                buttons[0].blockSignals(True)
-                buttons[0].setChecked(True)
-                buttons[0].blockSignals(False)
-            return
-
-        caption = QtGui.QLabel("Variant")
-        caption.setObjectName("VariantCaption")
-        self.variantRow.addWidget(caption)
-
-        combo = QtGui.QComboBox()
-        combo.setObjectName("VariantCombo")
-        # Populate before connecting: addItems fires currentIndexChanged,
-        # and rebuilding the preview mid-populate would build the wrong
-        # variant and waste the work.
-        combo.addItems(labels)
-        combo.setCurrentIndex(0)
-        combo.currentIndexChanged.connect(self._onVariantChanged)
-        self.variantRow.addWidget(combo, 1)
-        self.variantCombo = combo
-
-    def _currentVariantLabel(self):
-        combo = getattr(self, "variantCombo", None)
-        if combo is not None:
-            try:
-                return combo.currentText() or None
-            except RuntimeError:
-                # Combo destroyed by a rebuild between selection changes.
-                self.variantCombo = None
-        for button in self.variantGroup.buttons():
-            if button.isChecked():
-                return button.text()
-        return None
-
-    def _onVariantChanged(self, *args):
-        # Serves both controls. buttonToggled(button, checked) fires twice
-        # on an exclusive switch (the old chip going False, the new one
-        # going True) - only react to the "became checked" half.
-        # currentIndexChanged(int) passes a single argument, so the
-        # two-argument test leaves it alone.
-        checked = args[1] if len(args) > 1 else True
-        if not checked:
-            return
-        self._refreshPreview()
-
-    def _resolvedSelection(self):
-        """(entry, resolved manifest) for the current selection, or None."""
+    def _selection(self):
+        """(entry, manifest, overrides) for the current selection, or None."""
         from . import manifest as partslib_manifest
 
         entry = self.currentEntry()
         if entry is None:
             return None
         manifest = partslib_manifest.load_manifest(entry["path"])
-        label = self._currentVariantLabel() or entry["variants"][0]
-        return entry, partslib_manifest.resolve_variant(manifest, label)
+        return entry, manifest, self.paramForm.values()
 
     def _refreshPreview(self):
-        """Build the selected variant and show it with its measurements."""
+        """Build the selected parameters and show them with measurements."""
         from . import geometry as partslib_geometry
+        from . import manifest as partslib_manifest
 
-        selection = self._resolvedSelection()
+        selection = self._selection()
         if selection is None:
             return
-        entry, resolved = selection
+        entry, manifest, overrides = selection
         timer = _Timer("previewing %r" % (entry["id"],))
         try:
-            shape = partslib_geometry.build_shape(resolved, entry["dir"])
+            shape = partslib_geometry.build_shape(
+                manifest, entry["dir"], overrides)
         except Exception as exc:
             self.metrics.setText("Cannot build this part: %s" % exc)
             return
         timer.mark("build")
 
+        # An "auto" param can only be one of the shape's own dimensions
+        # (manifest.AUTO_PARAM_NAMES), so measuring the built shape reports
+        # every one of them - there is nothing else for a builder to tell
+        # us. This is what the derived_params() hook used to be for, back
+        # when a count could be declared auto and no measurement could
+        # reach it.
         metrics = partslib_geometry.measure(shape)
+        self.paramForm.setDerived(metrics)
         self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
                              % (metrics["Width"], metrics["Depth"],
                                 metrics["Height"]))
@@ -1096,24 +1046,23 @@ class PartsLibraryPanel(QtGui.QWidget):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: live preview failed: %s\n" % (exc,))
         else:
-            label = self._currentVariantLabel() or entry["variants"][0]
-            self._showStaticPreview(entry, shape, label)
+            self._showStaticPreview(entry, shape, manifest, overrides)
         timer.mark("preview")
         timer.report()
 
-    def _showStaticPreview(self, entry, shape, label):
+    def _showStaticPreview(self, entry, shape, manifest, overrides):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
 
-          1. a freshly rendered/cached per-variant JPEG at detail (256px)
-             resolution;
-          2. the part's committed thumbnail.jpg (not variant-specific, but
+          1. a per-parameter render at detail (256px) resolution, held in
+             memory for the session (see _PREVIEW_CACHE);
+          2. the part's committed thumbnail.jpg (not parameter-specific, but
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
              with no pivy/GL available at all, since it is what stands
              between the user and a blank pane."""
-        pixmap = self._renderVariantPreview(entry, shape, label)
+        pixmap = self._renderParamPreview(entry, shape, manifest, overrides)
         if pixmap is None:
             try:
                 thumb = partslib_thumbs.thumbnail_path(entry["dir"])
@@ -1133,41 +1082,65 @@ class PartsLibraryPanel(QtGui.QWidget):
             self.preview.setPixmap(QtGui.QPixmap())
             self.preview.setText("No preview available")
 
-    def _renderVariantPreview(self, entry, shape, label):
-        """Render `shape` at detail resolution, cached under the part's
-        `.cache/` directory keyed by the sanitised variant label. Returns a
-        QPixmap, or None on any failure (a bad cache path, or a renderer
-        with no GL context - render_shape already returns False rather than
-        raising in that case) so the caller can fall through to the next
-        layer.
+    def _paramCacheKey(self, manifest, overrides):
+        """A stable short digest of one set of param values."""
+        import hashlib
 
-        Checks the shared session failure cache first: on a machine where
-        the renderer can never succeed, re-selecting the same part/variant
-        (or switching Variant back and forth) would otherwise retry the
-        same doomed render every single time - see partslib_thumbs.py's
+        from . import manifest as partslib_manifest
+
+        params = partslib_manifest.merge_params(manifest, overrides)
+        blob = repr(sorted((str(k), str(v)) for k, v in params.items()))
+        return hashlib.sha1(blob.encode("utf8")).hexdigest()[:12]
+
+    def _renderParamPreview(self, entry, shape, manifest, overrides):
+        """Render `shape` at detail resolution, memoized in _PREVIEW_CACHE by
+        part and parameter values. Returns a QPixmap, or None on any failure
+        (a renderer with no GL context - render_shape already returns False
+        rather than raising in that case) so the caller can fall through to
+        the next layer.
+
+        The render still needs a file to write, since SoOffscreenRenderer
+        saves to a path rather than handing back a buffer - but that file is
+        a temporary one, read straight into a pixmap and deleted. A
+        temporary DIRECTORY rather than a temporary file, because
+        render_shape reports success by testing that out_path exists, and
+        mkstemp would have created it already.
+
+        Checks the shared session failure cache first, under a key naming
+        the part rather than the (now per-call) output path: on a machine
+        where the renderer can never succeed, re-selecting the same part or
+        switching parameters back and forth would otherwise retry the same
+        doomed render every single time - see partslib_thumbs.py's
         _RENDER_FAILED for the full rationale."""
-        cache_dir = os.path.join(entry["dir"], ".cache")
-        out_path = os.path.join(
-            cache_dir, "%s.jpg" % _sanitizeVariantLabel(label))
+        key = (entry["id"], self._paramCacheKey(manifest, overrides))
+        cached = _PREVIEW_CACHE.get(key)
+        if cached is not None:
+            return cached
+        failureKey = "detail-preview:%s" % (entry["id"],)
+        if partslib_thumbs.render_failed_before(failureKey):
+            return None
+
+        folder = tempfile.mkdtemp(prefix="archplus-preview-")
+        out_path = os.path.join(folder, "preview.jpg")
         try:
-            if os.path.exists(out_path):
-                pixmap = QtGui.QPixmap(out_path)
-                return None if pixmap.isNull() else pixmap
-            if partslib_thumbs.render_failed_before(out_path):
-                return None
             if not partslib_thumbs.render_shape(
                     shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
-                partslib_thumbs.mark_render_failed(out_path, (
-                    "ArchPlus: cannot render a detail preview for %r (%s); "
-                    "will not retry this session\n" % (entry["id"], label)))
+                partslib_thumbs.mark_render_failed(failureKey, (
+                    "ArchPlus: cannot render a detail preview for %r; "
+                    "will not retry this session\n" % (entry["id"],)))
                 return None
             pixmap = QtGui.QPixmap(out_path)
-            return None if pixmap.isNull() else pixmap
+            if pixmap.isNull():
+                return None
+            _rememberPreview(key, pixmap)
+            return pixmap
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
-                "ArchPlus: cannot render a detail preview for %s (%s): %s\n"
-                % (entry["id"], label, exc))
+                "ArchPlus: cannot render a detail preview for %s: %s\n"
+                % (entry["id"], exc))
             return None
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     def _find3DSubWindow(self, mdi):
         """The MDI sub-window holding a 3D view, or None.
@@ -1254,17 +1227,20 @@ class PartsLibraryPanel(QtGui.QWidget):
             return
 
         from . import geometry as partslib_geometry
+        from . import manifest as partslib_manifest
         from . import object as partslib_object
         from . import placement as partslib_placement
         import draftguitools.gui_trackers as DraftTrackers
 
-        selection = self._resolvedSelection()
+        selection = self._selection()
         if selection is None:
             return
-        entry, resolved = selection
-        host = partslib_placement.host_of(resolved)
-        offset = partslib_placement.offset_of(resolved)
-        variant = self._currentVariantLabel() or entry["variants"][0]
+        entry, manifest, overrides = selection
+        params = partslib_manifest.merge_params(manifest, overrides)
+        effective = {"placement": partslib_manifest.resolve_placement(
+            manifest, params)}
+        host = partslib_placement.host_of(effective)
+        offset = partslib_placement.offset_of(effective)
         # Read once, up front: the checkbox lives on the library tab, which
         # is not even the active window while picking, so a mid-session
         # change of mind is not something the user can express anyway - and
@@ -1284,7 +1260,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         tracker = None
         trackerCentre = None
         try:
-            shape = partslib_geometry.build_shape(resolved, entry["dir"])
+            shape = partslib_geometry.build_shape(
+                manifest, entry["dir"], overrides)
             metrics = partslib_geometry.measure(shape)
             tracker = DraftTrackers.boxTracker()
             tracker.length(metrics["Width"])
@@ -1341,8 +1318,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 doc.openTransaction("Place library part")
                 try:
                     partslib_object.makePart(
-                        entry, self._facets, variant=variant,
-                        placement=placement)
+                        entry, self._facets, placement=placement,
+                        overrides=overrides)
                     doc.commitTransaction()
                     state["placed"] = True
                 except Exception as exc:

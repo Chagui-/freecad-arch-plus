@@ -15,7 +15,7 @@ from . import manifest as pm
 FACETS_FILENAME = "facets.json"
 MANIFEST_FILENAME = "part.json"
 BUILDER_FILENAME = "builder.py"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def manifest_paths(library_dir):
@@ -91,7 +91,7 @@ def scan(library_dir):
             "description": data.get("description", ""),
             "keywords": list(data.get("keywords", [])),
             "facets": data.get("facets", {}),
-            "variants": pm.variant_labels(data),
+            "params": data.get("params", {}),
             "path": path,
             "dir": os.path.dirname(path),
             "mtime": os.path.getmtime(path),
@@ -132,7 +132,12 @@ def save_cache(index, path):
     on disk simply has no such key, so it reads back as None, compares
     unequal to the real facets.json mtime in is_cache_valid() and is treated
     as stale. That forces one rescan which then writes the key, so the
-    migration is self-healing and needs no version gate."""
+    migration is self-healing and needs no version gate.
+
+    CACHE_VERSION was bumped to 2 when entries stopped carrying "variants"
+    and started carrying "params". Unlike the facetsMtime addition, a stale
+    v1 cache would hand the panel a key that no longer exists, so it must be
+    refused outright rather than healed."""
     payload = {"version": CACHE_VERSION,
                "facets": index["facets"],
                "entries": index["entries"],
