@@ -257,13 +257,19 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.stack = QtGui.QStackedWidget()
         outer.addWidget(self.stack)
 
+        # Theme FIRST: _applyTheme() is what assigns self._tokens, and the
+        # detail pane hands those tokens to ParamForm as it is constructed.
+        # Building the screens first left that read hitting an attribute
+        # that did not exist yet. Nothing here touches a child widget - it
+        # reads the theme, sets the tokens and styles this panel - so it is
+        # safe before the screens exist.
+        self._applyTheme()
+
         self._buildCategoriesScreen()
         self._buildResultsScreen()
         self.stack.addWidget(self.categoriesScreen)
         self.stack.addWidget(self.resultsScreen)
         self.stack.setCurrentIndex(0)
-
-        self._applyTheme()
 
     def _buildCategoriesScreen(self):
         """Screen one: a scrollable stack of room cards, or - JOB2, empty
