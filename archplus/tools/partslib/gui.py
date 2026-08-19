@@ -20,7 +20,9 @@
 # placed.
 
 import os
+import shutil
 import sys
+import tempfile
 
 
 import FreeCAD
@@ -55,6 +57,47 @@ _VIEW3D_CLASS = "Gui::View3DInventor"
 # "slow enough to be worth telling the user about". See
 # partslib_thumbs.Timer.
 _Timer = partslib_thumbs.Timer
+
+# Detail-pane previews, remembered in memory rather than written to disk.
+#
+# These used to land in each part's .cache/ directory, one JPEG per distinct
+# set of parameter values. Under variants that was a closed set - a handful
+# of named sizes per part, so the directory converged. Under free-form
+# params it is not: Width alone is a continuous Length, so every value
+# anybody types leaves a file behind that nothing ever removes. One evening
+# of trying television sizes left nine JPEGs in the library folder.
+#
+# A detail preview is a browsing artifact - it is worth having while the
+# panel is open and worthless afterwards - so it belongs in a bounded
+# in-memory cache that dies with the session, not in the source tree.
+# .cache/ is now the BREP cache's alone (see geometry.CACHE_DIRNAME).
+#
+# Keyed by (part id, parameter hash): the same part at the same parameters
+# renders once, and switching two values back and forth is free.
+_PREVIEW_CACHE = {}
+_PREVIEW_CACHE_ORDER = []
+_PREVIEW_CACHE_LIMIT = 48
+
+
+def _rememberPreview(key, pixmap):
+    """Cache one rendered preview, evicting the oldest past the limit."""
+    if key in _PREVIEW_CACHE:
+        return
+    _PREVIEW_CACHE[key] = pixmap
+    _PREVIEW_CACHE_ORDER.append(key)
+    while len(_PREVIEW_CACHE_ORDER) > _PREVIEW_CACHE_LIMIT:
+        _PREVIEW_CACHE.pop(_PREVIEW_CACHE_ORDER.pop(0), None)
+
+
+def clear_preview_cache():
+    """Forget every remembered preview.
+
+    Called on a rescan for the same reason the shape cache is dropped
+    there: params are part of the key, but an edited BUILDER or asset file
+    is not, so a preview can outlive the geometry it depicts."""
+    _PREVIEW_CACHE.clear()
+    del _PREVIEW_CACHE_ORDER[:]
+
 
 _THUMB_SIZE = 96
 
@@ -456,9 +499,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         # a cancelled thumbnail build gets another go.
         self._renderThumbnails = True
         # A rescan is the user saying "re-read the library", so remembered
-        # shapes go too - params are in the cache key, but an edited builder
-        # or asset file is not.
+        # shapes and previews go too - params are in both cache keys, but an
+        # edited builder or asset file is not.
         partslib_geometry.clear_shape_cache()
+        clear_preview_cache()
         index = partslib_object.libraryIndex(force=True)
         timer.mark("scan")
 
@@ -1025,8 +1069,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
 
-          1. a freshly rendered/cached per-parameter JPEG at detail (256px)
-             resolution;
+          1. a per-parameter render at detail (256px) resolution, held in
+             memory for the session (see _PREVIEW_CACHE);
           2. the part's committed thumbnail.jpg (not parameter-specific, but
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
@@ -1053,7 +1097,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             self.preview.setText("No preview available")
 
     def _paramCacheKey(self, manifest, overrides):
-        """A stable short filename fragment for one set of param values."""
+        """A stable short digest of one set of param values."""
         import hashlib
 
         from . import manifest as partslib_manifest
@@ -1063,40 +1107,54 @@ class PartsLibraryPanel(QtGui.QWidget):
         return hashlib.sha1(blob.encode("utf8")).hexdigest()[:12]
 
     def _renderParamPreview(self, entry, shape, manifest, overrides):
-        """Render `shape` at detail resolution, cached under the part's
-        `.cache/` directory keyed by the merged parameter values. Returns a
-        QPixmap, or None on any failure (a bad cache path, or a renderer
-        with no GL context - render_shape already returns False rather than
-        raising in that case) so the caller can fall through to the next
-        layer.
+        """Render `shape` at detail resolution, memoized in _PREVIEW_CACHE by
+        part and parameter values. Returns a QPixmap, or None on any failure
+        (a renderer with no GL context - render_shape already returns False
+        rather than raising in that case) so the caller can fall through to
+        the next layer.
 
-        Checks the shared session failure cache first: on a machine where
-        the renderer can never succeed, re-selecting the same part/parameters
-        (or switching parameters back and forth) would otherwise retry the
-        same doomed render every single time - see partslib_thumbs.py's
+        The render still needs a file to write, since SoOffscreenRenderer
+        saves to a path rather than handing back a buffer - but that file is
+        a temporary one, read straight into a pixmap and deleted. A
+        temporary DIRECTORY rather than a temporary file, because
+        render_shape reports success by testing that out_path exists, and
+        mkstemp would have created it already.
+
+        Checks the shared session failure cache first, under a key naming
+        the part rather than the (now per-call) output path: on a machine
+        where the renderer can never succeed, re-selecting the same part or
+        switching parameters back and forth would otherwise retry the same
+        doomed render every single time - see partslib_thumbs.py's
         _RENDER_FAILED for the full rationale."""
-        cache_dir = os.path.join(entry["dir"], ".cache")
-        out_path = os.path.join(
-            cache_dir, "%s.jpg" % self._paramCacheKey(manifest, overrides))
+        key = (entry["id"], self._paramCacheKey(manifest, overrides))
+        cached = _PREVIEW_CACHE.get(key)
+        if cached is not None:
+            return cached
+        failureKey = "detail-preview:%s" % (entry["id"],)
+        if partslib_thumbs.render_failed_before(failureKey):
+            return None
+
+        folder = tempfile.mkdtemp(prefix="archplus-preview-")
+        out_path = os.path.join(folder, "preview.jpg")
         try:
-            if os.path.exists(out_path):
-                pixmap = QtGui.QPixmap(out_path)
-                return None if pixmap.isNull() else pixmap
-            if partslib_thumbs.render_failed_before(out_path):
-                return None
             if not partslib_thumbs.render_shape(
                     shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
-                partslib_thumbs.mark_render_failed(out_path, (
+                partslib_thumbs.mark_render_failed(failureKey, (
                     "ArchPlus: cannot render a detail preview for %r; "
                     "will not retry this session\n" % (entry["id"],)))
                 return None
             pixmap = QtGui.QPixmap(out_path)
-            return None if pixmap.isNull() else pixmap
+            if pixmap.isNull():
+                return None
+            _rememberPreview(key, pixmap)
+            return pixmap
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
                 "ArchPlus: cannot render a detail preview for %s: %s\n"
                 % (entry["id"], exc))
             return None
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     def _find3DSubWindow(self, mdi):
         """The MDI sub-window holding a 3D view, or None.
