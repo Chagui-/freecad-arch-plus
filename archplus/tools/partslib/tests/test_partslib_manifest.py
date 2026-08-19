@@ -527,3 +527,66 @@ def test_choice_default_in_the_declared_options_is_valid():
                                                   "wall": {}}}})
     errors, _warnings = pm.validate_manifest(data, FACETS)
     assert errors == []
+
+
+# -- per-field display unit overrides ---------------------------------------
+# A Length param may pin the unit its field is shown in. Both halves are
+# required: a part that only answers for metric leaves an imperial user
+# looking at a field nobody chose.
+
+def _length_with_unit(unit):
+    return _part(params={"PanelThickness": {"type": "Length", "default": 18,
+                                            "unit": unit}})
+
+
+def test_a_complete_unit_override_is_valid():
+    data = _length_with_unit({"metric": "mm", "imperial": "in"})
+    errors, warnings = pm.validate_manifest(data, FACETS)
+    assert errors == []
+    assert warnings == []
+
+
+def test_a_unit_override_missing_the_imperial_half_is_an_error():
+    data = _length_with_unit({"metric": "mm"})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "imperial" in e for e in errors)
+
+
+def test_a_unit_override_missing_the_metric_half_is_an_error():
+    data = _length_with_unit({"imperial": "in"})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "metric" in e for e in errors)
+
+
+def test_an_unknown_unit_is_an_error():
+    data = _length_with_unit({"metric": "furlong", "imperial": "in"})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "furlong" in e for e in errors)
+
+
+def test_an_imperial_unit_in_the_metric_half_is_an_error():
+    data = _length_with_unit({"metric": "in", "imperial": "in"})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "metric" in e for e in errors)
+
+
+def test_a_metric_unit_in_the_imperial_half_is_an_error():
+    data = _length_with_unit({"metric": "mm", "imperial": "cm"})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "imperial" in e for e in errors)
+
+
+def test_a_unit_override_that_is_not_an_object_is_an_error():
+    data = _length_with_unit("mm")
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("PanelThickness" in e and "unit" in e for e in errors)
+
+
+def test_a_unit_override_on_a_param_with_no_unit_is_an_error():
+    # Only a Length is drawn in a unit; a unit on a count or a flag means the
+    # author expected a conversion that will never happen.
+    data = _part(params={"Shelves": {"type": "Integer", "default": 3,
+                                     "unit": {"metric": "mm",
+                                              "imperial": "in"}}})
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Shelves" in e and "unit" in e for e in errors)

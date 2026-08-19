@@ -275,6 +275,36 @@ These are the focused checks for the parameter form and object state:
 - [ ] **P12.** A selected television's **Mounting** option changes its host
       placement without changing the part's other parameters.
 
+### Display-unit checks
+
+Length fields are pinned to centimetres (inches under an imperial schema),
+not to the FreeCAD unit schema itself — `part.json` and every property on a
+placed part stay in millimetres. Only U1 and U2 can be checked headlessly;
+the rest need the real widget, and U3 is the one piece of this whose
+FreeCAD-side answer no test can prove (`units.is_imperial()` reads the live
+schema through an API this project cannot exercise outside the app).
+
+- [ ] **U1.** Selecting a base cabinet shows **Width** as `60.0 cm`, not
+      `600 mm` — and the W/D/H readout under the form uses the same unit as
+      the fields, not a different one.
+- [ ] **U2.** Type `800 mm` into **Width**. The field settles on `80.0 cm`
+      and the preview rebuilds to an 800 mm cabinet. Repeat with `2 ft`
+      (→ `60.96 cm`) and, in a `"` field, `5' 6"`.
+- [ ] **U3.** Set **Edit → Preferences → General → Units** to
+      *Building US (ft-in)* and reselect the part. Every length field now
+      reads in inches (**Width** ≈ `23.62 in`), and the W/D/H readout with
+      it. Switch back to *Standard (mm)* and reselect: the fields return to
+      centimetres — NOT to millimetres, which is the point of pinning them.
+      If a metric schema ever shows inches, `units.is_imperial()` misread the
+      schema; report the schema name.
+- [ ] **U4.** Type nonsense (`abc`) into a length field and press Tab. The
+      field keeps the value it had; it does not fall to `0` and does not
+      rebuild the part.
+- [ ] **U5.** Place the part, select it, and confirm the property editor's
+      **Width** still shows the FreeCAD unit schema's own unit (millimetres
+      under *Standard*). The panel is the only surface that pins a unit; a
+      placed part remains an ordinary `App::PropertyLength`.
+
 ## Part D — Placement
 
 - [ ] **D1 (brief check 9).** With a document and its 3D view already open

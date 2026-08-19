@@ -11,6 +11,14 @@
 from PySide import QtCore, QtGui
 
 from . import manifest as partslib_manifest
+from . import units as partslib_units
+
+# The largest length a field accepts, in millimetres - a 100 m dimension is
+# already past anything a part in this library is, and the cap is what stops
+# a mistyped "1800" in a metre field from building a kilometre-wide bed.
+MAX_LENGTH_MM = 100000.0
+
+_DERIVED_TIP = "Derived from the other parameters. Editing this pins it."
 
 
 class ParamForm(QtGui.QWidget):
@@ -24,6 +32,8 @@ class ParamForm(QtGui.QWidget):
         self._specs = {}
         self._widgets = {}
         self._auto = set()
+        self._imperial = False
+        self._tips = {}
         # Remembered for the session, not per part: a user who opens the
         # expander is telling us they work in detail, and re-collapsing it on
         # every selection would fight them.
@@ -59,6 +69,11 @@ class ParamForm(QtGui.QWidget):
     def setSpecs(self, specs, primary):
         """Rebuild for one part. `primary` is manifest.primary_params()."""
         self._specs = dict(specs or {})
+        self._tips = {}
+        # Resolved per rebuild, not per field: every length in one form must
+        # agree, and re-asking here picks up a unit-schema change without the
+        # user having to reopen the panel.
+        self._imperial = partslib_units.is_imperial()
         self._widgets = {}
         self._auto = set(
             name for name, spec in self._specs.items()
@@ -126,7 +141,7 @@ class ParamForm(QtGui.QWidget):
 
     def _addField(self, grid, row, column, name):
         spec = self._specs.get(name) or {}
-        widget = _widgetFor(spec)
+        widget = _widgetFor(spec, self._imperial)
         if widget is None:
             # An unrecognised type gets NO field here, matching object.py's
             # warn-and-skip when declaring properties: guessing a spinbox
@@ -134,12 +149,16 @@ class ParamForm(QtGui.QWidget):
             # param nothing else represents.
             return
         caption = QtGui.QLabel(spec.get("label") or name)
+        # A length field arrives with its unit hint already set; the derived
+        # note is added to it rather than over it, and _onEdited puts the hint
+        # back when the field is pinned.
+        self._tips[name] = widget.toolTip()
         if name in self._auto:
             widget.setStyleSheet(
                 "font-style: italic; color: %s;"
                 % (self._tokens.get("text_dim", "#888888"),))
-            widget.setToolTip("Derived from the other parameters. "
-                              "Editing this pins it.")
+            widget.setToolTip("\n".join(
+                tip for tip in (self._tips[name], _DERIVED_TIP) if tip))
         _connect(widget, name, self._onEdited)
         self._widgets[name] = widget
         grid.addWidget(caption, row, column * 2)
@@ -151,7 +170,7 @@ class ParamForm(QtGui.QWidget):
             widget = self._widgets.get(name)
             if widget is not None:
                 widget.setStyleSheet("")
-                widget.setToolTip("")
+                widget.setToolTip(self._tips.get(name, ""))
         self.changed.emit()
 
     def _onToggle(self):
@@ -161,7 +180,60 @@ class ParamForm(QtGui.QWidget):
             QtCore.Qt.DownArrow if self._expanded else QtCore.Qt.RightArrow)
 
 
-def _widgetFor(spec):
+class LengthSpinBox(QtGui.QDoubleSpinBox):
+    """A length field pinned to one unit, that still accepts any other.
+
+    Qt's own suffix handling is deliberately NOT used. setSuffix(" cm") makes
+    the trailing " cm" mandatory, so typing "2 ft" is rejected keystroke by
+    keystroke and the pinned unit becomes a cage. Owning validate(),
+    valueFromText() and textFromValue() instead means the field displays cm
+    and reads mm, inches, feet or "5' 6\"" - every rule of what is a length
+    living in units.py, where it is unit-tested.
+
+    The value Qt holds is in the DISPLAY unit; mmValue()/setMmValue() are the
+    millimetre boundary, and _valueOf/_setValueOf use them so nothing outside
+    this class has to know which unit a field happens to be showing."""
+
+    def __init__(self, unit, parent=None):
+        QtGui.QDoubleSpinBox.__init__(self, parent)
+        self._unit = unit
+        self.setDecimals(partslib_units.decimals(unit))
+        self.setRange(0.0, partslib_units.from_mm(MAX_LENGTH_MM, unit))
+        self.setToolTip("In %s. Another unit can be typed in full, "
+                        "e.g. 18 mm, 1 m, 2 ft, 5' 6\"." % unit)
+
+    def unit(self):
+        return self._unit
+
+    def mmValue(self):
+        # Rounded because a display unit divides: 1.8 cm is 18.000000000000004
+        # mm in binary floating point, and that number would be written into a
+        # part's parameter as if the user had asked for it.
+        return round(partslib_units.to_mm(self.value(), self._unit), 6)
+
+    def setMmValue(self, value):
+        self.setValue(partslib_units.from_mm(value, self._unit))
+
+    def textFromValue(self, value):
+        return "%.*f %s" % (self.decimals(), value, self._unit)
+
+    def valueFromText(self, text):
+        millimetres = partslib_units.parse_length(text, self._unit)
+        if millimetres is None:
+            return self.value()          # refuse it; keep what was there
+        return partslib_units.from_mm(millimetres, self._unit)
+
+    def validate(self, text, position):
+        if partslib_units.parse_length(text, self._unit) is not None:
+            state = QtGui.QValidator.Acceptable
+        elif partslib_units.is_partial_length(text):
+            state = QtGui.QValidator.Intermediate
+        else:
+            state = QtGui.QValidator.Invalid
+        return (state, text, position)
+
+
+def _widgetFor(spec, imperial=False):
     """One editor widget for a param spec, or None for an unknown type.
 
     The None case is a SKIP, not a fallback widget: the old fall-through
@@ -195,11 +267,15 @@ def _widgetFor(spec):
         widget.setRange(0, 9999)
         widget.setValue(int(default or 0))
         return widget
-    if kind in ("Length", "Angle"):
+    if kind == "Length":
+        widget = LengthSpinBox(partslib_units.display_unit(spec, imperial))
+        widget.setMmValue(float(default or 0))
+        return widget
+    if kind == "Angle":
         widget = QtGui.QDoubleSpinBox()
         widget.setRange(0.0, 100000.0)
         widget.setDecimals(0)
-        widget.setSuffix(" deg" if kind == "Angle" else " mm")
+        widget.setSuffix(" deg")
         widget.setValue(float(default or 0))
         return widget
     return None
@@ -218,7 +294,10 @@ def _connect(widget, name, slot):
 def _valueOf(widget, spec):
     if spec.get("type") == "Choice":
         return widget.itemData(widget.currentIndex())
-    for reader in ("value", "text", "isChecked"):
+    # mmValue before value: a length field shows centimetres but every
+    # consumer downstream - build_shape, the App::PropertyLength on a placed
+    # part - is given millimetres.
+    for reader in ("mmValue", "value", "text", "isChecked"):
         method = getattr(widget, reader, None)
         if method is not None:
             return method()
@@ -232,11 +311,13 @@ def _setValueOf(widget, spec, value):
         if index >= 0:
             widget.setCurrentIndex(index)
         return
-    for writer in ("setValue", "setText", "setChecked"):
+    for writer in ("setMmValue", "setValue", "setText", "setChecked"):
         method = getattr(widget, writer, None)
         if method is None:
             continue
-        if writer == "setValue":
+        if writer == "setMmValue":
+            method(float(value))
+        elif writer == "setValue":
             method(int(value) if spec.get("type") == "Integer"
                    else float(value))
         elif writer == "setText":

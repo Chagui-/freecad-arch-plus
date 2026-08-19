@@ -33,6 +33,7 @@ _DIR = os.path.dirname(__file__)     # archplus/tools/partslib/ itself
 from . import index as partslib_index
 from . import theme as partslib_theme
 from . import thumbs as partslib_thumbs
+from . import units as partslib_units
 
 # partslib_object is imported lazily, inside the functions that need it
 # (refresh(), _onPlace()) rather than here at module scope. It imports
@@ -1033,9 +1034,14 @@ class PartsLibraryPanel(QtGui.QWidget):
         # reach it.
         metrics = partslib_geometry.measure(shape)
         self.paramForm.setDerived(metrics)
-        self.metrics.setText("W %.0f   D %.0f   H %.0f mm"
-                             % (metrics["Width"], metrics["Depth"],
-                                metrics["Height"]))
+        # Same unit as the fields above it: a summary that reads in a
+        # different unit from the parameters it summarises is a bug report
+        # waiting to happen.
+        unit = partslib_units.display_unit(None, partslib_units.is_imperial())
+        self.metrics.setText(
+            "W %s   D %s   H %s"
+            % tuple(partslib_units.format_length(metrics[axis], unit)
+                    for axis in ("Width", "Depth", "Height")))
 
         if _PREVIEW_LIVE:
             try:

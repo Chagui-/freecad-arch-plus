@@ -250,6 +250,19 @@ a manufacturer's download, or something too organic to describe in code.
 | `params.<name>.label` | Display name. The key itself stays the builder argument and the property name. |
 | `params.<name>.default` | A number, a string, or `"auto"` — meaning the builder derives it. Only `Width`, `Depth` and `Height` may be `"auto"`: those are what a built shape can be measured for, so the derived value can be read back into the property editor. Anything else would show 0 forever, so derive it in the builder without declaring a param. |
 | `params.<name>.options` | `Choice` only: ordered value to `{label, placement?}`. A selected option's `placement` merges per key over the part's. |
+| `params.<name>.unit` | `Length` only: the unit the browser panel SHOWS this field in, as `{"metric": ..., "imperial": ...}`. Both halves are required. Metric: `mm`, `cm`, `m`. Imperial: `in`, `ft`. Omit it unless the part needs it — see below. |
+
+Values in `part.json` are always **millimetres**, whatever unit the panel
+shows. The panel draws every `Length` in centimetres — inches if the user's
+FreeCAD unit schema is imperial — because that is the scale a furniture
+drawing is dimensioned at: the whole bundled catalogue reads between 5 and
+220 cm. A part whose dimensions genuinely live elsewhere (a metres-long
+partition, a millimetre-scale detail) says so with `unit`, per field. The
+test suite enforces this: a `Length` default that would read in thousands or
+below one in its own field fails `test_library_content.py`, which is the
+signal that the field wants a `unit` rather than that the part is unusual.
+Whichever unit a field shows, the user can still type any other one into it
+(`18 mm`, `1 m`, `2 ft`, `5' 6"`).
 
 ```json
 "params": {

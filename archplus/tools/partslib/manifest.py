@@ -10,6 +10,10 @@ import json
 import os
 import re
 
+# units.py is stdlib-only too - its one FreeCAD touch (is_imperial) imports
+# inside the function - so importing it here keeps this module headless.
+from . import units as partslib_units
+
 SCHEMA_VERSION = 1
 DEFAULT_IFC_TYPE = "Building Element Proxy"
 
@@ -242,6 +246,7 @@ def _validate_params(declared):
                 "param %r has unknown type %r (expected one of: %s)"
                 % (name, kind, ", ".join(PARAM_TYPES)))
             continue
+        errors.extend(partslib_units.unit_errors(name, spec))
         if spec.get("default") == AUTO:
             if kind not in AUTO_PARAM_TYPES:
                 errors.append(

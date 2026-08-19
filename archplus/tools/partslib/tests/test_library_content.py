@@ -20,6 +20,7 @@ import os
 from archplus.tools.partslib import geometry as partslib_geometry
 from archplus.tools.partslib import index as partslib_index
 from archplus.tools.partslib import manifest as partslib_manifest
+from archplus.tools.partslib import units as partslib_units
 
 _PARTSLIB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIBRARY_DIR = os.path.join(_PARTSLIB, "library")
@@ -356,3 +357,26 @@ def test_a_bath_width_screen_is_reachable_at_walk_in_height():
         data, {"Width": 800, "Height": 1900})
     assert merged["Width"] == 800
     assert merged["Height"] == 1900
+
+
+def test_every_shipped_length_reads_as_a_drawing_dimension():
+    # The panel pins Length fields to cm (inches under an imperial schema)
+    # because the whole catalogue is dimensioned at that scale. A part whose
+    # default lands outside it - a 12 m partition, a 0.5 mm gasket - must say
+    # so with a per-field "unit" override rather than ship a field reading
+    # 1200.0 or 0.05. This is the check that arms itself when it does.
+    index = _scan()
+    for entry in index["entries"]:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+        for name, spec in (partslib_manifest.param_specs(manifest)).items():
+            if spec.get("type") != "Length":
+                continue
+            default = spec.get("default")
+            if not isinstance(default, (int, float)):
+                continue        # "auto" - measured from the built shape
+            for imperial in (False, True):
+                unit = partslib_units.display_unit(spec, imperial)
+                assert partslib_units.is_readable(default, unit), (
+                    "%s: %s default %s reads as %s"
+                    % (entry["id"], name, default,
+                       partslib_units.format_length(default, unit)))
