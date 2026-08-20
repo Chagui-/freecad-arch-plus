@@ -272,43 +272,6 @@ def _sort_key(value, label):
     return (value == UNCLASSIFIED, label)
 
 
-def category_tree(entries, facets, primary="room", secondary="element"):
-    """The two-level room/element tree the category screen renders.
-
-    Only primary-facet values that at least one part actually declares are
-    emitted - an empty room in the vocabulary is not advertised. `primary`
-    is typically multi-valued, so one part is counted once under every
-    group it belongs to. Within a group, `children` are the distinct
-    `secondary` values of the parts in THAT group only, with counts scoped
-    to the group; a part missing `secondary` lands under an UNCLASSIFIED
-    child. A group's `count` is the number of distinct parts in it,
-    computed independently of the children (it is not their sum)."""
-    tree = []
-    for value, group_entries in group_by(entries, primary).items():
-        child_groups = group_by(group_entries, secondary)
-        children = []
-        for child_value, child_entries in child_groups.items():
-            child_ids = set(e["id"] for e in child_entries)
-            children.append({
-                "value": child_value,
-                "label": pm.facet_label(facets, secondary, child_value),
-                "count": len(child_ids),
-            })
-        children.sort(key=lambda c: _sort_key(c["value"], c["label"]))
-
-        part_ids = set(e["id"] for e in group_entries)
-        tree.append({
-            "value": value,
-            "label": pm.facet_label(facets, primary, value),
-            "icon": pm.facet_icon(facets, primary, value),
-            "count": len(part_ids),
-            "children": children,
-        })
-
-    tree.sort(key=lambda g: _sort_key(g["value"], g["label"]))
-    return tree
-
-
 def facet_groups(entries, facets, facet="room"):
     """One group per value of `facet` that at least one part declares.
 

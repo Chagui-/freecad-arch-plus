@@ -246,7 +246,7 @@ def test_entries_missing_the_facet_are_unclassified():
     assert [e["id"] for e in groups[px.UNCLASSIFIED]] == ["misc-a"]
 
 
-# -- category_tree ------------------------------------------------------
+# -- room/element fixtures, shared by the facet_groups tests --------------
 
 CATEGORY_FACETS = {
     "room": {"label": "Room", "multi": True, "values": {
@@ -285,62 +285,9 @@ def _by_value(groups):
     return {g["value"]: g for g in groups}
 
 
-def test_category_tree_omits_a_room_with_no_parts():
-    tree = px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS)
-    assert "Office" not in [g["value"] for g in tree]
-
-
-def test_category_tree_orders_rooms_by_label_then_unclassified_last():
-    tree = px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS)
-    assert [g["value"] for g in tree] == ["Bathroom", "Kitchen", px.UNCLASSIFIED]
-
-
-def test_category_tree_room_labels_and_icons():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    assert groups["Bathroom"]["label"] == "Bathroom"
-    assert groups["Bathroom"]["icon"] == "bathroom.svg"
-    assert groups["Kitchen"]["icon"] is None
-
-
-def test_category_tree_counts_a_multi_room_part_once_per_room():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    assert groups["Bathroom"]["count"] == 3  # wc-a, basin-a, noelement-a
-    assert groups["Kitchen"]["count"] == 3   # wc-a, cabinet-a, chair-a
-
-
-def test_category_tree_part_missing_primary_is_unclassified():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    unclassified = groups[px.UNCLASSIFIED]
-    assert unclassified["count"] == 1
-    assert [c["value"] for c in unclassified["children"]] == ["Chair"]
-
-
-def test_category_tree_children_are_scoped_to_their_room():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    kitchen_children = sorted(c["value"] for c in groups["Kitchen"]["children"])
-    assert kitchen_children == ["Cabinet", "Chair", "WC"]
-    for child in groups["Kitchen"]["children"]:
-        assert child["count"] == 1
-
-
-def test_category_tree_part_missing_secondary_is_unclassified_child():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    bathroom_children = {c["value"]: c for c in groups["Bathroom"]["children"]}
-    assert px.UNCLASSIFIED in bathroom_children
-    assert bathroom_children[px.UNCLASSIFIED]["count"] == 1
-
-
-def test_category_tree_children_ordered_alphabetically_unclassified_last():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    values = [c["value"] for c in groups["Bathroom"]["children"]]
-    assert values[-1] == px.UNCLASSIFIED
-    assert values[:-1] == sorted(values[:-1])
-
-
-def test_category_tree_child_labels_come_from_the_element_facet():
-    groups = _by_value(px.category_tree(CATEGORY_ENTRIES, CATEGORY_FACETS))
-    labels = {c["value"]: c["label"] for c in groups["Kitchen"]["children"]}
-    assert labels == {"WC": "Toilets", "Cabinet": "Cabinets", "Chair": "Chairs"}
+def test_category_tree_is_gone():
+    # It served the catalogue screen, which no longer exists.
+    assert not hasattr(px, "category_tree")
 
 
 def test_an_id_is_derived_from_the_folder_path(tmp_path):
