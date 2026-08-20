@@ -66,3 +66,13 @@ python3 -m venv .venv && .venv/bin/pip install pytest
 
 FreeCAD's bundled Python works too, since the fakes shadow the real modules
 during the test run.
+
+On this development machine the `venv` route above FAILS outright — there is
+no `python3.14-venv` package installed, so `python3 -m venv .venv` aborts
+before pytest is ever invoked. What actually works here is `uv`, which
+provisions its own interpreter and dependencies without touching the system
+Python or needing a venv package at all:
+
+```sh
+uv run --no-project --with pytest python -m pytest -q
+```

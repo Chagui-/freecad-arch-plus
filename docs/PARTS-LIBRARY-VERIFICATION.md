@@ -1,8 +1,10 @@
 # Parts Library — manual verification checklist
 
 This checklist is the deferred, human-in-FreeCAD verification for the whole
-Parts Library feature (Tasks 7–15, plus the pass-2 restructure into a
-full-window MDI tab with a two-screen catalogue browser). None of it can be
+Parts Library feature (Tasks 7–15, the pass-2 restructure into a full-window
+MDI tab, and the later collapse of that restructure's two-screen catalogue
+browser into a single screen of wrapping room chips, a search box, a card
+grid and a detail sidebar). None of it can be
 run headlessly: it needs a real FreeCAD 1.1 process, a real Qt event loop and
 (for the preview and thumbnail checks) a real GL/offscreen context. Automated
 coverage stops at `uv run --with pytest --no-project pytest -q` (122
@@ -81,7 +83,7 @@ to explain why), but nothing automated can tell you one looks wrong.
 Steps that only exercised the empty library in the prior pass (A, B1/B2, the
 empty-state message) remain valid as written but are no longer the
 interesting case — B2 in particular should now show all six rooms above,
-each with its declared elements and counts.
+each with its own chip and count.
 
 ## The panel is now an MDI tab, not a dock
 
@@ -89,11 +91,62 @@ each with its declared elements and counts.
 plain `QWidget` hosted as a full-window tab in FreeCAD's MDI area (the same
 area document windows live in), the same way `Mod/Help/Help.py` hosts its
 own browser. Any step below that still says "dock" is describing the old
-behaviour — read it as "the ArchPlus Library tab" instead. The panel is also
-now a two-screen catalogue: a **categories** screen (a card per room) that
-drills into a **results** screen (breadcrumb, search, card grid, detail
-sidebar) — the old "Group by" dropdown and its persisted preference are gone,
-replaced by the room/element drill-down.
+behaviour — read it as "the ArchPlus Library tab" instead.
+
+The panel opens directly onto **one screen**: a wrapping row of room filter
+chips (`All` plus one per room a part declares, each reading `Label · count`
+with its facet icon), a search box, a card grid, and a detail sidebar beside
+it — no drill-down. This replaced an earlier two-screen catalogue (a
+categories page of room cards that drilled into a results page behind a
+breadcrumb); that page, its breadcrumb and the room/element drill-down it
+used are gone, along with the "Group by" dropdown and persisted preference
+from before it. A card is a thumbnail, the part's name, and — only when its
+`collection.json` declares a `label` — a family line beneath the name (see
+"Part families: `collection.json`" below); it no longer carries the
+monospaced `Width | Depth | Height` line of parameter labels the two-screen
+version showed. Selecting a card shows its detail (preview, name, optional
+family, parameter form, description) in the sidebar; clicking the
+already-selected chip is a no-op and must not rebuild the grid or clear the
+current selection.
+
+## Part families: `collection.json`
+
+A part can optionally belong to a **collection** — a brand or pack name
+("IKEA Malm") shown as the family line under its name. This is deliberately
+a separate file rather than a `family` string repeated in every `part.json`
+of a pack (see `archplus/tools/partslib/collection.py`'s module docstring):
+a repeated string drifts, one part saying "IKEA Malm" and its neighbour
+"Ikea MALM"; authored once per collection, it cannot.
+
+- **Where it goes.** `collection.json` sits in a folder **one level above**
+  the part folders it governs — e.g. `library/ikea/malm/collection.json`
+  covers every part under `library/ikea/malm/<part>/`. A `collection.json`
+  placed *inside* a part's own folder is not read as a collection of one;
+  resolution starts at the part's parent and searches upward.
+- **Its three fields**, all in one flat JSON object: `schema` (must be `1`
+  if present), `label` (optional — the family line's text), `description`
+  (optional — shown as the family line's tooltip). Everything is optional;
+  an empty `{}` is valid and simply declares no family.
+- **Absent `label` means no family line.** This is not a warning-worthy gap:
+  it means "these parts belong to no brand", which is exactly
+  `library/basic/`'s state — none of the 31 shipped parts shows a family
+  line today because `basic/` deliberately declares no `collection.json`.
+- **The nearest ancestor wins.** Resolution walks upward from a part's
+  parent folder, testing each ancestor for a `collection.json`, and stops
+  at the library root — a `library/ikea/malm/collection.json` overrides
+  whatever `library/ikea/collection.json` might declare for parts under
+  `malm/`, and a stray `collection.json` above the library root cannot
+  leak into it.
+- **A broken collection never hides its parts.** A malformed or unreadable
+  `collection.json` resolves to "no family" plus a recorded error, the same
+  way a part with no collection at all does — it must not make the parts
+  under it disappear from the grid.
+- Editing a `collection.json` (or its `label`) is a cache-invalidating
+  change — `archplus/tools/partslib/index.py`'s `CACHE_VERSION` bumped to
+  3 when entries started carrying `family`/`familyDescription`, and
+  `collection_paths()` is scanned for cache-staleness the same way manifest
+  paths are, so **Rescan library** picks up an edited `collection.json`
+  without needing a FreeCAD restart.
 
 Work through it top to bottom in a single FreeCAD session. Each step has a
 checkbox — tick it only after you have actually observed the stated result,
@@ -166,72 +219,94 @@ unaffected by the fallback.
 
 - [ ] **B1.** Click **Parts Library**. A new tab titled "ArchPlus Library"
       opens full-window in the MDI area (alongside any open document tabs),
-      showing the **categories** screen: a card per room.
-- [ ] **B2 (category screen).** Only rooms that actually contain a part are
-      shown — with the seed library this is `Bathroom`,
-      `Kitchen`, `Office` (not every room in `library/facets.json`'s
-      vocabulary — a room with zero parts, e.g. `Bedroom`, must not be
-      drawn at all). Each visible room card shows its icon (where
-      `library/facets.json` declares one under
-      `archplus/tools/partslib/resources/icons/facets/`), its label, a hairline rule, then that
-      room's elements as rows with counts (e.g. `Toilets (1)` under
-      `Bathroom`).
-- [ ] **B3 (drilling in).** Click the `Toilets` row under `Bathroom`. The
-      view switches to the **results** screen: the breadcrumb reads
-      `All › Bathroom › Toilets`, and the card grid shows the WC (demo)
-      part.
-- [ ] **B4 (breadcrumb navigation).** Click `Bathroom` in the breadcrumb.
-      The results screen stays open but now shows every part in the
-      Bathroom room (both the WC and, since it is multi-room, the Base
-      cabinet if it also declares Bathroom — otherwise just the WC), and
-      the breadcrumb shrinks to `All › Bathroom`. Click `All`. This returns
-      to the categories screen.
-- [ ] **B5 (multi-valued room facet).** From the categories screen, confirm
-      **the WC (demo) part's element row/count appears under both the
-      `Bathroom` and `Bedroom` room cards** — this is the multi-valued
-      `room` facet working, matching `category_tree`'s "one part counted
-      once per room it belongs to" behaviour.
-- [ ] **B6 (search).** From a results screen, type `toilet` in the search
-      box. Only the WC remains, matched on its keyword.
+      opening **directly onto the grid** — no categories page, no
+      drill-down, in front of it.
+- [ ] **B2 (chip row).** The chip row above the grid reads `All · 31`,
+      `Bathroom · 8`, `Bedroom · 10`, `Dining · 2`, `Kitchen · 6`,
+      `Living · 8`, `Office · 2` — one chip per room that actually has a
+      part, each with its facet icon (where `library/facets.json` declares
+      one under `archplus/tools/partslib/resources/icons/facets/`) — and
+      `All` starts selected, with all 31 cards showing.
+- [ ] **B3 (chip wrapping).** Narrow the panel (drag the FreeCAD window or
+      the MDI area) until the chip row no longer fits on one line. Confirm
+      the chips wrap onto a second row via `FlowLayout` — none disappears,
+      overlaps another chip, or gets clipped.
+- [ ] **B4 (chip filtering).** Click `Bathroom`. The grid filters to just
+      that room's 8 parts, in place — no page change, no breadcrumb.
+      Click `Bedroom`, then `Kitchen`, confirming each filters correctly.
+      Click `All`. The grid returns to all 31 cards.
+- [ ] **B5 (multi-valued room facet + already-selected chip).** With
+      `Bathroom` selected, confirm **Mirror** appears (it declares
+      `room: ["Bathroom", "Bedroom"]`) alongside the seven single-room
+      Bathroom parts — this is the multi-valued `room` facet counting a
+      part once per chip it belongs to, the modern equivalent of the
+      deleted two-screen catalogue's `category_tree` behaviour. Click
+      `Bedroom` and confirm Mirror appears there too. Then click the
+      **already-selected** chip again (whichever room is currently active):
+      the grid must NOT rebuild (your current card selection, if any,
+      survives) — an exclusive `QButtonGroup` still fires `clicked` for the
+      chip that stays checked, and `_onChipSelected` must ignore a
+      same-room click rather than re-running `_repopulateGrid()`.
+- [ ] **B6 (search).** From `All`, type `toilet` in the search box. After
+      the 250 ms debounce, only the Toilet remains, matched on its keyword —
+      confirm the grid does not refilter on every keystroke, only once
+      the debounce timer fires.
 - [ ] **B7.** Clear the search. Select **Base cabinet** in the grid. The
-      detail sidebar shows a preview, the part name, primary parameter labels
-      and the description. Its grid card reads `Width | Depth | Height`.
+      detail sidebar shows a preview, the part name, the parameter form and
+      the description. Confirm its grid card shows only a thumbnail and the
+      name — no `Width | Depth | Height` line (removed) and no family line
+      (`basic/` declares no `collection.json` label, so no shipped card
+      shows one today).
 - [ ] **B8.** In the parameter form, type `80` into **Width** (the fields are
       in centimetres). The value is accepted and the preview rebuilds to an
       800 mm cabinet after one debounced rebuild, not once per keystroke.
 - [ ] **B9 (empty/error safety).** Confirm no traceback ever appeared while
-      opening the panel and browsing this session — the categories screen,
-      breadcrumb, grid and sidebar all rendered without a Python console
-      error.
+      opening the panel and browsing this session — the chip row, grid and
+      sidebar all rendered without a Python console error.
+- [ ] **B9a (selected part, then grid empties).** With a part selected in
+      the sidebar, type a search (or pick a chip) that empties the grid.
+      Confirm the sidebar's family label — visible a moment ago if the
+      selected part had one, hidden otherwise — leaves no empty visible
+      row behind: `_onSelect()` runs with no current entry, which must
+      blank and hide `detailFamily`, not merely blank its text.
 - [ ] **B2a (fix round — dark theme legibility).** Switch FreeCAD to a dark
       theme (Edit → Preferences → General → Appearance, or whichever build
       of 1.1 you have exposes `Theme`/`StyleSheet` — the exact reported
       config was `Theme = "FreeCAD Dark"`, `StyleSheet = "FreeCAD.qss"`).
       Reopen the Parts Library tab (or click **Parts Library** again — the
-      panel is rebuilt fresh each time `showPanel()` constructs it). On the
-      categories screen: the room cards are a **dark** card colour clearly
-      distinct from the page behind them (cards read as raised, not the
-      same flat black-on-black), every room name and every element row
-      (e.g. `Toilets (1)`) is legible near-white text — never the same
-      colour as its own card background — and the cards are laid out as a
-      **grid** (multiple cards per row when the tab is wide enough), not
-      one full-width row per card. Resize the tab narrower and wider: the
-      column count changes at natural card-width breakpoints and no card
-      is left stretched edge-to-edge while others exist beside it. Switch
-      back to a light theme and confirm the same screen still reads
-      correctly (light cards, dark text) — this is the same code path,
-      not a separate dark-only fix.
-- [ ] **B10 (fix round — on-demand thumbnail fallback).** Neither seed part
-      ships a committed `thumbnail.jpg`, so this exercises the fallback by
-      default. Before opening the panel this session, confirm (in a file
-      browser, or `os.path.exists` in the Python console against each
-      part's own directory) that neither `base-cabinet`'s nor
-      `wc-demo`'s folder under `library/` yet contains a `thumbnail.jpg`.
-      Open the panel and drill in to view both cards: they still show their
-      names even with no icon yet. Close the tab, and confirm each part's
-      folder now contains a freshly-rendered `thumbnail.jpg`. Reopen the
-      panel: both cards now show an icon, read straight from that file (no
-      re-render — check the file's mtime is unchanged across the reopen).
+      panel is rebuilt fresh each time `showPanel()` constructs it). Confirm
+      the chips are legible in both their checked and unchecked states —
+      readable label text against a card background clearly distinct from
+      the page behind it, never the same colour as its own background —
+      and that the grid still lays out as a **grid** (multiple cards per
+      row when the tab is wide enough), not one full-width row per card.
+      Resize the tab narrower and wider: the column count changes at
+      natural card-width breakpoints. Switch back to a light theme and
+      confirm the chips and grid still read correctly (light chips, dark
+      text) — this is the same code path, not a separate dark-only fix.
+- [ ] **B10 (fix round — on-demand thumbnail fallback).** All 31 shipped
+      parts now ship a committed `thumbnail.jpg`, so exercise the fallback
+      deliberately: pick one part (e.g. Base cabinet), delete its
+      `thumbnail.jpg` from disk, and confirm (`os.path.exists` in the
+      Python console) it is gone. Open the panel (or click **Rescan
+      library**): the card still shows its name even with no icon for a
+      moment, then gains a freshly-rendered `thumbnail.jpg` on disk written
+      next to the part. Reopen the panel: the card now reads straight from
+      that file (no re-render — the file's mtime is unchanged across the
+      reopen). Leave the regenerated file in place (or `git checkout` it)
+      so the committed content matches what ships.
+- [ ] **B11 (`collection.json` family line).** Temporarily add
+      `{"schema": 1, "label": "Demo Collection"}` to
+      `archplus/tools/partslib/library/basic/collection.json` (create the
+      file if it does not exist — it sits one level above every `basic/`
+      part folder, so it governs all 31 shipped parts at once). Click
+      **Rescan library**. Confirm every card now shows a family line
+      reading `Demo Collection` beneath its name, and that the detail
+      sidebar shows the same line (with the collection's `description`, if
+      any, as its tooltip) for a selected part. Type `Demo Collection` into
+      the search box and confirm it matches parts on the family line.
+      Remove the file (or the `label` you added) and **Rescan library**
+      again: the family line disappears from every card.
 
 ## Part C — Preview pane and detail sidebar (confirmed static fallback)
 
@@ -330,8 +405,10 @@ schema through an API this project cannot exercise outside the app).
 - [ ] **D8.** Select a television in the browser. It shows **Size (in)** and a
       **Mounting** dropdown; choosing **Wall-mounted** makes **Place in 3D
       view** host it on a wall.
-- [ ] **D9.** Confirm grid cards read `Width | Depth | Height` under the part
-      name.
+- [ ] **D9.** Confirm grid cards show only a thumbnail and the part name
+      (plus a family line only when `collection.json` declares one) — same
+      check as B7, the `Width | Depth | Height` monospaced line under the
+      name was removed and does not belong here either.
 - [ ] **D10.** Select a placed object. Its **Parameters** group is present and
       no legacy selector is shown.
 - [ ] **D4 (brief check 12).** Select the WC in the panel, click
@@ -422,15 +499,16 @@ schema through an API this project cannot exercise outside the app).
 - [ ] **H1 (tab close + self-heal).** Close the ArchPlus Library tab (its
       own close button/X, not the workbench or a document). Click
       **Parts Library** again. A working tab re-appears (a fresh one, since
-      closing an MDI sub-window destroys it) showing the categories screen,
-      and it calls `refresh()` — confirm this by checking that any change
+      closing an MDI sub-window destroys it) showing the grid with `All`
+      selected, and it calls `refresh()` — confirm this by checking that any change
       made to the library on disk earlier in this session (if any) is
       picked up. No `RuntimeError` appears in the console during this
       close/reopen cycle.
 - [ ] **H2.** With the library tab open, switch to a different document tab
       (or create a new document) in the MDI area, then switch back to the
       library tab. It survives the document switch without a `RuntimeError`
-      in the console and without losing its current screen/selection.
+      in the console and without losing its current chip filter, search
+      text or card selection.
 - [ ] **H3 (single construction path).** Repeat H1 two or three times in a
       row (close the tab, reopen via the toolbar button, close again).
       Each cycle yields exactly ONE library tab — never zero, never two —

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# PartsLib thumbnails - offscreen PNG rendering from a bare Part.Shape.
+# PartsLib thumbnails - offscreen JPEG rendering from a bare Part.Shape.
 #
 # Thumbnails are committed to the repo so a fresh clone opens to a populated
 # grid. Runtime rendering is a fallback for a part whose thumbnail is missing,
@@ -16,7 +16,7 @@
 # on its own. Without _RENDER_FAILED below, every part lacking a committed
 # thumbnail would rebuild its real geometry (booleans, fillets) and retry a
 # doomed render on every grid repaint: every keystroke in the search box,
-# every breadcrumb click, every panel reopen - unbounded, and with no
+# every room-chip click, every panel reopen - unbounded, and with no
 # warning printed anywhere to explain why. _RENDER_FAILED remembers a path
 # that has already failed once, so both callers (the grid's committed-vs-
 # on-demand thumbnail, and the detail pane's per-parameter preview) skip
