@@ -436,3 +436,186 @@ def test_an_asset_only_part_needs_no_builder_py(tmp_path):
 
     assert index["errors"] == []
     assert [e["id"] for e in index["entries"]] == ["basic/vendor-chair"]
+
+
+def test_an_entry_carries_its_collections_label(tmp_path):
+    library = _library_at(
+        tmp_path, ("ikea-malm/chest", _unnamed_part("Malm chest")))
+    (tmp_path / "ikea-malm" / "collection.json").write_text(
+        json.dumps({"schema": 1, "label": "IKEA Malm",
+                    "description": "Bedroom range."}), encoding="utf8")
+
+    entry = px.scan(library)["entries"][0]
+    assert entry["family"] == "IKEA Malm"
+    assert entry["familyDescription"] == "Bedroom range."
+
+
+def test_an_entry_with_no_collection_has_no_family(tmp_path):
+    library = _library_at(
+        tmp_path, ("loose/chair", _unnamed_part("Chair")))
+    entry = px.scan(library)["entries"][0]
+    assert entry["family"] is None
+    assert entry["familyDescription"] is None
+
+
+def test_an_unlabelled_collection_still_yields_no_family(tmp_path):
+    # library/basic/'s state: defined and documented, deliberately unlabelled.
+    library = _library_at(
+        tmp_path, ("basic/chair", _unnamed_part("Chair")))
+    (tmp_path / "basic" / "collection.json").write_text(
+        json.dumps({"schema": 1, "description": "Generic."}), encoding="utf8")
+
+    entry = px.scan(library)["entries"][0]
+    assert entry["family"] is None
+    assert entry["familyDescription"] == "Generic."
+
+
+def test_a_broken_collection_reports_an_error_but_keeps_its_parts(tmp_path):
+    library = _library_at(
+        tmp_path, ("broken/chair", _unnamed_part("Chair")))
+    (tmp_path / "broken" / "collection.json").write_text(
+        "{not json", encoding="utf8")
+
+    result = px.scan(library)
+    assert len(result["entries"]) == 1        # the part is still there
+    assert result["entries"][0]["family"] is None
+    assert any("collection.json" in e for e in result["errors"])
+
+
+def test_a_family_label_is_searchable():
+    entries = [
+        {"id": "a", "name": "Chest", "keywords": [], "description": "",
+         "family": "IKEA Malm"},
+        {"id": "b", "name": "Sofa", "keywords": [], "description": "",
+         "family": None},
+    ]
+    assert [e["id"] for e in px.search(entries, "malm")] == ["a"]
+
+
+def test_a_name_match_still_outranks_a_family_match():
+    entries = [
+        {"id": "a", "name": "Chest", "keywords": [], "description": "",
+         "family": "Sofa collection"},
+        {"id": "b", "name": "Sofa", "keywords": [], "description": "",
+         "family": None},
+    ]
+    assert [e["id"] for e in px.search(entries, "sofa")] == ["b", "a"]
+
+
+def test_an_entry_without_a_family_key_still_scores():
+    # search() is called with hand-built entries all over this suite; a
+    # missing "family" must read as "no family", not raise.
+    assert px.score({"name": "Chair", "keywords": [], "description": ""},
+                    "chair") > 0
+
+
+def test_a_changed_collection_invalidates_the_cache(tmp_path):
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    collection = tmp_path / "pack" / "collection.json"
+    collection.write_text(json.dumps({"label": "One"}), encoding="utf8")
+
+    index = px.scan(library)
+    assert px.is_cache_valid(index, library)
+
+    # Editing only the collection - no manifest touched - must still be seen.
+    os.utime(str(collection), (2000000000, 2000000000))
+    assert not px.is_cache_valid(index, library)
+
+
+def test_an_added_collection_invalidates_the_cache(tmp_path):
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    index = px.scan(library)
+    assert px.is_cache_valid(index, library)
+
+    (tmp_path / "pack" / "collection.json").write_text(
+        json.dumps({"label": "New"}), encoding="utf8")
+    assert not px.is_cache_valid(index, library)
+
+
+def test_a_library_with_no_collections_stays_cache_valid(tmp_path):
+    # Both sides of the comparison are empty dicts - this must not read as
+    # a difference and force a rescan on every single open.
+    library = _library_at(
+        tmp_path, ("loose/chair", _unnamed_part("Chair")))
+    index = px.scan(library)
+    assert px.is_cache_valid(index, library)
+
+
+def test_a_version_two_cache_is_refused(tmp_path):
+    # v2 entries have no "family" key; handing one to the panel would be a
+    # KeyError at card-build time, so it must be rejected outright rather
+    # than healed - the same call made when variants became params.
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    path = str(tmp_path / "cache.json")
+    px.save_cache(px.scan(library), path)
+    with open(path, encoding="utf8") as handle:
+        payload = json.load(handle)
+    payload["version"] = 2
+    with open(path, "w", encoding="utf8") as handle:
+        json.dump(payload, handle)
+
+    assert px.load_cache(path) is None
+
+
+def test_a_saved_cache_round_trips_its_collection_mtimes(tmp_path):
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    (tmp_path / "pack" / "collection.json").write_text(
+        json.dumps({"label": "Pack"}), encoding="utf8")
+    path = str(tmp_path / "cache.json")
+    px.save_cache(px.scan(library), path)
+
+    assert px.is_cache_valid(px.load_cache(path), library)
+
+
+# -- facet_groups ---------------------------------------------------------
+
+def test_facet_groups_omits_a_room_with_no_parts():
+    # Office is in CATEGORY_FACETS' vocabulary but no part references it.
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
+    assert "Office" not in [g["value"] for g in groups]
+
+
+def test_facet_groups_labels_and_icons_come_from_the_facet():
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups["Bathroom"]["label"] == "Bathroom"
+    assert groups["Bathroom"]["icon"] == "bathroom.svg"
+    assert groups["Kitchen"]["icon"] is None
+
+
+def test_facet_groups_counts_a_multi_room_part_in_each_of_its_rooms():
+    # wc-a is in both Bathroom and Kitchen; each count includes it once.
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups["Bathroom"]["count"] == 3     # wc-a, basin-a, noelement-a
+    assert groups["Kitchen"]["count"] == 3      # wc-a, cabinet-a, chair-a
+
+
+def test_facet_groups_counts_a_repeated_value_once():
+    # The count is DISTINCT parts, not facet declarations.
+    entries = [{"id": "a", "facets": {"room": ["Living", "Living"]}}]
+    groups = px.facet_groups(entries, {"room": {"values": {}}}, "room")
+    assert [g["count"] for g in groups] == [1]
+
+
+def test_facet_groups_puts_a_part_with_no_room_under_unclassified():
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups[px.UNCLASSIFIED]["count"] == 1    # noroom-a
+
+
+def test_facet_groups_orders_by_label_with_unclassified_last():
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
+    assert [g["value"] for g in groups] == [
+        "Bathroom", "Kitchen", px.UNCLASSIFIED]
+
+
+def test_facet_groups_has_no_children_key():
+    # The element level went with the catalogue screen. A leftover children
+    # key would invite a future caller to rebuild it.
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
+    assert all("children" not in g for g in groups)
