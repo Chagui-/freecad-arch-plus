@@ -104,3 +104,94 @@ def test_rounding_to_the_shown_precision_keeps_a_millimetre_intact():
         assert abs(field.valueFromText("18 mm")
                    - pf.partslib_units.from_mm(18, unit)) < 0.51 / (
                        pf.partslib_units.factor(unit)), unit
+
+
+class _Signal:
+    """Stands in for a Qt Signal - conftest fakes QtCore.Signal as a
+    function returning None, so an instance needs its own."""
+
+    def __init__(self):
+        self.count = 0
+
+    def emit(self):
+        self.count += 1
+
+
+class _Field:
+    """A spinbox as far as _setValueOf and setDerived need one."""
+
+    def __init__(self):
+        self.value = None
+        self.blocked = []
+
+    def blockSignals(self, state):
+        self.blocked.append(state)
+
+    def setMmValue(self, value):
+        self.value = value
+
+    def setStyleSheet(self, _sheet):
+        pass
+
+    def setToolTip(self, _text):
+        pass
+
+
+def _bare_form(auto=(), widgets=None):
+    """A ParamForm with its Qt construction skipped.
+
+    Built with object.__new__ the way the panels' edit round-trip tests are:
+    what is under test is the pristine/derived bookkeeping, not layout."""
+    form = object.__new__(pf.ParamForm)
+    form._specs = {}
+    form._tips = {}
+    form._widgets = dict(widgets or {})
+    form._auto = set(auto)
+    form._pristine = True
+    form.changed = _Signal()
+    return form
+
+
+def test_a_freshly_populated_form_is_pristine():
+    form = _bare_form()
+    assert form.isPristine()
+
+
+def test_editing_a_field_dirties_the_form():
+    form = _bare_form()
+    form._onEdited("Width")
+    assert not form.isPristine()
+    assert form.changed.count == 1
+
+
+def test_a_derived_value_arriving_leaves_the_form_pristine():
+    # The whole reason this is a flag and not a value comparison: setDerived
+    # writes measured numbers into the auto fields moments after a part is
+    # selected, and a value comparison would then call an untouched form
+    # edited - sending every part straight back to the slow render path.
+    field = _Field()
+    form = _bare_form(auto=["Height"], widgets={"Height": field})
+    form.setDerived({"Height": 1230.0})
+
+    assert field.value == 1230.0
+    assert form.isPristine()
+    assert form.changed.count == 0
+
+
+def test_pinning_a_derived_field_dirties_the_form_and_clears_its_auto_flag():
+    field = _Field()
+    form = _bare_form(auto=["Height"], widgets={"Height": field})
+    form._onEdited("Height")
+
+    assert not form.isPristine()
+    assert not form.hasDerivedFields()
+
+
+def test_has_derived_fields_is_false_without_auto_params():
+    # 27 of the 31 bundled parts. This is what spares them measure(), whose
+    # optimalBoundingBox costs about as much as building the shape.
+    assert not _bare_form().hasDerivedFields()
+
+
+def test_has_derived_fields_is_true_while_one_is_unpinned():
+    assert _bare_form(auto=["Width"]).hasDerivedFields()
