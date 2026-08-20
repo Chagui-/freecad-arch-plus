@@ -134,10 +134,13 @@ message instead of a blank void.
   declares no `label`, shows no family line at all.
 - **Preview** — selecting a card shows a rendered preview, its parameters
   and its description in the sidebar. On FreeCAD 1.1 this is always a
-  static rendered image (see the caveat under "Adding parts to the
-  library"); an unedited selection serves the part's committed
-  `thumbnail.jpg` directly rather than rebuilding it, so most parts show a
-  preview immediately rather than after a rebuild.
+  static rendered image, not a live/rotatable 3D view — pivy's bundled
+  Quarter widget cannot be constructed on this build's Qt6-based `pivy.qt`
+  shim, so the panel falls back to a still render automatically (see
+  `docs/PARTS-LIBRARY-VERIFICATION.md` for the full cause). An unedited
+  selection serves the part's committed `thumbnail.jpg` directly rather
+  than rebuilding it, so most parts show a preview immediately rather than
+  after a rebuild.
 - **Declared parameters** — parts expose primary parameters in the sidebar and
   keep additional parameters behind **More parameters**; editing them rebuilds
   the shape in place. A parameter declared `"auto"` is measured back off the

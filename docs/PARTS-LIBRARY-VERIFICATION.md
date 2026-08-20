@@ -128,9 +128,11 @@ a repeated string drifts, one part saying "IKEA Malm" and its neighbour
   (optional — shown as the family line's tooltip). Everything is optional;
   an empty `{}` is valid and simply declares no family.
 - **Absent `label` means no family line.** This is not a warning-worthy gap:
-  it means "these parts belong to no brand", which is exactly
-  `library/basic/`'s state — none of the 31 shipped parts shows a family
-  line today because `basic/` deliberately declares no `collection.json`.
+  it means "these parts belong to no brand". `library/basic/collection.json`
+  exists on disk and declares a `description` ("Generic parametric
+  furniture and fittings, not modelled on any manufacturer's product.") but
+  deliberately no `label` — which is exactly why none of the 31 shipped
+  parts shows a family line today.
 - **The nearest ancestor wins.** Resolution walks upward from a part's
   parent folder, testing each ancestor for a `collection.json`, and stops
   at the library root — a `library/ikea/malm/collection.json` overrides
@@ -220,7 +222,7 @@ unaffected by the fallback.
 - [ ] **B1.** Click **Parts Library**. A new tab titled "ArchPlus Library"
       opens full-window in the MDI area (alongside any open document tabs),
       opening **directly onto the grid** — no categories page, no
-      drill-down, in front of it.
+      drill-down.
 - [ ] **B2 (chip row).** The chip row above the grid reads `All · 31`,
       `Bathroom · 8`, `Bedroom · 10`, `Dining · 2`, `Kitchen · 6`,
       `Living · 8`, `Office · 2` — one chip per room that actually has a
@@ -295,18 +297,23 @@ unaffected by the fallback.
       that file (no re-render — the file's mtime is unchanged across the
       reopen). Leave the regenerated file in place (or `git checkout` it)
       so the committed content matches what ships.
-- [ ] **B11 (`collection.json` family line).** Temporarily add
-      `{"schema": 1, "label": "Demo Collection"}` to
-      `archplus/tools/partslib/library/basic/collection.json` (create the
-      file if it does not exist — it sits one level above every `basic/`
-      part folder, so it governs all 31 shipped parts at once). Click
-      **Rescan library**. Confirm every card now shows a family line
-      reading `Demo Collection` beneath its name, and that the detail
-      sidebar shows the same line (with the collection's `description`, if
-      any, as its tooltip) for a selected part. Type `Demo Collection` into
-      the search box and confirm it matches parts on the family line.
-      Remove the file (or the `label` you added) and **Rescan library**
-      again: the family line disappears from every card.
+- [ ] **B11 (`collection.json` family line).**
+      `archplus/tools/partslib/library/basic/collection.json` already
+      exists (it declares only a `description`, deliberately no `label` —
+      that absence is what suppresses the family line today). Open it and
+      ADD a `"label": "Demo Collection"` key alongside the existing
+      `description` — do not create a new file or replace its content; it
+      sits one level above every `basic/` part folder, so it governs all 31
+      shipped parts at once. Click **Rescan library**. Confirm every card
+      now shows a family line reading `Demo Collection` beneath its name,
+      and that the detail sidebar shows the same line (with the
+      collection's `description` as its tooltip) for a selected part. Type
+      `Demo Collection` into the search box and confirm it matches parts on
+      the family line. Remove just the `label` key you added (leaving
+      `description` intact) and **Rescan library** again: the family line
+      disappears from every card and the file is back to its committed
+      state — confirm with `git diff` that nothing under `library/` is
+      left modified.
 
 ## Part C — Preview pane and detail sidebar (confirmed static fallback)
 
