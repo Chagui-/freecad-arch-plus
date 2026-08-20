@@ -40,9 +40,10 @@ from . import theme as partslib_theme
 from . import thumbs as partslib_thumbs
 
 # partslib_object is imported lazily, inside the functions that need it
-# (refresh(), _onPlace()) rather than here at module scope. It imports
-# ArchComponent at its own module scope, and this module is imported during
-# the BIM workbench's Initialize() (InitGui.py's add_ui()), wrapped in a bare
+# (refresh(), _onPlace(), _fillResultsEmptyState()) rather than here at
+# module scope. It imports ArchComponent at its own module scope, and this
+# module is imported during the BIM workbench's Initialize() (InitGui.py's
+# add_ui()), wrapped in a bare
 # except that only prints to the Report view - if ArchComponent were not yet
 # importable at that point, the import would raise, appendToolbar() would
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
@@ -297,6 +298,16 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.chipLayout = archplus_widgets.FlowLayout(self.chipRow)
         outer.addWidget(self.chipRow)
 
+        # Created once, here, rather than per _populateChips() refresh: a
+        # QButtonGroup rebound on every rescan would leave its predecessor
+        # parented to the panel and never deleted - empty and harmless (its
+        # buttons are already deleteLater()'d out from under it, and a button
+        # removes itself from its group on destruction), but a leak all the
+        # same. Reusing one group means _populateChips() only ever adds this
+        # refresh's buttons to it.
+        self._chipGroup = QtGui.QButtonGroup(self)
+        self._chipGroup.setExclusive(True)
+
         self.search = QtGui.QLineEdit()
         self.search.setPlaceholderText("Search…")
         # DEBOUNCED, not wired straight to _repopulateGrid. Repopulating
@@ -358,6 +369,15 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.detailName.setFont(nameFont)
         self.detailName.setWordWrap(True)
         layout.addWidget(self.detailName)
+
+        self.detailFamily = QtGui.QLabel("")
+        self.detailFamily.setWordWrap(True)
+        familyFont = self.detailFamily.font()
+        familyFont.setPointSize(max(7, familyFont.pointSize() - 1))
+        self.detailFamily.setFont(familyFont)
+        self.detailFamily.setStyleSheet(
+            "color: %s;" % self._tokens["text_dim"])
+        layout.addWidget(self.detailFamily)
 
         from . import paramform as partslib_paramform
 
@@ -504,9 +524,6 @@ class PartsLibraryPanel(QtGui.QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
-        self._chipGroup = QtGui.QButtonGroup(self)
-        self._chipGroup.setExclusive(True)
-
         groups = partslib_index.facet_groups(
             self._entries, self._facets, "room")
         # A rescan can retire the room the user was filtering by - deleting
@@ -542,6 +559,14 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.chipLayout.addWidget(chip)
 
     def _onChipSelected(self, room):
+        # Clicking the already-selected chip still fires `clicked` (an
+        # exclusive QButtonGroup refuses to uncheck it, but the click itself
+        # still happened) - without this guard that re-ran _repopulateGrid()
+        # for no filter change, which clears the grid and resets the
+        # selection to row 0, losing whatever card and detail pane the user
+        # had open.
+        if room == self._filterRoom:
+            return
         self._filterRoom = room
         self._repopulateGrid()
 
@@ -639,8 +664,14 @@ class PartsLibraryPanel(QtGui.QWidget):
             layout.addWidget(path)
 
     def _makePartCard(self, entry):
-        """Square thumbnail on top, name beneath, a small monospaced line of
-        primary parameter labels - the card look used everywhere in the panel."""
+        """Square thumbnail, name, and - when its collection declares one -
+        the family it belongs to.
+
+        There used to be a monospaced line of the part's primary parameter
+        LABELS here ("Width | Depth | Height"), with no values: it restated
+        the column headings of a form the user had not opened. A card's job
+        is recognition, which the thumbnail does; the detail pane states
+        dimensions properly, as editable fields."""
         card = QtGui.QFrame()
         card.setObjectName("PartCard")
         card.setProperty("selected", False)
@@ -657,7 +688,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             # Spec Sec 9: no thumbnail was committed for this part, so
             # render one now and cache it to disk - this is the ONE place
             # browsing is allowed to build a shape, and only the first time;
-            # ensure_thumbnail() writes the PNG next to the part, so every
+            # ensure_thumbnail() writes the JPEG next to the part, so every
             # later open is back to a plain file read. Never raises: any
             # failure (no committed manifest, no GL context) returns None
             # and the card is still shown, just without an icon.
@@ -676,24 +707,23 @@ class PartsLibraryPanel(QtGui.QWidget):
         name.setWordWrap(True)
         v.addWidget(name)
 
-        from . import manifest as partslib_manifest
-
-        shaped = {"params": entry.get("params") or {}}
-        specs = partslib_manifest.param_specs(shaped)
-        adjustable = QtGui.QLabel(" | ".join(
-            (specs.get(name) or {}).get("label") or name
-            for name in partslib_manifest.primary_params(shaped)))
-        adjustableFont = QtGui.QFont("Monospace")
-        adjustableFont.setStyleHint(QtGui.QFont.TypeWriter)
-        adjustableFont.setPointSize(max(7, adjustableFont.pointSize() - 1))
-        adjustable.setFont(adjustableFont)
-        adjustable.setAlignment(QtCore.Qt.AlignHCenter)
-        adjustable.setWordWrap(True)
-        # Dim the parameter line relative to the name, using this screen's own
-        # text_dim token (never QPalette - see _applyTheme's docstring for
-        # why palette colours cannot be trusted here).
-        adjustable.setStyleSheet("color: %s;" % self._tokens["text_dim"])
-        v.addWidget(adjustable)
+        # Only where the collection declares a label. An unlabelled
+        # collection - which is what library/basic/ is - leaves the card at
+        # thumbnail-plus-name and correspondingly shorter, because an
+        # identical "Basic" under all 31 generic parts would be exactly the
+        # noise the parameter line was removed for.
+        family = entry.get("family")
+        if family:
+            familyLabel = QtGui.QLabel(family)
+            familyLabel.setAlignment(QtCore.Qt.AlignHCenter)
+            familyLabel.setWordWrap(True)
+            familyFont = familyLabel.font()
+            familyFont.setPointSize(max(7, familyFont.pointSize() - 1))
+            familyLabel.setFont(familyFont)
+            familyLabel.setStyleSheet(
+                "color: %s;" % self._tokens["text_dim"])
+            familyLabel.setToolTip(entry.get("familyDescription") or "")
+            v.addWidget(familyLabel)
 
         return card
 
@@ -802,12 +832,19 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.placeButton.setEnabled(entry is not None)
         if entry is None:
             self.detailName.setText("")
+            self.detailFamily.setText("")
+            self.detailFamily.setVisible(False)
             self.paramForm.setSpecs({}, [])
             self.buildError.setText("")
             self.description.setText("")
             return
 
         self.detailName.setText(entry["name"])
+        self.detailFamily.setText(entry.get("family") or "")
+        self.detailFamily.setToolTip(entry.get("familyDescription") or "")
+        # An empty label still occupies a layout row; hide it so an
+        # unlabelled collection leaves no gap under the part name.
+        self.detailFamily.setVisible(bool(entry.get("family")))
         self.description.setText(entry.get("description") or "")
         from . import manifest as partslib_manifest
 
