@@ -89,3 +89,37 @@ def test_set_ref_image_sets_a_pixmap_when_the_icon_exists(tmp_path, monkeypatch)
     widgets.set_ref_image(lbl, str(tmp_path), "ref", (10, 10))
     assert lbl.pixmap == ("pixmap", os.path.join(str(tmp_path), "ref.svg"), (10, 10))
     assert not lbl.cleared
+
+
+def test_items_that_fit_stay_on_one_row():
+    positions, height = widgets.flow_positions(
+        [(50, 20), (50, 20), (50, 20)], width=200, spacing=5)
+    assert positions == [(0, 0), (55, 0), (110, 0)]
+    assert height == 20
+
+
+def test_an_item_that_would_overflow_starts_a_new_row():
+    positions, height = widgets.flow_positions(
+        [(80, 20), (80, 20), (80, 20)], width=200, spacing=5)
+    assert positions == [(0, 0), (85, 0), (0, 25)]
+    assert height == 45
+
+
+def test_a_row_is_as_tall_as_its_tallest_item():
+    positions, height = widgets.flow_positions(
+        [(80, 20), (80, 40), (80, 20)], width=200, spacing=5)
+    assert positions == [(0, 0), (85, 0), (0, 45)]
+    assert height == 65
+
+
+def test_an_item_wider_than_the_row_gets_a_row_to_itself():
+    # It must still be PLACED. Dropping it would silently hide a room chip
+    # in a narrow panel, which is worse than letting it overhang.
+    positions, height = widgets.flow_positions(
+        [(50, 20), (500, 20)], width=200, spacing=5)
+    assert positions == [(0, 0), (0, 25)]
+    assert height == 45
+
+
+def test_no_items_is_no_height():
+    assert widgets.flow_positions([], width=200, spacing=5) == ([], 0)
