@@ -518,6 +518,24 @@ def test_a_saved_cache_round_trips_its_collection_mtimes(tmp_path):
     assert px.is_cache_valid(px.load_cache(path), library)
 
 
+def test_collection_mtimes_skips_a_file_deleted_after_the_walk(
+        tmp_path, monkeypatch):
+    # The walk (collection_paths) and the stat (getmtime) are two separate
+    # filesystem reads; something can delete the file in between. Simulate
+    # that race by handing collection_mtimes a path the walk "found" that no
+    # longer exists by the time it stats - it must not raise.
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    collection_path = tmp_path / "pack" / "collection.json"
+    collection_path.write_text(
+        json.dumps({"label": "Pack"}), encoding="utf8")
+    vanished = str(collection_path)
+    collection_path.unlink()
+    monkeypatch.setattr(px.pc, "collection_paths", lambda library_dir: [vanished])
+
+    assert px.collection_mtimes(library) == {}
+
+
 # -- facet_groups ---------------------------------------------------------
 
 def test_facet_groups_omits_a_room_with_no_parts():

@@ -595,6 +595,17 @@ class PartsLibraryPanel(QtGui.QWidget):
         in place of the card grid, and switches back the moment a match
         reappears - covering both "clear the search" and "the library
         gained its first part"."""
+        # Every caller of _repopulateGrid is itself a reason to cancel a
+        # pending debounced one: a chip click or refresh() rebuilding now
+        # makes any not-yet-fired search timeout stale, and letting it fire
+        # later would rebuild the grid a second time and reset the selection
+        # (setCurrentRow(0) below) out from under whatever the user just
+        # picked. Stopping an already-fired single-shot timer is a no-op, so
+        # this is safe on the timer's own timeout path too. It also closes a
+        # re-entrancy: _prerenderThumbnails below pumps processEvents(),
+        # which could otherwise let a pending timeout re-enter here and call
+        # self.grid.clear() mid-rebuild.
+        self._searchTimer.stop()
         self.grid.clear()
         entries = sorted(self._filteredEntries(), key=lambda e: e["name"])
         # Render anything missing FIRST, with a progress dialog, so the

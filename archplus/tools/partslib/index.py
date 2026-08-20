@@ -34,8 +34,19 @@ def collection_mtimes(library_dir):
     Editing a collection's label changes no part.json, so without this the
     cached index would keep serving the old family name until something
     else in the library happened to change."""
-    return dict((path, os.path.getmtime(path))
-                for path in pc.collection_paths(library_dir))
+    mtimes = {}
+    for path in pc.collection_paths(library_dir):
+        try:
+            mtimes[path] = os.path.getmtime(path)
+        except OSError:
+            # The walk above and this stat are two separate filesystem
+            # reads; a collection.json can be deleted in between (another
+            # process editing the library while a scan runs). A bad
+            # collection must never take the scan down, so it is simply
+            # left out of this run's mtimes - the next scan will no longer
+            # see it in the walk at all, so the dict just settles.
+            continue
+    return mtimes
 
 
 def scan(library_dir):
