@@ -229,6 +229,11 @@ _PREVIEW_WARNED = False
 
 _PREVIEW_HEIGHT = 180
 
+# How long the panel waits after the last keystroke before doing expensive
+# work. Shared by the search field and the parameter form so the panel has
+# ONE notion of "the user has stopped typing".
+_DEBOUNCE_MS = 250
+
 _panel = None
 
 
@@ -354,7 +359,18 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         self.search = QtGui.QLineEdit()
         self.search.setPlaceholderText("Search…")
-        self.search.textChanged.connect(self._repopulateGrid)
+        # DEBOUNCED, not wired straight to _repopulateGrid. Repopulating
+        # selects row 0, which fires _onSelect -> _refreshPreview, so an
+        # undebounced field ran a whole preview for every keystroke: typing
+        # "cabinet" cost seven of them, and before the thumbnail fast path
+        # that was three to four seconds of frozen UI. The parameter form
+        # has had this treatment since it was written; the search field
+        # never got it.
+        self._searchTimer = QtCore.QTimer(self)
+        self._searchTimer.setSingleShot(True)
+        self._searchTimer.setInterval(_DEBOUNCE_MS)
+        self._searchTimer.timeout.connect(self._repopulateGrid)
+        self.search.textChanged.connect(self._searchTimer.start)
         v.addWidget(self.search)
 
         splitter = QtGui.QSplitter(QtCore.Qt.Horizontal)
@@ -411,7 +427,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         self._paramTimer = QtCore.QTimer(self)
         self._paramTimer.setSingleShot(True)
-        self._paramTimer.setInterval(250)
+        self._paramTimer.setInterval(_DEBOUNCE_MS)
         self._paramTimer.timeout.connect(self._refreshPreview)
 
         # There used to be a W/D/H readout here, measured from the built
