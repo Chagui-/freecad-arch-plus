@@ -378,37 +378,55 @@ git commit -m "Resolve a part's collection from the nearest collection.json"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `archplus/tools/partslib/tests/test_partslib_index.py`. First read the file's existing helpers — it already builds temp libraries; reuse whatever local helper it defines rather than inventing a second one. These tests assume a helper that writes `facets.json` plus part manifests; if the existing file names it differently, adapt the calls, not the assertions.
+Append to `archplus/tools/partslib/tests/test_partslib_index.py`. It already
+has the helpers these use — `_library_at(tmp_path, *(folder, data))`,
+`_unnamed_part(name, **over)`, `CATEGORY_ENTRIES`, `CATEGORY_FACETS` and
+`_by_value(groups)` — plus `import json` and `import os` at the top. Do not
+add a second library-building helper.
+
+**Leave the nine existing `category_tree` tests in place.** `category_tree`
+is not deleted in this task (its only caller, `gui._populateCategories`,
+survives until Task 7); deleting it here would leave `gui.py` calling a
+function that no longer exists, and no test imports that module, so the
+suite would stay green over a broken panel. Task 7 removes the function, its
+tests and its caller together.
 
 ```python
 def test_an_entry_carries_its_collections_label(tmp_path):
-    library = _write_library(tmp_path, parts={
-        "ikea-malm/chest": {"name": "Malm chest",
-                            "facets": {"room": "Bedroom"}},
-    })
+    library = _library_at(
+        tmp_path, ("ikea-malm/chest", _unnamed_part("Malm chest")))
     (tmp_path / "ikea-malm" / "collection.json").write_text(
         json.dumps({"schema": 1, "label": "IKEA Malm",
                     "description": "Bedroom range."}), encoding="utf8")
 
-    result = px.scan(library)
-    entry = result["entries"][0]
+    entry = px.scan(library)["entries"][0]
     assert entry["family"] == "IKEA Malm"
     assert entry["familyDescription"] == "Bedroom range."
 
 
 def test_an_entry_with_no_collection_has_no_family(tmp_path):
-    library = _write_library(tmp_path, parts={
-        "loose/chair": {"name": "Chair", "facets": {"room": "Living"}},
-    })
+    library = _library_at(
+        tmp_path, ("loose/chair", _unnamed_part("Chair")))
     entry = px.scan(library)["entries"][0]
     assert entry["family"] is None
     assert entry["familyDescription"] is None
 
 
+def test_an_unlabelled_collection_still_yields_no_family(tmp_path):
+    # library/basic/'s state: defined and documented, deliberately unlabelled.
+    library = _library_at(
+        tmp_path, ("basic/chair", _unnamed_part("Chair")))
+    (tmp_path / "basic" / "collection.json").write_text(
+        json.dumps({"schema": 1, "description": "Generic."}), encoding="utf8")
+
+    entry = px.scan(library)["entries"][0]
+    assert entry["family"] is None
+    assert entry["familyDescription"] == "Generic."
+
+
 def test_a_broken_collection_reports_an_error_but_keeps_its_parts(tmp_path):
-    library = _write_library(tmp_path, parts={
-        "broken/chair": {"name": "Chair", "facets": {"room": "Living"}},
-    })
+    library = _library_at(
+        tmp_path, ("broken/chair", _unnamed_part("Chair")))
     (tmp_path / "broken" / "collection.json").write_text(
         "{not json", encoding="utf8")
 
@@ -418,7 +436,7 @@ def test_a_broken_collection_reports_an_error_but_keeps_its_parts(tmp_path):
     assert any("collection.json" in e for e in result["errors"])
 
 
-def test_a_family_label_is_searchable(tmp_path):
+def test_a_family_label_is_searchable():
     entries = [
         {"id": "a", "name": "Chest", "keywords": [], "description": "",
          "family": "IKEA Malm"},
@@ -428,7 +446,7 @@ def test_a_family_label_is_searchable(tmp_path):
     assert [e["id"] for e in px.search(entries, "malm")] == ["a"]
 
 
-def test_a_name_match_still_outranks_a_family_match(tmp_path):
+def test_a_name_match_still_outranks_a_family_match():
     entries = [
         {"id": "a", "name": "Chest", "keywords": [], "description": "",
          "family": "Sofa collection"},
@@ -438,10 +456,16 @@ def test_a_name_match_still_outranks_a_family_match(tmp_path):
     assert [e["id"] for e in px.search(entries, "sofa")] == ["b", "a"]
 
 
+def test_an_entry_without_a_family_key_still_scores():
+    # search() is called with hand-built entries all over this suite; a
+    # missing "family" must read as "no family", not raise.
+    assert px.score({"name": "Chair", "keywords": [], "description": ""},
+                    "chair") > 0
+
+
 def test_a_changed_collection_invalidates_the_cache(tmp_path):
-    library = _write_library(tmp_path, parts={
-        "pack/chair": {"name": "Chair", "facets": {"room": "Living"}},
-    })
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
     collection = tmp_path / "pack" / "collection.json"
     collection.write_text(json.dumps({"label": "One"}), encoding="utf8")
 
@@ -454,9 +478,8 @@ def test_a_changed_collection_invalidates_the_cache(tmp_path):
 
 
 def test_an_added_collection_invalidates_the_cache(tmp_path):
-    library = _write_library(tmp_path, parts={
-        "pack/chair": {"name": "Chair", "facets": {"room": "Living"}},
-    })
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
     index = px.scan(library)
     assert px.is_cache_valid(index, library)
 
@@ -465,13 +488,21 @@ def test_an_added_collection_invalidates_the_cache(tmp_path):
     assert not px.is_cache_valid(index, library)
 
 
+def test_a_library_with_no_collections_stays_cache_valid(tmp_path):
+    # Both sides of the comparison are empty dicts - this must not read as
+    # a difference and force a rescan on every single open.
+    library = _library_at(
+        tmp_path, ("loose/chair", _unnamed_part("Chair")))
+    index = px.scan(library)
+    assert px.is_cache_valid(index, library)
+
+
 def test_a_version_two_cache_is_refused(tmp_path):
     # v2 entries have no "family" key; handing one to the panel would be a
     # KeyError at card-build time, so it must be rejected outright rather
     # than healed - the same call made when variants became params.
-    library = _write_library(tmp_path, parts={
-        "pack/chair": {"name": "Chair", "facets": {"room": "Living"}},
-    })
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
     path = str(tmp_path / "cache.json")
     px.save_cache(px.scan(library), path)
     with open(path, encoding="utf8") as handle:
@@ -483,51 +514,66 @@ def test_a_version_two_cache_is_refused(tmp_path):
     assert px.load_cache(path) is None
 
 
-def test_facet_groups_returns_one_group_per_declared_room(tmp_path):
-    entries = [
-        {"id": "a", "facets": {"room": "Bathroom"}},
-        {"id": "b", "facets": {"room": ["Bedroom", "Living"]}},
-        {"id": "c", "facets": {"room": "Bedroom"}},
-    ]
-    facets = {"room": {"values": {"Bathroom": {"label": "Bath room",
-                                               "icon": "bathroom.svg"},
-                                  "Bedroom": {}, "Living": {}}}}
-    groups = px.facet_groups(entries, facets, "room")
-    by_value = {g["value"]: g for g in groups}
+def test_a_saved_cache_round_trips_its_collection_mtimes(tmp_path):
+    library = _library_at(
+        tmp_path, ("pack/chair", _unnamed_part("Chair")))
+    (tmp_path / "pack" / "collection.json").write_text(
+        json.dumps({"label": "Pack"}), encoding="utf8")
+    path = str(tmp_path / "cache.json")
+    px.save_cache(px.scan(library), path)
 
-    assert set(by_value) == {"Bathroom", "Bedroom", "Living"}
-    assert by_value["Bedroom"]["count"] == 2
-    assert by_value["Living"]["count"] == 1
-    assert by_value["Bathroom"]["label"] == "Bath room"
-    assert by_value["Bathroom"]["icon"] == "bathroom.svg"
-    assert by_value["Bedroom"]["icon"] is None
+    assert px.is_cache_valid(px.load_cache(path), library)
 
 
-def test_facet_groups_counts_a_part_once_per_group(tmp_path):
-    # A multi-room part belongs to both, but must not be counted twice in
-    # either - the count is distinct parts, not facet declarations.
+# -- facet_groups ---------------------------------------------------------
+
+def test_facet_groups_omits_a_room_with_no_parts():
+    # Office is in CATEGORY_FACETS' vocabulary but no part references it.
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
+    assert "Office" not in [g["value"] for g in groups]
+
+
+def test_facet_groups_labels_and_icons_come_from_the_facet():
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups["Bathroom"]["label"] == "Bathroom"
+    assert groups["Bathroom"]["icon"] == "bathroom.svg"
+    assert groups["Kitchen"]["icon"] is None
+
+
+def test_facet_groups_counts_a_multi_room_part_in_each_of_its_rooms():
+    # wc-a is in both Bathroom and Kitchen; each count includes it once.
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups["Bathroom"]["count"] == 3     # wc-a, basin-a, noelement-a
+    assert groups["Kitchen"]["count"] == 3      # wc-a, cabinet-a, chair-a
+
+
+def test_facet_groups_counts_a_repeated_value_once():
+    # The count is DISTINCT parts, not facet declarations.
     entries = [{"id": "a", "facets": {"room": ["Living", "Living"]}}]
     groups = px.facet_groups(entries, {"room": {"values": {}}}, "room")
     assert [g["count"] for g in groups] == [1]
 
 
-def test_facet_groups_sorts_unclassified_last(tmp_path):
-    entries = [{"id": "a", "facets": {}},
-               {"id": "b", "facets": {"room": "Zebra"}},
-               {"id": "c", "facets": {"room": "Attic"}}]
-    groups = px.facet_groups(entries, {"room": {"values": {}}}, "room")
+def test_facet_groups_puts_a_part_with_no_room_under_unclassified():
+    groups = _by_value(
+        px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room"))
+    assert groups[px.UNCLASSIFIED]["count"] == 1    # noroom-a
+
+
+def test_facet_groups_orders_by_label_with_unclassified_last():
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
     assert [g["value"] for g in groups] == [
-        "Attic", "Zebra", px.UNCLASSIFIED]
+        "Bathroom", "Kitchen", px.UNCLASSIFIED]
 
 
-def test_category_tree_is_gone():
-    # It served the catalogue screen, which no longer exists. Leaving a
-    # second, richer grouping function around invites a future caller to
-    # rebuild the screen by accident.
-    assert not hasattr(px, "category_tree")
+def test_facet_groups_has_no_children_key():
+    # The element level went with the catalogue screen. A leftover children
+    # key would invite a future caller to rebuild it.
+    groups = px.facet_groups(CATEGORY_ENTRIES, CATEGORY_FACETS, "room")
+    assert all("children" not in g for g in groups)
 ```
-
-Delete the existing `category_tree` tests from this file — the behaviours worth keeping (labels, icons, distinct-part counts, UNCLASSIFIED sorting) are re-expressed above against `facet_groups`. Add `import json` and `import os` at the top of the test file if they are not already there.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -667,9 +713,12 @@ and in `score()`, between the keyword and description checks:
         return _SCORE_FAMILY_SUBSTRING
 ```
 
-- [ ] **Step 7: Replace `category_tree` with `facet_groups`**
+- [ ] **Step 7: Add `facet_groups` beside `category_tree`**
 
-Delete the whole `category_tree` function and replace it with:
+`category_tree` STAYS for now — `gui._populateCategories` still calls it and
+is not deleted until Task 7, and no test imports that module, so removing it
+here would leave a broken panel behind a green suite. Add the new function
+directly below it:
 
 ```python
 def facet_groups(entries, facets, facet="room"):
@@ -1441,6 +1490,8 @@ git commit -m "Add a wrapping flow layout for the parts library's room chips"
 
 **Files:**
 - Modify: `archplus/tools/partslib/gui.py` (the bulk of the change)
+- Modify: `archplus/tools/partslib/index.py` (delete `category_tree`)
+- Modify: `archplus/tools/partslib/tests/test_partslib_index.py` (delete its tests)
 
 **Interfaces:**
 - Consumes: `index.facet_groups` (Task 2), `widgets.FlowLayout` (Task 6).
@@ -1451,6 +1502,19 @@ git commit -m "Add a wrapping flow layout for the parts library's room chips"
 Remove these methods and attributes from `gui.py` entirely:
 
 `_buildCategoriesScreen`, `_populateCategories`, `_fillCategoriesEmptyState`, `_makeRoomCard`, `_reflowCategories`, `_columnCountFor`, `eventFilter`, `_showCategories`, `_updateBreadcrumb`, `_addBreadcrumbSegment`, `_addBreadcrumbSeparator`, `_roomLabel`, `_elementLabel`; the `_CARD_TARGET_WIDTH` constant; and the `self._categoriesStack` / `self._categoryCards` / `self._categoryColumns` / `self._categories` state wherever it is assigned or read.
+
+Also delete `index.category_tree` and its nine tests in
+`archplus/tools/partslib/tests/test_partslib_index.py` (the block under the
+`# -- category_tree` header). It has no caller once `_populateCategories` is
+gone, and leaving a second, richer grouping function around invites someone
+to rebuild the catalogue screen by accident. `facet_groups` (Task 2) already
+carries every behaviour worth keeping. Add one guard test in its place:
+
+```python
+def test_category_tree_is_gone():
+    # It served the catalogue screen, which no longer exists.
+    assert not hasattr(px, "category_tree")
+```
 
 Remove the now-dead `QFrame#RoomCard`, `QPushButton#RoomHeader`, `QPushButton#ElementRow`, `QPushButton#BreadcrumbSegment`, `QFrame#HairlineRule` and `QWidget#CategoriesContainer` rules from `_STYLESHEET_TEMPLATE` (keep `QFrame#PartCard`, which the grid still uses).
 
@@ -1646,7 +1710,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add archplus/tools/partslib/gui.py
+git add archplus/tools/partslib/gui.py archplus/tools/partslib/index.py archplus/tools/partslib/tests/test_partslib_index.py
 git commit -m "Collapse the parts library onto one screen with room filter chips"
 ```
 
