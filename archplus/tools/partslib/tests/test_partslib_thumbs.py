@@ -144,3 +144,48 @@ def test_ensure_thumbnail_marks_failure_after_a_failed_render(
     assert pt.render_failed_before(path) is False
     assert pt.ensure_thumbnail(entry, resolved) is None
     assert pt.render_failed_before(path) is True
+
+
+def test_an_untouched_part_with_a_thumbnail_touches_no_geometry():
+    # 27 of the 31 bundled parts. The committed thumbnail IS the render of
+    # the manifest defaults - ensure_thumbnail() builds the part at exactly
+    # those values - so recreating it is 0.5s spent reproducing a file that
+    # loads in 1ms.
+    plan = pt.preview_plan(pristine=True, has_derived_fields=False,
+                           thumbnail_usable=True)
+    assert plan == {"build": False, "measure": False, "render": False,
+                    "use_thumbnail": True}
+
+
+def test_an_untouched_part_with_derived_fields_builds_but_does_not_render():
+    # The other 4. Their Width/Height cannot be known without the shape, so
+    # the build and the measurement stay - but the picture still comes off
+    # disk, because the parameters are still the defaults.
+    plan = pt.preview_plan(pristine=True, has_derived_fields=True,
+                           thumbnail_usable=True)
+    assert plan == {"build": True, "measure": True, "render": False,
+                    "use_thumbnail": True}
+
+
+def test_an_edited_part_goes_the_full_pipeline():
+    plan = pt.preview_plan(pristine=False, has_derived_fields=True,
+                           thumbnail_usable=True)
+    assert plan == {"build": True, "measure": True, "render": True,
+                    "use_thumbnail": False}
+
+
+def test_an_edited_part_without_derived_fields_still_skips_measuring():
+    # measure() runs optimalBoundingBox and setDerived() has nothing to write
+    # it into, so this is waste on the EDITED path too, not only on selection.
+    plan = pt.preview_plan(pristine=False, has_derived_fields=False,
+                           thumbnail_usable=True)
+    assert plan["measure"] is False
+    assert plan["render"] is True
+
+
+def test_a_part_with_no_committed_thumbnail_falls_back_to_rendering():
+    # A user-added part. Slow exactly once: the render path writes the jpg.
+    plan = pt.preview_plan(pristine=True, has_derived_fields=False,
+                           thumbnail_usable=False)
+    assert plan == {"build": True, "measure": False, "render": True,
+                    "use_thumbnail": False}

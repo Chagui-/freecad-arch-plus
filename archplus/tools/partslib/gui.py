@@ -1014,33 +1014,54 @@ class PartsLibraryPanel(QtGui.QWidget):
         return entry, manifest, self.paramForm.values()
 
     def _refreshPreview(self):
-        """Build the selected parameters and show the result."""
+        """Show the selected part at the selected parameters.
+
+        Not simply "build and render" any more - see
+        partslib_thumbs.preview_plan for which of the four steps each state
+        actually needs, and why."""
         from . import geometry as partslib_geometry
-        from . import manifest as partslib_manifest
 
         selection = self._selection()
         if selection is None:
             return
         entry, manifest, overrides = selection
+
+        thumbPath = partslib_thumbs.thumbnail_path(entry["dir"])
+        # A live pivy preview must never be replaced by a flat picture, so
+        # the committed thumbnail is only "usable" on the static path. On
+        # FreeCAD 1.1 that is every session (Qt6 moved QOpenGLWidget out from
+        # under pivy's QuarterWidget), but the guard keeps a future pivy fix
+        # from silently downgrading the pane.
+        thumbnailUsable = bool(
+            not _PREVIEW_LIVE and os.path.exists(thumbPath))
+        plan = partslib_thumbs.preview_plan(
+            self.paramForm.isPristine(),
+            self.paramForm.hasDerivedFields(),
+            thumbnailUsable)
+
         timer = _Timer("previewing %r" % (entry["id"],))
-        try:
-            shape = partslib_geometry.build_shape(
-                manifest, entry["dir"], overrides)
-        except Exception as exc:
-            self.buildError.setText("Cannot build this part: %s" % exc)
-            return
+        shape = None
+        if plan["build"]:
+            try:
+                shape = partslib_geometry.build_shape(
+                    manifest, entry["dir"], overrides)
+            except Exception as exc:
+                self.buildError.setText("Cannot build this part: %s" % exc)
+                return
+            timer.mark("build")
         self.buildError.setText("")
-        timer.mark("build")
 
-        # An "auto" param can only be one of the shape's own dimensions
-        # (manifest.AUTO_PARAM_NAMES), so measuring the built shape reports
-        # every one of them - there is nothing else for a builder to tell
-        # us. This is what the derived_params() hook used to be for, back
-        # when a count could be declared auto and no measurement could
-        # reach it.
-        self.paramForm.setDerived(partslib_geometry.measure(shape))
+        if plan["measure"] and shape is not None:
+            # An "auto" param can only be one of the shape's own dimensions
+            # (manifest.AUTO_PARAM_NAMES), so measuring the built shape
+            # reports every one of them - there is nothing else for a builder
+            # to tell us.
+            self.paramForm.setDerived(partslib_geometry.measure(shape))
+            timer.mark("measure")
 
-        if _PREVIEW_LIVE:
+        if plan["use_thumbnail"]:
+            self._showCommittedThumbnail(thumbPath)
+        elif _PREVIEW_LIVE:
             try:
                 self.preview.setSceneGraph(
                     partslib_thumbs.scene_from_shape(shape))
@@ -1052,6 +1073,20 @@ class PartsLibraryPanel(QtGui.QWidget):
             self._showStaticPreview(entry, shape, manifest, overrides)
         timer.mark("preview")
         timer.report()
+
+    def _showCommittedThumbnail(self, thumbPath):
+        """Put the part's committed thumbnail in the detail pane.
+
+        Degrades to the placeholder rather than raising: an unreadable file
+        must leave the pane usable, exactly as _showStaticPreview's last
+        layer does."""
+        pixmap = QtGui.QPixmap(thumbPath)
+        if pixmap.isNull():
+            self.preview.setPixmap(QtGui.QPixmap())
+            self.preview.setText("No preview available")
+            return
+        self.preview.setPixmap(pixmap.scaledToHeight(
+            _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
 
     def _showStaticPreview(self, entry, shape, manifest, overrides):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix
