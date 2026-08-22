@@ -186,12 +186,91 @@ def _params(part_id, overrides=None):
     return partslib_manifest.merge_params(data, overrides)
 
 
-def test_a_hobs_width_follows_its_burner_count():
-    # The only kitchen derivation left, and the shape "auto" is now limited
-    # to: a count the user knows (4 burners) yielding a dimension they would
-    # otherwise look up (600mm).
-    assert _params("gas-hob")["Width"] is None
-    assert _params("gas-hob")["BurnerCount"] == 4
+def test_a_hobs_width_and_depth_follow_its_burner_count():
+    # The shape "auto" is now limited to: a count the user knows (4 burners)
+    # yielding dimensions they would otherwise look up (600 x 520mm).
+    merged = _params("gas-hob")
+    assert merged["Width"] is None
+    assert merged["Depth"] is None
+    assert merged["BurnerCount"] == "4"
+
+
+def _hob_builder():
+    import importlib
+    return importlib.import_module(
+        "archplus.tools.partslib.library.basic.gas-hob.builder")
+
+
+def test_a_hobs_burner_count_is_a_choice_of_1_2_4_5():
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "gas-hob")["path"])
+    spec = partslib_manifest.param_specs(data)["BurnerCount"]
+    assert spec["type"] == "Choice"
+    assert list(partslib_manifest.choice_options(spec)) == ["1", "2", "4", "5"]
+    assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
+
+
+def test_the_hob_defaults_cover_every_burner_count():
+    # The sizes the catalogues ship: a 300mm domino for one or two burners,
+    # 600mm for four, 750mm for five.
+    builder = _hob_builder()
+    for count, size in ((1, (300.0, 510.0)), (2, (300.0, 510.0)),
+                        (4, (600.0, 520.0)), (5, (750.0, 520.0))):
+        assert builder._default_size(count) == size
+
+
+def test_the_default_four_burner_hob_keeps_its_grid():
+    # The committed thumbnail shows a 4-burner hob at its defaults, so this
+    # layout must stay exactly as it always was.
+    builder = _hob_builder()
+    positions, radius = builder._burner_layout(4, 600.0, 520.0)
+    assert radius == 100.0
+    assert [round(x, 6) for x, _ in positions] == \
+        [round(1.0 / 3.0, 6), round(2.0 / 3.0, 6)] * 2
+    assert [round(y, 4) for _, y in positions] == \
+        [0.3667, 0.3667, 0.6733, 0.6733]
+
+
+def test_a_two_burner_hob_stacks_front_and_back():
+    # Two burners sit on the centreline, one behind the other - never side
+    # by side - and must not merge into one blob.
+    builder = _hob_builder()
+    positions, radius = builder._burner_layout(2, 300.0, 510.0)
+    assert [round(x, 6) for x, _ in positions] == [0.5, 0.5]
+    front, back = sorted(y for _, y in positions)
+    assert front < 0.4 < back
+    assert (back - front) * 510.0 > 2.0 * radius
+
+
+def test_a_five_burner_hob_puts_the_fifth_in_the_middle():
+    # Four at the corners, the fifth dead centre, all the same size and
+    # none of them overlapping.
+    builder = _hob_builder()
+    positions, radius = builder._burner_layout(5, 750.0, 520.0)
+    assert len(positions) == 5
+    assert (0.5, 0.5) in positions
+    for x, y in positions:
+        if (x, y) == (0.5, 0.5):
+            continue
+        dx = (x - 0.5) * 750.0
+        dy = (y - 0.5) * 520.0
+        assert (dx * dx + dy * dy) ** 0.5 > 2.0 * radius
+
+
+def test_a_one_burner_hob_centres_its_single_burner():
+    builder = _hob_builder()
+    positions, _radius = builder._burner_layout(1, 300.0, 510.0)
+    assert positions == [(0.5, 0.5)]
+
+
+def test_hob_knobs_scale_with_the_hob_width():
+    # A knob that looks right on a 600mm hob looks comically big on a
+    # 300mm domino, so knobs shrink with the hob but never exceed the
+    # full-size cap.
+    builder = _hob_builder()
+    assert builder._knob_radius(300.0) == 12.0
+    assert builder._knob_radius(600.0) == 14.0
+    assert builder._knob_radius(750.0) == 14.0
 
 
 def test_cabinet_door_counts_are_not_parameters():

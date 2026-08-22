@@ -192,11 +192,7 @@ class ParamForm(QtGui.QWidget):
         # back when the field is pinned.
         self._tips[name] = widget.toolTip()
         if name in self._auto:
-            widget.setStyleSheet(
-                "font-style: italic; color: %s;"
-                % (self._tokens.get("text_dim", "#888888"),))
-            widget.setToolTip("\n".join(
-                tip for tip in (self._tips[name], _DERIVED_TIP) if tip))
+            self._applyDerivedStyle(name)
         _connect(widget, name, self._onEdited)
         self._widgets[name] = widget
         grid.addWidget(caption, row, column * 2)
@@ -205,6 +201,21 @@ class ParamForm(QtGui.QWidget):
         grid.setColumnStretch(column * 2, 0)
         grid.setColumnStretch(column * 2 + 1, 1)
 
+    def _applyDerivedStyle(self, name):
+        """Italicise a field and explain that its value is derived.
+
+        Called when a field is created derived and again when an edit of a
+        driver param returns it to derived, so both routes present the pin
+        invitation identically."""
+        widget = self._widgets.get(name)
+        if widget is None:
+            return
+        widget.setStyleSheet(
+            "font-style: italic; color: %s;"
+            % (self._tokens.get("text_dim", "#888888"),))
+        widget.setToolTip("\n".join(
+            tip for tip in (self._tips.get(name), _DERIVED_TIP) if tip))
+
     def _onEdited(self, name):
         if name in self._auto:
             self._auto.discard(name)
@@ -212,6 +223,16 @@ class ParamForm(QtGui.QWidget):
             if widget is not None:
                 widget.setStyleSheet("")
                 widget.setToolTip(self._tips.get(name, ""))
+        # Editing a driver param discards the pins its manifest names: a
+        # hob's burner count, once changed, re-derives width and depth even
+        # if the user had typed them before. The rebuilt shape's measurements
+        # arrive via setDerived() moments later.
+        for target in partslib_manifest.reset_targets(
+                self._specs.get(name) or {}):
+            if target not in self._widgets or target in self._auto:
+                continue
+            self._auto.add(target)
+            self._applyDerivedStyle(target)
         self._pristine = False
         self.changed.emit()
 

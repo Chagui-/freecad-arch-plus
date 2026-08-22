@@ -145,6 +145,7 @@ class _LibraryPart(ArchComponent.Component):
         # that method for what reentrancy it is protecting against.
         self._reseeding = False
         self._paramNames = set()
+        self._resetMap = {}
         self.setPartProperties(obj)
         obj.Proxy = self
         self.Type = "LibraryPart"
@@ -206,6 +207,19 @@ class _LibraryPart(ArchComponent.Component):
         names = {name for name, spec in specs.items()
                   if _PARAM_PROPERTY_TYPES.get(spec.get("type")) is not None}
         self._paramNames = names
+        # Driver param -> the "auto" params its edit returns to derived.
+        # Consulted by onChanged(), whose driver branch re-adds the targets
+        # to AutoParams before rebuilding, so editing a placed hob's burner
+        # count re-sizes it even at a hand-typed width.
+        self._resetMap = {}
+        for name, spec in specs.items():
+            if name not in names:
+                continue
+            targets = [target for target
+                       in partslib_manifest.reset_targets(spec)
+                       if target in names]
+            if targets:
+                self._resetMap[name] = targets
         self._reseeding = True
         try:
             existing_auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or [])
@@ -220,6 +234,19 @@ class _LibraryPart(ArchComponent.Component):
                            spec.get("type")))
                     continue
                 is_new = name not in obj.PropertiesList
+                carried = None
+                if not is_new and obj.getTypeIdOfProperty(name) != prop_type:
+                    # A param whose declared type changed (the gas hob's
+                    # BurnerCount moved from Integer to Choice) leaves a
+                    # property the new spec cannot drive. Removing a
+                    # document property is destructive, so this only ever
+                    # happens when the type actually changed; the old value
+                    # is carried across when it maps into the new spec and
+                    # reseeded to the manifest default when it does not.
+                    carried = partslib_manifest.migrated_value(
+                        getattr(obj, name), spec)
+                    obj.removeProperty(name)
+                    is_new = True
                 if is_new:
                     obj.addProperty(prop_type, name, _PARAMS_GROUP,
                                     "Part parameter %r" % (name,))
@@ -232,7 +259,10 @@ class _LibraryPart(ArchComponent.Component):
                              for value, opt in options.items()])
                 if is_new or reseed:
                     default = spec.get("default")
-                    if options:
+                    if carried is not None and not reseed:
+                        default = ((options.get(carried) or {}).get("label")
+                                   or carried)
+                    elif options:
                         default = ((options.get(default) or {}).get("label")
                                    or default)
                     if default == partslib_manifest.AUTO:
@@ -413,10 +443,20 @@ class _LibraryPart(ArchComponent.Component):
             if ("Restore" not in obj.State
                     and not getattr(self, "_reseeding", False)):
                 auto = list(getattr(obj, PROP_AUTO_PARAMS, ()) or ())
+                changed = False
                 if prop in auto:
-                    # Editing a derived field is what pins it. "Reload from
-                    # library" is the only way back to derived.
+                    # Editing a derived field is what pins it.
                     auto.remove(prop)
+                    changed = True
+                # Editing a driver param discards the pins its manifest
+                # names: a hob re-sized to 5 burners must not keep the
+                # width the user typed for 4. "Reload from library" stays
+                # the manual way back to derived for everything else.
+                for target in getattr(self, "_resetMap", {}).get(prop, ()):
+                    if target not in auto:
+                        auto.append(target)
+                        changed = True
+                if changed:
                     setattr(obj, PROP_AUTO_PARAMS, auto)
                 self.execute(obj)
         else:

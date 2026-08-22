@@ -73,7 +73,7 @@ to explain why), but nothing automated can tell you one looks wrong.
 
 | Room | Parts |
 |---|---|
-| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (4/5 burner) |
+| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner) |
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
@@ -484,6 +484,14 @@ schema through an API this project cannot exercise outside the app).
       **Reload from library**. **Expected:** Reload succeeds, the cabinet
       geometry returns to two door leaves (the derived value for width `800`),
       the pin is discarded, and no exception/traceback appears.
+- [ ] **F5 (a driver edit discards pinned sizes).** Select the Gas hob in
+      the browser, type a **Width** of `900` and a **Depth** of `600` (both
+      fields un-dim), then change **Burners** to `5`. **Expected:** Width and
+      Depth re-dim to their derived values and the preview shows a 750 × 520
+      five-burner hob with the fifth burner in the middle — not a five-burner
+      hob squeezed into the typed size. Repeat with the hob placed: edit its
+      **Burners** property to `5` in the property editor and confirm Width
+      and Depth follow and no traceback appears.
 - [ ] **F4 (deferred, Task 11).** Right-click a placed part, choose
       **Reload from library** after having renamed/deleted its `id` from
       the library entirely (simulate by temporarily renaming the part's
