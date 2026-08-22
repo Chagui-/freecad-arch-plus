@@ -145,6 +145,7 @@ def _bare_form(auto=(), widgets=None):
     form = object.__new__(pf.ParamForm)
     form._specs = {}
     form._tips = {}
+    form._tokens = {}
     form._widgets = dict(widgets or {})
     form._auto = set(auto)
     form._pristine = True
@@ -184,6 +185,41 @@ def test_pinning_a_derived_field_dirties_the_form_and_clears_its_auto_flag():
     form._onEdited("Height")
 
     assert not form.isPristine()
+    assert not form.hasDerivedFields()
+
+
+def test_editing_a_driver_returns_its_targets_to_derived():
+    # Width and Depth were pinned, then the burner count changed. The pins
+    # are discarded so the next rebuild re-derives both from the new count,
+    # instead of building the new hob at the old dimensions.
+    width, depth = _Field(), _Field()
+    form = _bare_form(widgets={"Width": width, "Depth": depth})
+    form._specs = {
+        "BurnerCount": {"type": "Choice", "default": "4",
+                        "options": {"1": {}, "2": {}, "4": {}, "5": {}},
+                        "resets": ["Width", "Depth"]},
+        "Width": {"type": "Length", "default": "auto"},
+        "Depth": {"type": "Length", "default": "auto"},
+    }
+    form._onEdited("BurnerCount")
+
+    assert form.hasDerivedFields()
+    assert not form.isPristine()
+    form.setDerived({"Width": 300.0, "Depth": 510.0})
+    assert width.value == 300.0
+    assert depth.value == 510.0
+
+
+def test_editing_a_driver_without_resets_leaves_other_fields_pinned():
+    form = _bare_form(widgets={"Width": _Field(), "Depth": _Field()})
+    form._specs = {
+        "BurnerCount": {"type": "Choice", "default": "4",
+                        "options": {"1": {}, "2": {}, "4": {}, "5": {}}},
+        "Width": {"type": "Length", "default": "auto"},
+        "Depth": {"type": "Length", "default": "auto"},
+    }
+    form._onEdited("BurnerCount")
+
     assert not form.hasDerivedFields()
 
 

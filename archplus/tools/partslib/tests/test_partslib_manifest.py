@@ -522,11 +522,98 @@ def test_choice_default_not_a_declared_option_is_an_error():
 
 def test_choice_default_in_the_declared_options_is_valid():
     data = _part(params={"Mounting": {"type": "Choice",
-                                      "default": "stand",
-                                      "options": {"stand": {},
-                                                  "wall": {}}}})
+                                       "default": "stand",
+                                       "options": {"stand": {},
+                                                   "wall": {}}}})
     errors, _warnings = pm.validate_manifest(data, FACETS)
     assert errors == []
+
+
+# -- "resets" (editing a driver discards pinned derived values) --------------
+
+def _part_with_resets():
+    return _part(params={
+        "BurnerCount": {
+            "type": "Choice", "default": "4",
+            "options": {"1": {}, "2": {}, "4": {}, "5": {}},
+            "resets": ["Width", "Depth"]},
+        "Width": {"type": "Length", "default": "auto"},
+        "Depth": {"type": "Length", "default": "auto"},
+    })
+
+
+def test_a_resets_list_of_auto_params_is_valid():
+    errors, _warnings = pm.validate_manifest(_part_with_resets(), FACETS)
+    assert errors == []
+
+
+def test_reset_targets_returns_the_declared_list():
+    spec = _part_with_resets()["params"]["BurnerCount"]
+    assert pm.reset_targets(spec) == ["Width", "Depth"]
+
+
+def test_reset_targets_is_empty_without_a_resets_key():
+    assert pm.reset_targets({"type": "Length", "default": 600}) == []
+
+
+def test_resets_must_be_a_non_empty_list():
+    data = _part_with_resets()
+    data["params"]["BurnerCount"]["resets"] = "Width"
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("BurnerCount" in e and "resets" in e for e in errors)
+
+
+def test_resets_must_name_declared_params():
+    data = _part_with_resets()
+    data["params"]["BurnerCount"]["resets"] = ["Nope"]
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Nope" in e for e in errors)
+
+
+def test_resets_must_target_auto_params():
+    # A reset means "discard the pinned value and derive again". A param
+    # with a static default has nothing to derive, so resetting it would be
+    # a silent no-op.
+    data = _part_with_resets()
+    data["params"]["Width"]["default"] = 600
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("Width" in e and "auto" in e for e in errors)
+
+
+def test_a_param_cannot_reset_itself():
+    data = _part_with_resets()
+    data["params"]["BurnerCount"]["resets"] = ["BurnerCount", "Width"]
+    errors, _warnings = pm.validate_manifest(data, FACETS)
+    assert any("itself" in e for e in errors)
+
+
+def _choice_spec():
+    return {"type": "Choice", "default": "4",
+            "options": {"1": {"label": "1 burner"}, "2": {"label": "2 burners"},
+                        "4": {"label": "4 burners"}, "5": {"label": "5 burners"}}}
+
+
+def test_migrated_value_maps_an_old_value_into_a_choice():
+    # A document saved while BurnerCount was an Integer carries a 4; the
+    # new Choice must read it as the "4" option, not fall back to the
+    # first option or the default.
+    spec = _choice_spec()
+    assert pm.migrated_value(4, spec) == "4"
+    assert pm.migrated_value(2, spec) == "2"
+    assert pm.migrated_value("5 burners", spec) == "5"
+    assert pm.migrated_value("1", spec) == "1"
+
+
+def test_migrated_value_that_maps_nowhere_returns_none():
+    # Reseeding to the manifest default is better than guessing: a 3-burner
+    # hob never existed, so the old 3 must not become "the first option".
+    assert pm.migrated_value(3, _choice_spec()) is None
+    assert pm.migrated_value("6 burners", _choice_spec()) is None
+
+
+def test_migrated_value_passes_a_plain_value_straight_through():
+    spec = {"type": "Length", "default": 900}
+    assert pm.migrated_value(600, spec) == 600
 
 
 # -- per-field display unit overrides ---------------------------------------

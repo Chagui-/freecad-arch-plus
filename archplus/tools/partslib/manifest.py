@@ -269,6 +269,30 @@ def _validate_params(declared):
                 errors.append(
                     "Choice param %r default %r is not a declared option"
                     % (name, spec.get("default")))
+    for name, spec in declared.items():
+        if not isinstance(spec, dict):
+            continue
+        resets = spec.get("resets")
+        if resets is None:
+            continue
+        if not isinstance(resets, list) or not resets:
+            errors.append(
+                "param %r 'resets' must be a non-empty list of param names"
+                % name)
+            continue
+        for target in resets:
+            if target == name:
+                errors.append("param %r cannot reset itself" % name)
+                continue
+            if target not in declared:
+                errors.append(
+                    "param %r resets unknown param %r" % (name, target))
+                continue
+            target_spec = declared.get(target) or {}
+            if target_spec.get("default") != AUTO:
+                errors.append(
+                    "param %r resets %r, which has no \"auto\" default to "
+                    "derive" % (name, target))
     return errors
 
 
@@ -330,6 +354,46 @@ def choice_options(spec):
     return dict(options) if isinstance(options, dict) else {}
 
 
+def reset_targets(spec):
+    """Params whose derived state an edit of this param restores, in order.
+
+    The inverse of pinning: a user who sized a hob's burners by count and
+    THEN typed a width and depth gets the typed values - until the count is
+    edited again, at which point the derived width and depth the old pins
+    hide are no longer the answer the new count implies. Declared on the
+    driver as `"resets": [...]`; validation requires each target to be an
+    "auto" param, because only those have something to re-derive."""
+    resets = (spec or {}).get("resets")
+    return list(resets) if isinstance(resets, list) else []
+
+
+def migrated_value(old, spec):
+    """The value to carry into a property whose declared type changed.
+
+    A document saved against an older manifest can hold a property of the
+    wrong type (the gas hob's BurnerCount moved from Integer to Choice).
+    object.py re-declares such a property and seeds it from here. A Choice
+    maps the old value in through its stable values first, then its labels,
+    then a string form of it (an Integer 4 becomes "4"); anything that
+    still does not match returns None - the caller's signal to reseed to
+    the manifest default, because guessing the first option would silently
+    change the part. A non-Choice spec keeps the old value as-is: FreeCAD
+    coerces it into the new property type on assignment."""
+    options = choice_options(spec)
+    if not options:
+        return old
+    if old in options:
+        return old
+    for value, option in options.items():
+        if ((option or {}).get("label") or value) == old:
+            return value
+    try:
+        text = str(old)
+    except Exception:
+        return None
+    return text if text in options else None
+
+
 def resolve_placement(manifest, params):
     """The effective placement block for one set of param values.
 
@@ -367,7 +431,9 @@ def merge_params(manifest, overrides):
 
     A declared default of "auto" resolves to None, which is the builder's
     signal to derive the value from the other params. An override still
-    wins, so typing a number into a derived field pins it.
+    wins, so typing a number into a derived field pins it - the panel and
+    the placed object discard such a pin only when a param whose spec
+    declares "resets" is edited, or on "Reload from library".
 
     Never returns a key the manifest did not declare: an override for an
     undeclared param is silently dropped, so a stale property left behind
