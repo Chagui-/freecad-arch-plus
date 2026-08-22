@@ -32,6 +32,9 @@ class ParamForm(QtGui.QWidget):
         self._specs = {}
         self._widgets = {}
         self._auto = set()
+        # See isPristine(). Initialised here so a form that is read before
+        # its first setSpecs() still answers.
+        self._pristine = True
         self._imperial = False
         self._tips = {}
         # Remembered for the session, not per part: a user who opens the
@@ -100,6 +103,10 @@ class ParamForm(QtGui.QWidget):
         self._more.setVisible(bool(secondary) and self._expanded)
         self._toggle.setArrowType(
             QtCore.Qt.DownArrow if self._expanded else QtCore.Qt.RightArrow)
+        # A rebuild is a fresh part (or reset()), so nothing is edited yet.
+        # This is also what makes reset() restore the committed thumbnail:
+        # it goes through setSpecs, so the form comes back pristine.
+        self._pristine = True
 
     def values(self):
         """{name: value} for every PINNED field.
@@ -113,6 +120,31 @@ class ParamForm(QtGui.QWidget):
                 continue
             out[name] = _valueOf(widget, self._specs.get(name) or {})
         return out
+
+    def isPristine(self):
+        """True while every field still holds its manifest default.
+
+        A FLAG rather than a comparison of values against the manifest, on
+        purpose: setDerived() writes measured numbers into the auto fields
+        moments after a part is selected, so a value comparison would report
+        an untouched form as edited. setDerived deliberately does not emit
+        `changed`, and reset() goes through setSpecs, so both leave the form
+        pristine.
+
+        gui._refreshPreview reads this to decide whether the part's committed
+        thumbnail.jpg already depicts these exact parameters - which, at the
+        manifest's defaults, it does."""
+        return self._pristine
+
+    def hasDerivedFields(self):
+        """True while some field still shows a value derived from the shape.
+
+        setDerived() only ever writes into these, so when there are none,
+        measuring the shape is pure waste - and measuring is not cheap:
+        geometry.measure() calls optimalBoundingBox(), which costs about as
+        much as building the shape (0.913s of the king bed's 1.76s click).
+        27 of the 31 bundled parts declare no "auto" param at all."""
+        return bool(self._auto)
 
     def setDerived(self, values):
         """Show computed values in the fields still marked derived.
@@ -180,6 +212,7 @@ class ParamForm(QtGui.QWidget):
             if widget is not None:
                 widget.setStyleSheet("")
                 widget.setToolTip(self._tips.get(name, ""))
+        self._pristine = False
         self.changed.emit()
 
     def _onToggle(self):

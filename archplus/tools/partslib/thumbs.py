@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# PartsLib thumbnails - offscreen PNG rendering from a bare Part.Shape.
+# PartsLib thumbnails - offscreen JPEG rendering from a bare Part.Shape.
 #
 # Thumbnails are committed to the repo so a fresh clone opens to a populated
 # grid. Runtime rendering is a fallback for a part whose thumbnail is missing,
@@ -16,7 +16,7 @@
 # on its own. Without _RENDER_FAILED below, every part lacking a committed
 # thumbnail would rebuild its real geometry (booleans, fillets) and retry a
 # doomed render on every grid repaint: every keystroke in the search box,
-# every breadcrumb click, every panel reopen - unbounded, and with no
+# every room-chip click, every panel reopen - unbounded, and with no
 # warning printed anywhere to explain why. _RENDER_FAILED remembers a path
 # that has already failed once, so both callers (the grid's committed-vs-
 # on-demand thumbnail, and the detail pane's per-parameter preview) skip
@@ -185,6 +185,49 @@ def _tessellation_for(shape):
 def thumbnail_path(part_dir):
     """Where a part's committed thumbnail lives."""
     return os.path.join(part_dir, THUMBNAIL_FILENAME)
+
+
+def preview_plan(pristine, has_derived_fields, thumbnail_usable):
+    """What a detail-pane refresh actually has to do.
+
+    Returns {"build", "measure", "render", "use_thumbnail"} booleans. Split
+    out as a pure function so the policy is testable without a GL context,
+    and so the reasoning below lives in one place instead of being spread
+    through a branchy _refreshPreview.
+
+    Selecting a part used to run the whole pipeline every time - build the
+    shape, measure it with optimalBoundingBox, tessellate, render offscreen,
+    save a JPEG, load it back. Measured over the bundled 31 parts in FreeCAD
+    1.1.1 with a cold shape cache, that is 0.496s on average and 1.76s at
+    worst, of which the render is only 18%: build is 53% and measure 28%.
+    (The 17-second writeInventor stall this module's other comments describe
+    is long fixed - tessellation now peaks at 0.14s.)
+
+    Two questions decide all four flags:
+
+    - `pristine` - no field has been edited since the part was selected, so
+      the committed thumbnail.jpg depicts EXACTLY these parameter values.
+      Not an approximation: ensure_thumbnail() renders the part at its
+      resolved manifest defaults, which is what a pristine form holds.
+    - `has_derived_fields` - some field's value is derived from the shape
+      ("default": "auto"), so the shape must be built and measured to fill
+      it in, even when nothing will be rendered. Only 4 of the 31 bundled
+      parts declare one; for the other 27 this is the difference between
+      0.5s and 1ms.
+
+    `thumbnail_usable` is the caller's business: it means both that the file
+    exists and that a static image is what the pane wants (the live pivy
+    preview, if it ever becomes available again, must not be replaced by a
+    flat picture)."""
+    if pristine and thumbnail_usable:
+        return {"build": has_derived_fields,
+                "measure": has_derived_fields,
+                "render": False,
+                "use_thumbnail": True}
+    return {"build": True,
+            "measure": has_derived_fields,
+            "render": True,
+            "use_thumbnail": False}
 
 
 def _warn(message):

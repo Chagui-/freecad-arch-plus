@@ -10,12 +10,13 @@
 import json
 import os
 
+from . import collection as pc
 from . import manifest as pm
 
 FACETS_FILENAME = "facets.json"
 MANIFEST_FILENAME = "part.json"
 BUILDER_FILENAME = "builder.py"
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def manifest_paths(library_dir):
@@ -25,6 +26,27 @@ def manifest_paths(library_dir):
         if MANIFEST_FILENAME in files:
             found.append(os.path.join(root, MANIFEST_FILENAME))
     return sorted(found)
+
+
+def collection_mtimes(library_dir):
+    """{collection.json path: mtime} for the whole library.
+
+    Editing a collection's label changes no part.json, so without this the
+    cached index would keep serving the old family name until something
+    else in the library happened to change."""
+    mtimes = {}
+    for path in pc.collection_paths(library_dir):
+        try:
+            mtimes[path] = os.path.getmtime(path)
+        except OSError:
+            # The walk above and this stat are two separate filesystem
+            # reads; a collection.json can be deleted in between (another
+            # process editing the library while a scan runs). A bad
+            # collection must never take the scan down, so it is simply
+            # left out of this run's mtimes - the next scan will no longer
+            # see it in the walk at all, so the dict just settles.
+            continue
+    return mtimes
 
 
 def scan(library_dir):
@@ -39,10 +61,13 @@ def scan(library_dir):
     except ValueError as exc:
         return {"facets": {}, "entries": [],
                 "errors": ["%s: %s" % (FACETS_FILENAME, exc)],
-                "warnings": [], "facetsMtime": None}
+                "warnings": [], "facetsMtime": None, "collections": {}}
     errors.extend(pm.validate_facets(facets))
 
     seen = {}
+    # One dict for the whole scan: a 40-part collection would otherwise read
+    # and parse its collection.json 40 times.
+    collections = {}
     for path in manifest_paths(library_dir):
         try:
             data = pm.load_manifest(path)
@@ -85,6 +110,12 @@ def scan(library_dir):
                 % (path, BUILDER_FILENAME))
             continue
 
+        family, family_description, family_errors = pc.resolve(
+            part_dir, library_dir, collections)
+        # A broken collection is reported but must NOT skip the part: the
+        # parts are the library, the collection is a label on them.
+        errors.extend(family_errors)
+
         entries.append({
             "id": part_id,
             "name": data["name"],
@@ -92,14 +123,17 @@ def scan(library_dir):
             "keywords": list(data.get("keywords", [])),
             "facets": data.get("facets", {}),
             "params": data.get("params", {}),
+            "family": family,
+            "familyDescription": family_description,
             "path": path,
-            "dir": os.path.dirname(path),
+            "dir": part_dir,
             "mtime": os.path.getmtime(path),
         })
 
     return {"facets": facets, "entries": entries,
             "errors": errors, "warnings": warnings,
-            "facetsMtime": os.path.getmtime(facets_path)}
+            "facetsMtime": os.path.getmtime(facets_path),
+            "collections": collection_mtimes(library_dir)}
 
 
 def is_cache_valid(cache, library_dir):
@@ -110,6 +144,8 @@ def is_cache_valid(cache, library_dir):
     if not os.path.exists(facets_path):
         return False
     if cache.get("facetsMtime") != os.path.getmtime(facets_path):
+        return False
+    if cache.get("collections") != collection_mtimes(library_dir):
         return False
     cached = {e["path"]: e["mtime"] for e in cache["entries"]}
     # A manifest that failed validation is absent from entries, so a library
@@ -137,11 +173,17 @@ def save_cache(index, path):
     CACHE_VERSION was bumped to 2 when entries stopped carrying "variants"
     and started carrying "params". Unlike the facetsMtime addition, a stale
     v1 cache would hand the panel a key that no longer exists, so it must be
-    refused outright rather than healed."""
+    refused outright rather than healed.
+
+    CACHE_VERSION was bumped to 3 when entries started carrying "family" and
+    "familyDescription". Like the 1 -> 2 bump and unlike the facetsMtime
+    addition, a stale cache would hand the panel entries missing a key its
+    card builder reads, so it must be refused outright rather than healed."""
     payload = {"version": CACHE_VERSION,
-               "facets": index["facets"],
-               "entries": index["entries"],
-               "facetsMtime": index.get("facetsMtime")}
+                "facets": index["facets"],
+                "entries": index["entries"],
+                "facetsMtime": index.get("facetsMtime"),
+                "collections": index.get("collections") or {}}
     folder = os.path.dirname(path)
     if folder and not os.path.isdir(folder):
         os.makedirs(folder)
@@ -173,6 +215,10 @@ _SCORE_NAME_PREFIX = 80
 _SCORE_NAME_SUBSTRING = 60
 _SCORE_KEYWORD_EXACT = 50
 _SCORE_KEYWORD_SUBSTRING = 40
+# A family match ranks below a keyword and above a description: typing
+# "malm" should find the Malm range, but a part actually NAMED after the
+# query still wins.
+_SCORE_FAMILY_SUBSTRING = 30
 _SCORE_DESCRIPTION = 20
 
 
@@ -195,6 +241,10 @@ def score(entry, query):
         return _SCORE_KEYWORD_EXACT
     if any(query in k for k in keywords):
         return _SCORE_KEYWORD_SUBSTRING
+
+    family = (entry.get("family") or "").lower()
+    if family and query in family:
+        return _SCORE_FAMILY_SUBSTRING
 
     if query in (entry.get("description") or "").lower():
         return _SCORE_DESCRIPTION
@@ -233,38 +283,25 @@ def _sort_key(value, label):
     return (value == UNCLASSIFIED, label)
 
 
-def category_tree(entries, facets, primary="room", secondary="element"):
-    """The two-level room/element tree the category screen renders.
+def facet_groups(entries, facets, facet="room"):
+    """One group per value of `facet` that at least one part declares.
 
-    Only primary-facet values that at least one part actually declares are
-    emitted - an empty room in the vocabulary is not advertised. `primary`
-    is typically multi-valued, so one part is counted once under every
-    group it belongs to. Within a group, `children` are the distinct
-    `secondary` values of the parts in THAT group only, with counts scoped
-    to the group; a part missing `secondary` lands under an UNCLASSIFIED
-    child. A group's `count` is the number of distinct parts in it,
-    computed independently of the children (it is not their sum)."""
-    tree = []
-    for value, group_entries in group_by(entries, primary).items():
-        child_groups = group_by(group_entries, secondary)
-        children = []
-        for child_value, child_entries in child_groups.items():
-            child_ids = set(e["id"] for e in child_entries)
-            children.append({
-                "value": child_value,
-                "label": pm.facet_label(facets, secondary, child_value),
-                "count": len(child_ids),
-            })
-        children.sort(key=lambda c: _sort_key(c["value"], c["label"]))
+    The primary half of what category_tree used to return - value, label,
+    icon and a count of DISTINCT parts - with UNCLASSIFIED sorted last. A
+    multi-valued facet legitimately puts one part in several groups, and a
+    part declaring the same value twice must still be counted once, which is
+    why the count goes through a set of ids rather than len(group_entries).
 
-        part_ids = set(e["id"] for e in group_entries)
-        tree.append({
+    The `children` half went with the catalogue screen that rendered it: the
+    element level is no longer navigable, because 25 of the library's 36
+    element values hold exactly one part."""
+    groups = []
+    for value, group_entries in group_by(entries, facet).items():
+        groups.append({
             "value": value,
-            "label": pm.facet_label(facets, primary, value),
-            "icon": pm.facet_icon(facets, primary, value),
-            "count": len(part_ids),
-            "children": children,
+            "label": pm.facet_label(facets, facet, value),
+            "icon": pm.facet_icon(facets, facet, value),
+            "count": len(set(e["id"] for e in group_entries)),
         })
-
-    tree.sort(key=lambda g: _sort_key(g["value"], g["label"]))
-    return tree
+    groups.sort(key=lambda group: _sort_key(group["value"], group["label"]))
+    return groups

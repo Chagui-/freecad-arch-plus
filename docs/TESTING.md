@@ -34,6 +34,18 @@ across tools:
   `ArchComponent`, `Arch`, `Draft` and `archplus.common.geometry` are never imported at
   module scope in the GUI modules.
 
+The parts library panel (`archplus/tools/partslib/gui.py`) follows the same
+split in intent, but there is no widget test in it: `conftest.py` installs
+its Qt/FreeCAD fakes unconditionally, so no test in this suite can construct
+a real widget, offscreen or otherwise. What the branch actually did was pull
+the panel's logic out into pure functions and test those instead —
+`flow_positions`, `preview_plan`, `facet_groups`, `isPristine` /
+`hasDerivedFields`, and collection resolution are all genuinely covered by
+the `test_partslib_*.py` files. What that leaves with no automated coverage
+is narrow but real: `_onChipSelected`'s same-room guard, `_populateChips`'s
+retired-room reconciliation, and `detailFamily`'s show/hide. Those three are
+covered only by the manual checklist in `docs/PARTS-LIBRARY-VERIFICATION.md`.
+
 ## The edit round-trip
 
 These tests drive each panel's real `_loadFromObject()` then `_collect()`
@@ -66,3 +78,13 @@ python3 -m venv .venv && .venv/bin/pip install pytest
 
 FreeCAD's bundled Python works too, since the fakes shadow the real modules
 during the test run.
+
+On this development machine the `venv` route above FAILS outright — there is
+no `python3.14-venv` package installed, so `python3 -m venv .venv` aborts
+before pytest is ever invoked. What actually works here is `uv`, which
+provisions its own interpreter and dependencies without touching the system
+Python or needing a venv package at all:
+
+```sh
+uv run --no-project --with pytest python -m pytest -q
+```

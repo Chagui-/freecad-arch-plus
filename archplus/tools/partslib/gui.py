@@ -2,13 +2,16 @@
 #
 # PartsLibrary - a full-window MDI tab browsing the bundled BIM parts library.
 #
-# The panel is a two-screen catalogue browser:
-#   - "categories": a card per ROOM (icon, label, hairline rule, then that
-#     room's elements as clickable rows with counts). Clicking an element (or
-#     a room header) drills into screen two.
-#   - "results": a clickable breadcrumb ("All > Bathroom > Toilets"), a
-#     search field, a card grid of parts, and a detail sidebar (preview,
-#     name, parameter form, description, Place in 3D view).
+# The panel is ONE screen, top to bottom: a wrapping row of room filter
+# chips ("All" plus one per room a part declares, with counts), a search
+# field, and a splitter holding the card grid beside a detail sidebar
+# (preview, name, parameter form, description, Place in 3D view).
+#
+# There used to be a catalogue screen in front of this one - a card per room
+# listing that room's elements as clickable rows - but 25 of the library's 36
+# element rows led to exactly one part, so it cost two clicks to reach a
+# single card. The rooms became the chips; the element facet stays in
+# part.json, feeding search and the IFC type mapping, and is not navigable.
 #
 # PartsLibraryPanel itself is a plain QWidget that knows nothing about docks
 # or MDI sub-windows - showPanel() below is the one place that hosts it, and
@@ -16,8 +19,8 @@
 # exists for does not require reopening the tool between parts.
 #
 # Browsing never loads geometry. The grid is built from the cached index and
-# committed PNG thumbnails; a shape is only built when a part is previewed or
-# placed.
+# committed JPEG thumbnails; a shape is only built when a part is previewed
+# or placed.
 
 import os
 import shutil
@@ -30,14 +33,17 @@ from PySide import QtGui, QtCore
 
 _DIR = os.path.dirname(__file__)     # archplus/tools/partslib/ itself
 
+from archplus.common import widgets as archplus_widgets
+
 from . import index as partslib_index
 from . import theme as partslib_theme
 from . import thumbs as partslib_thumbs
 
 # partslib_object is imported lazily, inside the functions that need it
-# (refresh(), _onPlace()) rather than here at module scope. It imports
-# ArchComponent at its own module scope, and this module is imported during
-# the BIM workbench's Initialize() (InitGui.py's add_ui()), wrapped in a bare
+# (refresh(), _onPlace(), _fillResultsEmptyState()) rather than here at
+# module scope. It imports ArchComponent at its own module scope, and this
+# module is imported during the BIM workbench's Initialize() (InitGui.py's
+# add_ui()), wrapped in a bare
 # except that only prints to the Report view - if ArchComponent were not yet
 # importable at that point, the import would raise, appendToolbar() would
 # never run, and the whole ArchPlus toolbar would silently fail to appear.
@@ -100,12 +106,7 @@ def clear_preview_cache():
 
 _THUMB_SIZE = 96
 
-# Target width (px) for a card in the categories/results grids - used to
-# compute how many columns fit the available viewport width. See
-# _columnCountFor() / Fix 3 of the bug-fix round.
-_CARD_TARGET_WIDTH = 260
-
-# Explicit colour token sets for the two screens' stylesheet, keyed by
+# Explicit colour token sets for the panel's stylesheet, keyed by
 # name so _applyTheme() (partslib_theme.read_is_dark_theme()) can pick the
 # right one. These replace the old QPalette-derived colours: FreeCAD
 # applies its theme as a global Qt STYLESHEET, not a palette, so
@@ -144,12 +145,11 @@ _LIGHT_TOKENS = {
 # impossible to reintroduce by accident rather than merely unlikely - do
 # not add a rule below that sets only one half of the pair.
 _STYLESHEET_TEMPLATE = """
-    QWidget#ArchPlusPartsLibrary, QWidget#CategoriesContainer,
-    QWidget#ResultsScreen {
+    QWidget#ArchPlusPartsLibrary {
         background-color: %(page_bg)s;
         color: %(text)s;
     }
-    QFrame#RoomCard, QFrame#PartCard {
+    QFrame#PartCard {
         background-color: %(card_bg)s;
         color: %(text)s;
         border: 1px solid %(border)s;
@@ -160,42 +160,22 @@ _STYLESHEET_TEMPLATE = """
         color: %(text)s;
         border: 2px solid %(ring)s;
     }
-    QFrame#HairlineRule {
-        background-color: %(border)s;
-        color: %(border)s;
-        border: none;
-    }
-    QPushButton#RoomHeader {
-        background-color: transparent;
+    QToolButton#RoomChip {
+        background-color: %(page_bg)s;
         color: %(text)s;
-        font-weight: bold;
-        text-align: left;
-        border: none;
-        padding: 4px 2px;
+        border: 1px solid %(border)s;
+        border-radius: 11px;
+        padding: 3px 10px;
     }
-    QPushButton#ElementRow {
-        background-color: transparent;
-        color: %(text_dim)s;
-        text-align: left;
-        border: none;
-        padding: 3px 2px 3px 14px;
-    }
-    QPushButton#RoomHeader:hover, QPushButton#ElementRow:hover {
-        background-color: transparent;
+    QToolButton#RoomChip:hover {
+        background-color: %(page_bg)s;
         color: %(accent)s;
+        border-color: %(accent)s;
     }
-
-    QPushButton#BreadcrumbSegment {
-        background-color: transparent;
-        color: %(text)s;
-        border: none;
-        text-align: left;
-        padding: 0px 2px;
-    }
-    QPushButton#BreadcrumbSegment:hover {
-        background-color: transparent;
-        color: %(accent)s;
-        text-decoration: underline;
+    QToolButton#RoomChip:checked {
+        background-color: %(accent)s;
+        color: %(accent_text)s;
+        border-color: %(accent)s;
     }
     QListWidget::item:selected, QListWidget::item:hover {
         background: transparent;
@@ -229,6 +209,11 @@ _PREVIEW_WARNED = False
 
 _PREVIEW_HEIGHT = 180
 
+# How long the panel waits after the last keystroke before doing expensive
+# work. Shared by the search field and the parameter form so the panel has
+# ONE notion of "the user has stopped typing".
+_DEBOUNCE_MS = 250
+
 _panel = None
 
 
@@ -257,7 +242,7 @@ def _warnPreviewUnavailable(exc):
 
 def _clearLayout(layout):
     """Remove and delete every item/widget a layout holds, so it can be
-    rebuilt from scratch (breadcrumb, category cards)."""
+    rebuilt from scratch (the empty-state message)."""
     while layout.count():
         item = layout.takeAt(0)
         widget = item.widget()
@@ -270,7 +255,8 @@ def _clearLayout(layout):
 
 
 class PartsLibraryPanel(QtGui.QWidget):
-    """The library browser widget: a two-screen catalogue.
+    """The library browser widget: chips, search, grid and detail, on one
+    screen.
 
     This is a plain QWidget - it knows nothing about docks or the MDI area.
     showPanel() below is the only thing that hosts it."""
@@ -280,11 +266,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.setObjectName("ArchPlusPartsLibrary")
         self._entries = []
         self._facets = {}
-        self._categories = []
-        self._categoryCards = []
-        self._categoryColumns = 0
+        # None is the "All" chip: no room filter, every part in the grid.
         self._filterRoom = None
-        self._filterElement = None
         # Cleared when the user cancels the thumbnail build, so the cards
         # do not quietly go on rendering the rest inline. Reset by refresh.
         self._renderThumbnails = True
@@ -293,69 +276,53 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     # -- construction ----------------------------------------------------
     def _buildUi(self):
+        """The whole panel: chips, search, then grid beside detail."""
         outer = QtGui.QVBoxLayout(self)
         outer.setContentsMargins(8, 8, 8, 8)
 
-        self.stack = QtGui.QStackedWidget()
-        outer.addWidget(self.stack)
-
         # Theme FIRST: _applyTheme() is what assigns self._tokens, and the
         # detail pane hands those tokens to ParamForm as it is constructed.
-        # Building the screens first left that read hitting an attribute
+        # Building the widgets first left that read hitting an attribute
         # that did not exist yet. Nothing here touches a child widget - it
         # reads the theme, sets the tokens and styles this panel - so it is
-        # safe before the screens exist.
+        # safe before any of them exist.
         self._applyTheme()
 
-        self._buildCategoriesScreen()
-        self._buildResultsScreen()
-        self.stack.addWidget(self.categoriesScreen)
-        self.stack.addWidget(self.resultsScreen)
-        self.stack.setCurrentIndex(0)
+        # There is no QStackedWidget here any more. The panel used to open
+        # on a catalogue page of room cards listing element rows - but 25 of
+        # the library's 36 element rows lead to exactly one part, so the page
+        # was two clicks to reach a single card. The rooms survive as filter
+        # chips above the grid; the element facet stays in part.json, feeding
+        # search and the IFC type mapping, and is simply not navigable.
+        self.chipRow = QtGui.QWidget()
+        self.chipLayout = archplus_widgets.FlowLayout(self.chipRow)
+        outer.addWidget(self.chipRow)
 
-    def _buildCategoriesScreen(self):
-        """Screen one: a scrollable stack of room cards, or - JOB2, empty
-        library - a centred empty-state message in its place.
-
-        self.categoriesScreen (the page added to the top-level self.stack)
-        holds its own nested QStackedLayout switching between
-        self.categoriesScroll (the card grid) and self.categoriesEmptyState,
-        so a resize event never needs to know which mode is active (see the
-        early-return guard at the top of _reflowCategories)."""
-        self.categoriesScreen = QtGui.QWidget()
-        self._categoriesStack = QtGui.QStackedLayout(self.categoriesScreen)
-
-        self.categoriesScroll = QtGui.QScrollArea()
-        self.categoriesScroll.setWidgetResizable(True)
-        self.categoriesScroll.setFrameShape(QtGui.QFrame.NoFrame)
-
-        container = QtGui.QWidget()
-        container.setObjectName("CategoriesContainer")
-        self.categoriesLayout = QtGui.QGridLayout(container)
-        self.categoriesLayout.setSpacing(16)
-        self.categoriesLayout.setContentsMargins(4, 4, 4, 4)
-        self.categoriesScroll.setWidget(container)
-        self.categoriesScroll.viewport().installEventFilter(self)
-
-        self.categoriesEmptyState = QtGui.QWidget()
-
-        self._categoriesStack.addWidget(self.categoriesScroll)     # index 0
-        self._categoriesStack.addWidget(self.categoriesEmptyState)  # index 1
-
-    def _buildResultsScreen(self):
-        """Screen two: breadcrumb, search, card grid and detail sidebar."""
-        self.resultsScreen = QtGui.QWidget()
-        self.resultsScreen.setObjectName("ResultsScreen")
-        v = QtGui.QVBoxLayout(self.resultsScreen)
-        v.setContentsMargins(0, 0, 0, 0)
-
-        self.breadcrumb = QtGui.QHBoxLayout()
-        v.addLayout(self.breadcrumb)
+        # Created once, here, rather than per _populateChips() refresh: a
+        # QButtonGroup rebound on every rescan would leave its predecessor
+        # parented to the panel and never deleted - empty and harmless (its
+        # buttons are already deleteLater()'d out from under it, and a button
+        # removes itself from its group on destruction), but a leak all the
+        # same. Reusing one group means _populateChips() only ever adds this
+        # refresh's buttons to it.
+        self._chipGroup = QtGui.QButtonGroup(self)
+        self._chipGroup.setExclusive(True)
 
         self.search = QtGui.QLineEdit()
         self.search.setPlaceholderText("Search…")
-        self.search.textChanged.connect(self._repopulateGrid)
-        v.addWidget(self.search)
+        # DEBOUNCED, not wired straight to _repopulateGrid. Repopulating
+        # selects row 0, which fires _onSelect -> _refreshPreview, so an
+        # undebounced field ran a whole preview for every keystroke: typing
+        # "cabinet" cost seven of them, and before the thumbnail fast path
+        # that was three to four seconds of frozen UI. The parameter form
+        # has had this treatment since it was written; the search field
+        # never got it.
+        self._searchTimer = QtCore.QTimer(self)
+        self._searchTimer.setSingleShot(True)
+        self._searchTimer.setInterval(_DEBOUNCE_MS)
+        self._searchTimer.timeout.connect(self._repopulateGrid)
+        self.search.textChanged.connect(self._searchTimer.start)
+        outer.addWidget(self.search)
 
         splitter = QtGui.QSplitter(QtCore.Qt.Horizontal)
 
@@ -369,10 +336,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.grid.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         self.grid.currentItemChanged.connect(self._onSelect)
 
-        # JOB2: the grid and its empty-state message ("no parts match this
-        # search") occupy the same splitter slot, switched by _repopulateGrid
-        # - the card grid area must never render as a blank void when a
-        # search matches nothing.
+        # JOB2: the grid and its empty-state message occupy the same
+        # splitter slot, switched by _repopulateGrid - the card grid area
+        # must never render as a blank void, whether the library is empty
+        # or a search simply matches nothing.
         self.gridStack = QtGui.QStackedWidget()
         self.gridStack.addWidget(self.grid)          # index 0
         self.resultsEmptyState = QtGui.QWidget()
@@ -387,7 +354,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         splitter.addWidget(sidebar)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
-        v.addWidget(splitter, 1)
+        outer.addWidget(splitter, 1)
 
     def _buildDetail(self, layout):
         """Preview, name, parameter form, description, Place."""
@@ -403,6 +370,15 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.detailName.setWordWrap(True)
         layout.addWidget(self.detailName)
 
+        self.detailFamily = QtGui.QLabel("")
+        self.detailFamily.setWordWrap(True)
+        familyFont = self.detailFamily.font()
+        familyFont.setPointSize(max(7, familyFont.pointSize() - 1))
+        self.detailFamily.setFont(familyFont)
+        self.detailFamily.setStyleSheet(
+            "color: %s;" % self._tokens["text_dim"])
+        layout.addWidget(self.detailFamily)
+
         from . import paramform as partslib_paramform
 
         self.paramForm = partslib_paramform.ParamForm(self, self._tokens)
@@ -411,7 +387,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         self._paramTimer = QtCore.QTimer(self)
         self._paramTimer.setSingleShot(True)
-        self._paramTimer.setInterval(250)
+        self._paramTimer.setInterval(_DEBOUNCE_MS)
         self._paramTimer.timeout.connect(self._refreshPreview)
 
         # There used to be a W/D/H readout here, measured from the built
@@ -494,7 +470,7 @@ class PartsLibraryPanel(QtGui.QWidget):
 
     # -- data ------------------------------------------------------------
     def refresh(self):
-        """Rescan the library and rebuild both screens."""
+        """Rescan the library and rebuild the chips and the grid."""
         from . import object as partslib_object
 
         from . import geometry as partslib_geometry
@@ -514,9 +490,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         self._entries = index["entries"]
         self._facets = index["facets"]
 
-        self._populateCategories()
-        self._updateBreadcrumb()
-        timer.mark("categories")
+        self._populateChips()
+        timer.mark("chips")
 
         self._repopulateGrid()
         timer.mark("grid")
@@ -534,220 +509,66 @@ class PartsLibraryPanel(QtGui.QWidget):
         except Exception:
             return None
 
-    # -- screen one: categories -------------------------------------------
-    def _populateCategories(self):
-        """Rebuild the room-card grid from scratch (new entries/facets).
+    # -- room chips --------------------------------------------------------
+    def _populateChips(self):
+        """(Re)build the room filter chips from the current index.
 
-        The cards themselves are (re)built here; _reflowCategories() below
-        only ever repositions them in the grid, so a mere resize never
-        rebuilds a card."""
-        _clearLayout(self.categoriesLayout)
-        self._categories = partslib_index.category_tree(
-            self._entries, self._facets, primary="room", secondary="element")
-        if not self._categories:
-            # JOB2: zero rooms (an empty library) - show the empty-state
-            # message in place of the card grid instead of a blank void.
-            self._categoryCards = []
-            self._categoryColumns = 0
-            self._fillCategoriesEmptyState()
-            self._categoriesStack.setCurrentWidget(self.categoriesEmptyState)
-            return
-        self._categoriesStack.setCurrentWidget(self.categoriesScroll)
-        self._categoryCards = [self._makeRoomCard(room)
-                                for room in self._categories]
-        self._categoryColumns = 0  # force _reflowCategories to (re)place them
-        self._reflowCategories()
+        `All` comes first and is selected on open, then one chip per room
+        that at least one part declares, with its facet icon and part count.
+        They are exclusive - this is a filter, not a multi-select - which is
+        what an auto-exclusive QButtonGroup gives for free."""
+        while self.chipLayout.count():
+            item = self.chipLayout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
 
-    def _fillCategoriesEmptyState(self):
-        """(Re)build the categories screen's empty-state message - JOB2: a
-        quiet centred line plus, smaller beneath it, the absolute path of
-        the library folder so the user knows where to add content.
+        groups = partslib_index.facet_groups(
+            self._entries, self._facets, "room")
+        # A rescan can retire the room the user was filtering by - deleting
+        # the last part in it, or renaming its facet value. Fall back to All
+        # rather than leave a filter no chip can show as active, which would
+        # read as an empty library.
+        if self._filterRoom is not None and not any(
+                group["value"] == self._filterRoom for group in groups):
+            self._filterRoom = None
 
-        partslib_object is imported lazily, here, for its LIBRARY_DIR
-        constant only - never at module scope. See the note above refresh()/
-        _onPlace(): importing it at module scope pulls in ArchComponent
-        during the BIM workbench's Initialize() and previously took out the
-        whole toolbar."""
-        from . import object as partslib_object
+        self._addChip("All", len(self._entries), None, None)
+        for group in groups:
+            self._addChip(group["label"], group["count"],
+                          group["icon"], group["value"])
 
-        layout = self.categoriesEmptyState.layout()
-        if layout is None:
-            layout = QtGui.QVBoxLayout(self.categoriesEmptyState)
-            layout.setAlignment(QtCore.Qt.AlignCenter)
-        else:
-            _clearLayout(layout)
-
-        message = QtGui.QLabel("No parts in the library yet")
-        message.setAlignment(QtCore.Qt.AlignCenter)
-        message.setWordWrap(True)
-        message.setStyleSheet("color: %s;" % self._tokens["text"])
-        layout.addWidget(message)
-
-        path = QtGui.QLabel(os.path.abspath(partslib_object.LIBRARY_DIR))
-        path.setAlignment(QtCore.Qt.AlignCenter)
-        path.setWordWrap(True)
-        pathFont = path.font()
-        pathFont.setPointSize(max(7, pathFont.pointSize() - 1))
-        path.setFont(pathFont)
-        path.setStyleSheet("color: %s;" % self._tokens["text_dim"])
-        layout.addWidget(path)
-
-    def _columnCountFor(self, width):
-        """How many ~_CARD_TARGET_WIDTH-wide columns fit in `width`, never
-        fewer than one."""
-        if width <= 0:
-            return 1
-        return max(1, width // _CARD_TARGET_WIDTH)
-
-    def _reflowCategories(self):
-        """Lay self._categoryCards out in a grid, sized from the scroll
-        area's current viewport width.
-
-        Only actually re-flows - taking the existing card widgets out of
-        the grid and re-adding them at their new row/col, never rebuilding
-        or leaking them - when the computed column count has actually
-        CHANGED (or on the initial call, where _categoryColumns is reset to
-        0 by _populateCategories). This is what keeps a resize drag from
-        thrashing the layout on every pixel.
-
-        Guarded at the top for the empty-library case (JOB2): with zero
-        categories, _populateCategories has already switched
-        self._categoriesStack to the empty-state page and returned without
-        calling this method, but a resize event can still reach it through
-        eventFilter - the detach/re-add loop below must not run against an
-        empty self._categoryCards, or it would strip the (unrelated)
-        empty-state widget out of the grid layout it does not belong to."""
-        if not self._categories:
-            return
-        columns = self._columnCountFor(self.categoriesScroll.viewport().width())
-        if columns == self._categoryColumns:
-            return
-        self._categoryColumns = columns
-
-        while self.categoriesLayout.count():
-            # Detach only - takeAt() does not delete the widget, so every
-            # card is reused, never rebuilt or destroyed, across a reflow.
-            self.categoriesLayout.takeAt(0)
-
-        for index, card in enumerate(self._categoryCards):
-            row, col = divmod(index, columns)
-            self.categoriesLayout.addWidget(card, row, col)
-
-        rowCount = 0
-        if self._categoryCards:
-            rowCount = (len(self._categoryCards) - 1) // columns + 1
-        # Equal stretch on every occupied (and a few spare) column keeps
-        # cards in a row equal-width and stops a lone card in a short row
-        # from being stretched across the whole grid; one stretched row
-        # below the last real row keeps cards pinned to the top instead of
-        # stretching vertically to fill the scroll area. Reset a generous
-        # fixed range every time rather than tracking the previous extent,
-        # so a shrinking grid never leaves stale stretch behind.
-        for c in range(64):
-            self.categoriesLayout.setColumnStretch(c, 1 if c < columns else 0)
-        for r in range(64):
-            self.categoriesLayout.setRowStretch(r, 1 if r == rowCount else 0)
-
-    def eventFilter(self, watched, event):
-        if (watched is self.categoriesScroll.viewport()
-                and event.type() == QtCore.QEvent.Resize):
-            self._reflowCategories()
-        return super(PartsLibraryPanel, self).eventFilter(watched, event)
-
-    def _makeRoomCard(self, room):
-        """One room card: icon + label header, a hairline rule, then that
-        room's elements as clickable rows with counts."""
-        card = QtGui.QFrame()
-        card.setObjectName("RoomCard")
-        v = QtGui.QVBoxLayout(card)
-        v.setContentsMargins(12, 10, 12, 10)
-        v.setSpacing(6)
-
-        header = QtGui.QPushButton("%s (%d)" % (room["label"], room["count"]))
-        header.setObjectName("RoomHeader")
-        header.setFlat(True)
-        header.setCursor(QtCore.Qt.PointingHandCursor)
-        iconPath = self._facetIconPath(room.get("icon"))
+    def _addChip(self, label, count, iconName, room):
+        """One filter chip. `room` is None for the All chip."""
+        chip = QtGui.QToolButton()
+        chip.setObjectName("RoomChip")
+        chip.setCheckable(True)
+        chip.setAutoRaise(True)
+        chip.setCursor(QtCore.Qt.PointingHandCursor)
+        chip.setText("%s · %d" % (label, count))
+        chip.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        iconPath = self._facetIconPath(iconName)
         if iconPath:
-            header.setIcon(QtGui.QIcon(iconPath))
-            header.setIconSize(QtCore.QSize(20, 20))
-        header.clicked.connect(
-            lambda *args, r=room["value"]: self._showResults(r, None))
-        v.addWidget(header)
+            chip.setIcon(QtGui.QIcon(iconPath))
+            chip.setIconSize(QtCore.QSize(16, 16))
+        chip.setChecked(room == self._filterRoom)
+        chip.clicked.connect(
+            lambda *args, r=room: self._onChipSelected(r))
+        self._chipGroup.addButton(chip)
+        self.chipLayout.addWidget(chip)
 
-        rule = QtGui.QFrame()
-        rule.setObjectName("HairlineRule")
-        rule.setFixedHeight(1)
-        v.addWidget(rule)
-
-        for child in room["children"]:
-            row = QtGui.QPushButton(
-                "%s (%d)" % (child["label"], child["count"]))
-            row.setObjectName("ElementRow")
-            row.setFlat(True)
-            row.setCursor(QtCore.Qt.PointingHandCursor)
-            row.clicked.connect(
-                lambda *args, r=room["value"], e=child["value"]:
-                    self._showResults(r, e))
-            v.addWidget(row)
-
-        return card
-
-    def _showCategories(self, *args):
-        self.stack.setCurrentIndex(0)
-
-    # -- screen two: results -----------------------------------------------
-    def _showResults(self, room=None, element=None):
+    def _onChipSelected(self, room):
+        # Clicking the already-selected chip still fires `clicked` (an
+        # exclusive QButtonGroup refuses to uncheck it, but the click itself
+        # still happened) - without this guard that re-ran _repopulateGrid()
+        # for no filter change, which clears the grid and resets the
+        # selection to row 0, losing whatever card and detail pane the user
+        # had open.
+        if room == self._filterRoom:
+            return
         self._filterRoom = room
-        self._filterElement = element
-        self._updateBreadcrumb()
         self._repopulateGrid()
-        self.stack.setCurrentIndex(1)
-
-    def _roomLabel(self, value):
-        for room in self._categories:
-            if room["value"] == value:
-                return room["label"]
-        return value
-
-    def _elementLabel(self, roomValue, elementValue):
-        for room in self._categories:
-            if room["value"] == roomValue:
-                for child in room["children"]:
-                    if child["value"] == elementValue:
-                        return child["label"]
-        return elementValue
-
-    def _updateBreadcrumb(self):
-        """Rebuild "All > Bathroom > Toilets" - every segment clickable."""
-        _clearLayout(self.breadcrumb)
-        self._addBreadcrumbSegment("All", self._showCategories)
-        if self._filterRoom is not None:
-            self._addBreadcrumbSeparator()
-            label = self._roomLabel(self._filterRoom)
-            self._addBreadcrumbSegment(
-                label,
-                lambda *args, r=self._filterRoom: self._showResults(r, None))
-        if self._filterElement is not None:
-            self._addBreadcrumbSeparator()
-            label = self._elementLabel(self._filterRoom, self._filterElement)
-            self._addBreadcrumbSegment(
-                label,
-                lambda *args, r=self._filterRoom, e=self._filterElement:
-                    self._showResults(r, e))
-        self.breadcrumb.addStretch(1)
-
-    def _addBreadcrumbSegment(self, text, callback):
-        button = QtGui.QPushButton(text)
-        button.setObjectName("BreadcrumbSegment")
-        button.setFlat(True)
-        button.setCursor(QtCore.Qt.PointingHandCursor)
-        button.clicked.connect(callback)
-        self.breadcrumb.addWidget(button)
-
-    def _addBreadcrumbSeparator(self):
-        sep = QtGui.QLabel("›")  # ›
-        self.breadcrumb.addWidget(sep)
 
     def _facetMatches(self, entry, facet, value):
         declared = (entry.get("facets") or {}).get(facet)
@@ -761,22 +582,30 @@ class PartsLibraryPanel(QtGui.QWidget):
         if self._filterRoom is not None:
             matches = [e for e in matches
                        if self._facetMatches(e, "room", self._filterRoom)]
-        if self._filterElement is not None:
-            matches = [e for e in matches
-                       if self._facetMatches(e, "element", self._filterElement)]
         return matches
 
     def _repopulateGrid(self, *args):
-        """Rebuild the card grid from the current search text + breadcrumb
-        filter. Each card is always created and added - FIX 3 of the
-        bug-fix round: a thumbnail failure must never hide a card, only its
-        icon is conditional.
+        """Rebuild the card grid from the current search text + room chip.
+        Each card is always created and added - FIX 3 of the bug-fix round:
+        a thumbnail failure must never hide a card, only its icon is
+        conditional.
 
         JOB2: when nothing matches (an empty library, or a search that
         matches nothing) self.gridStack switches to the empty-state message
         in place of the card grid, and switches back the moment a match
         reappears - covering both "clear the search" and "the library
         gained its first part"."""
+        # Every caller of _repopulateGrid is itself a reason to cancel a
+        # pending debounced one: a chip click or refresh() rebuilding now
+        # makes any not-yet-fired search timeout stale, and letting it fire
+        # later would rebuild the grid a second time and reset the selection
+        # (setCurrentRow(0) below) out from under whatever the user just
+        # picked. Stopping an already-fired single-shot timer is a no-op, so
+        # this is safe on the timer's own timeout path too. It also closes a
+        # re-entrancy: _prerenderThumbnails below pumps processEvents(),
+        # which could otherwise let a pending timeout re-enter here and call
+        # self.grid.clear() mid-rebuild.
+        self._searchTimer.stop()
         self.grid.clear()
         entries = sorted(self._filteredEntries(), key=lambda e: e["name"])
         # Render anything missing FIRST, with a progress dialog, so the
@@ -805,9 +634,20 @@ class PartsLibraryPanel(QtGui.QWidget):
             self._onSelect()
 
     def _fillResultsEmptyState(self):
-        """(Re)build the results screen's empty-state message - JOB2: a
-        quiet centred line where the card grid would otherwise render a
-        blank void."""
+        """(Re)build the empty-state message shown in place of the grid.
+
+        One message now serves both cases the two screens used to split: an
+        empty library and a search that matches nothing. The library path
+        appears only for the former - it is the answer to "where do I put
+        parts?", and noise next to a mistyped search.
+
+        partslib_object is imported lazily, here, for its LIBRARY_DIR
+        constant only - never at module scope. See the note above refresh()/
+        _onPlace(): importing it at module scope pulls in ArchComponent
+        during the BIM workbench's Initialize() and previously took out the
+        whole toolbar."""
+        from . import object as partslib_object
+
         layout = self.resultsEmptyState.layout()
         if layout is None:
             layout = QtGui.QVBoxLayout(self.resultsEmptyState)
@@ -815,15 +655,34 @@ class PartsLibraryPanel(QtGui.QWidget):
         else:
             _clearLayout(layout)
 
-        message = QtGui.QLabel("No parts match this search")
+        empty = not self._entries
+        message = QtGui.QLabel("No parts in the library yet" if empty
+                               else "No parts match this search")
         message.setAlignment(QtCore.Qt.AlignCenter)
         message.setWordWrap(True)
         message.setStyleSheet("color: %s;" % self._tokens["text"])
         layout.addWidget(message)
 
+        if empty:
+            path = QtGui.QLabel(
+                os.path.abspath(partslib_object.LIBRARY_DIR))
+            path.setAlignment(QtCore.Qt.AlignCenter)
+            path.setWordWrap(True)
+            pathFont = path.font()
+            pathFont.setPointSize(max(7, pathFont.pointSize() - 1))
+            path.setFont(pathFont)
+            path.setStyleSheet("color: %s;" % self._tokens["text_dim"])
+            layout.addWidget(path)
+
     def _makePartCard(self, entry):
-        """Square thumbnail on top, name beneath, a small monospaced line of
-        primary parameter labels - the card look used everywhere in the panel."""
+        """Square thumbnail, name, and - when its collection declares one -
+        the family it belongs to.
+
+        There used to be a monospaced line of the part's primary parameter
+        LABELS here ("Width | Depth | Height"), with no values: it restated
+        the column headings of a form the user had not opened. A card's job
+        is recognition, which the thumbnail does; the detail pane states
+        dimensions properly, as editable fields."""
         card = QtGui.QFrame()
         card.setObjectName("PartCard")
         card.setProperty("selected", False)
@@ -840,7 +699,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             # Spec Sec 9: no thumbnail was committed for this part, so
             # render one now and cache it to disk - this is the ONE place
             # browsing is allowed to build a shape, and only the first time;
-            # ensure_thumbnail() writes the PNG next to the part, so every
+            # ensure_thumbnail() writes the JPEG next to the part, so every
             # later open is back to a plain file read. Never raises: any
             # failure (no committed manifest, no GL context) returns None
             # and the card is still shown, just without an icon.
@@ -859,24 +718,23 @@ class PartsLibraryPanel(QtGui.QWidget):
         name.setWordWrap(True)
         v.addWidget(name)
 
-        from . import manifest as partslib_manifest
-
-        shaped = {"params": entry.get("params") or {}}
-        specs = partslib_manifest.param_specs(shaped)
-        adjustable = QtGui.QLabel(" | ".join(
-            (specs.get(name) or {}).get("label") or name
-            for name in partslib_manifest.primary_params(shaped)))
-        adjustableFont = QtGui.QFont("Monospace")
-        adjustableFont.setStyleHint(QtGui.QFont.TypeWriter)
-        adjustableFont.setPointSize(max(7, adjustableFont.pointSize() - 1))
-        adjustable.setFont(adjustableFont)
-        adjustable.setAlignment(QtCore.Qt.AlignHCenter)
-        adjustable.setWordWrap(True)
-        # Dim the parameter line relative to the name, using this screen's own
-        # text_dim token (never QPalette - see _applyTheme's docstring for
-        # why palette colours cannot be trusted here).
-        adjustable.setStyleSheet("color: %s;" % self._tokens["text_dim"])
-        v.addWidget(adjustable)
+        # Only where the collection declares a label. An unlabelled
+        # collection - which is what library/basic/ is - leaves the card at
+        # thumbnail-plus-name and correspondingly shorter, because an
+        # identical "Basic" under all 31 generic parts would be exactly the
+        # noise the parameter line was removed for.
+        family = entry.get("family")
+        if family:
+            familyLabel = QtGui.QLabel(family)
+            familyLabel.setAlignment(QtCore.Qt.AlignHCenter)
+            familyLabel.setWordWrap(True)
+            familyFont = familyLabel.font()
+            familyFont.setPointSize(max(7, familyFont.pointSize() - 1))
+            familyLabel.setFont(familyFont)
+            familyLabel.setStyleSheet(
+                "color: %s;" % self._tokens["text_dim"])
+            familyLabel.setToolTip(entry.get("familyDescription") or "")
+            v.addWidget(familyLabel)
 
         return card
 
@@ -985,12 +843,19 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.placeButton.setEnabled(entry is not None)
         if entry is None:
             self.detailName.setText("")
+            self.detailFamily.setText("")
+            self.detailFamily.setVisible(False)
             self.paramForm.setSpecs({}, [])
             self.buildError.setText("")
             self.description.setText("")
             return
 
         self.detailName.setText(entry["name"])
+        self.detailFamily.setText(entry.get("family") or "")
+        self.detailFamily.setToolTip(entry.get("familyDescription") or "")
+        # An empty label still occupies a layout row; hide it so an
+        # unlabelled collection leaves no gap under the part name.
+        self.detailFamily.setVisible(bool(entry.get("family")))
         self.description.setText(entry.get("description") or "")
         from . import manifest as partslib_manifest
 
@@ -1014,33 +879,54 @@ class PartsLibraryPanel(QtGui.QWidget):
         return entry, manifest, self.paramForm.values()
 
     def _refreshPreview(self):
-        """Build the selected parameters and show the result."""
+        """Show the selected part at the selected parameters.
+
+        Not simply "build and render" any more - see
+        partslib_thumbs.preview_plan for which of the four steps each state
+        actually needs, and why."""
         from . import geometry as partslib_geometry
-        from . import manifest as partslib_manifest
 
         selection = self._selection()
         if selection is None:
             return
         entry, manifest, overrides = selection
+
+        thumbPath = partslib_thumbs.thumbnail_path(entry["dir"])
+        # A live pivy preview must never be replaced by a flat picture, so
+        # the committed thumbnail is only "usable" on the static path. On
+        # FreeCAD 1.1 that is every session (Qt6 moved QOpenGLWidget out from
+        # under pivy's QuarterWidget), but the guard keeps a future pivy fix
+        # from silently downgrading the pane.
+        thumbnailUsable = bool(
+            not _PREVIEW_LIVE and os.path.exists(thumbPath))
+        plan = partslib_thumbs.preview_plan(
+            self.paramForm.isPristine(),
+            self.paramForm.hasDerivedFields(),
+            thumbnailUsable)
+
         timer = _Timer("previewing %r" % (entry["id"],))
-        try:
-            shape = partslib_geometry.build_shape(
-                manifest, entry["dir"], overrides)
-        except Exception as exc:
-            self.buildError.setText("Cannot build this part: %s" % exc)
-            return
+        shape = None
+        if plan["build"]:
+            try:
+                shape = partslib_geometry.build_shape(
+                    manifest, entry["dir"], overrides)
+            except Exception as exc:
+                self.buildError.setText("Cannot build this part: %s" % exc)
+                return
+            timer.mark("build")
         self.buildError.setText("")
-        timer.mark("build")
 
-        # An "auto" param can only be one of the shape's own dimensions
-        # (manifest.AUTO_PARAM_NAMES), so measuring the built shape reports
-        # every one of them - there is nothing else for a builder to tell
-        # us. This is what the derived_params() hook used to be for, back
-        # when a count could be declared auto and no measurement could
-        # reach it.
-        self.paramForm.setDerived(partslib_geometry.measure(shape))
+        if plan["measure"] and shape is not None:
+            # An "auto" param can only be one of the shape's own dimensions
+            # (manifest.AUTO_PARAM_NAMES), so measuring the built shape
+            # reports every one of them - there is nothing else for a builder
+            # to tell us.
+            self.paramForm.setDerived(partslib_geometry.measure(shape))
+            timer.mark("measure")
 
-        if _PREVIEW_LIVE:
+        if plan["use_thumbnail"]:
+            self._showCommittedThumbnail(thumbPath)
+        elif _PREVIEW_LIVE:
             try:
                 self.preview.setSceneGraph(
                     partslib_thumbs.scene_from_shape(shape))
@@ -1052,6 +938,20 @@ class PartsLibraryPanel(QtGui.QWidget):
             self._showStaticPreview(entry, shape, manifest, overrides)
         timer.mark("preview")
         timer.report()
+
+    def _showCommittedThumbnail(self, thumbPath):
+        """Put the part's committed thumbnail in the detail pane.
+
+        Degrades to the placeholder rather than raising: an unreadable file
+        must leave the pane usable, exactly as _showStaticPreview's last
+        layer does."""
+        pixmap = QtGui.QPixmap(thumbPath)
+        if pixmap.isNull():
+            self.preview.setPixmap(QtGui.QPixmap())
+            self.preview.setText("No preview available")
+            return
+        self.preview.setPixmap(pixmap.scaledToHeight(
+            _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
 
     def _showStaticPreview(self, entry, shape, manifest, overrides):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix

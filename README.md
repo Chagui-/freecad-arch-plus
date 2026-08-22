@@ -113,25 +113,41 @@ manifest, validated against that vocabulary) to extend it; an empty result
 set (e.g. after a search with no matches) shows a plain "nothing here yet"
 message instead of a blank void.
 
-- **Dockable browser** — click **Parts Library** to open a dock ("ArchPlus
-  Library") that stays open across placements, so you can insert several
-  parts in a row without reopening anything.
-- **Faceted grouping** — group the catalog by `Function`, `Element` or
-  `Room` via a **Group by** combo; the chosen facet persists across FreeCAD
-  restarts.
-- **Multi-valued facets** — a part can belong to several rooms at once (a WC
-  under both Bathroom and Bedroom, for example) and appears under each
-  group it declares.
-- **Search** — a live search box filters the grid by name, keyword and
-  description as you type.
-- **Live preview** — selecting a part builds it and shows a 3D preview.
-- **Declared parameters** — parts expose primary parameters in the browser and
+- **One-screen browser** — click **Parts Library** to open a full-window
+  "ArchPlus Library" tab in FreeCAD's MDI area (alongside any open document
+  tabs) that opens directly onto a card grid — no separate categories page
+  and no drill-down. A wrapping row of chips above the grid (`All` plus one
+  per room that has a part, each showing its count and facet icon) filters
+  the grid in place; clicking the already-selected chip does nothing rather
+  than rebuilding the grid and losing your selection. The tab stays open
+  across placements, so you can insert several parts in a row without
+  reopening anything.
+- **Multi-valued facets** — a part can belong to several rooms at once (a
+  mirror under both Bathroom and Bedroom, for example) and its chip count
+  and card both appear under each room it declares.
+- **Search** — a debounced search box (250 ms after the last keystroke)
+  filters the grid by name, keyword, family and description.
+- **Part families** — an optional `collection.json` one level above a group
+  of part folders gives them a shared family name, shown as a line under
+  the part's name on its card and in the detail sidebar (see "Adding parts
+  to the library" below); a part with no governing collection, or one that
+  declares no `label`, shows no family line at all.
+- **Preview** — selecting a card shows a rendered preview, its parameters
+  and its description in the sidebar. On FreeCAD 1.1 this is always a
+  static rendered image, not a live/rotatable 3D view — pivy's bundled
+  Quarter widget cannot be constructed on this build's Qt6-based `pivy.qt`
+  shim, so the panel falls back to a still render automatically (see
+  `docs/PARTS-LIBRARY-VERIFICATION.md` for the full cause). An unedited
+  selection serves the part's committed `thumbnail.jpg` directly rather
+  than rebuilding it, so most parts show a preview immediately rather than
+  after a rebuild.
+- **Declared parameters** — parts expose primary parameters in the sidebar and
   keep additional parameters behind **More parameters**; editing them rebuilds
   the shape in place. A parameter declared `"auto"` is measured back off the
   built shape, so a derived dimension can never disagree with the geometry.
 - **Host-aware click-to-place** — click **Place**, then click a floor or
   wall face: the part drops to the correct height for its declared host
-  (e.g. a wall-hung WC lands at the wall base plus its mounting height) and
+  (e.g. a wall-hung mirror lands at the wall base plus its mounting height) and
   orients to the face.
 - **Single-object insertion, no tree pollution** — placing a part adds
   exactly one object with no children, and deleting it leaves the tree
@@ -166,10 +182,10 @@ BIM workbench → **ArchPlus** toolbar:
   default) → configure in the panel. Double-click (or right-click → Edit) a
   window to reopen the panel; right-click → **Reposition** to move it with the
   mouse.
-- **Parts Library** → browse/group/search the catalog in the dock, edit its
-  parameters, then click **Place** and click a floor or wall face to insert it.
-  Right-click a placed part → **Reload from library** to refresh
-  it from its manifest.
+- **Parts Library** → filter by room chip and/or search the catalog in the
+  library tab, edit its parameters, then click **Place** and click a floor
+  or wall face to insert it. Right-click a placed part → **Reload from
+  library** to refresh it from its manifest.
 
 ## Adding parts to the library
 
@@ -189,6 +205,31 @@ independent of the family folder a part happens to live in.
 > `Parameters` group disappears from the property editor (the properties are
 > hidden, not merely locked). Delete and re-place the part to get parametric
 > editing back.
+
+### Giving a group of parts a family: `collection.json`
+
+The folder-path "family" above (`basic/`, or an `ikea/malm/` you might add)
+is an organisational grouping — it drives id derivation and lets sibling
+parts share a `_shared.py`. It is a separate thing from the **family line**
+shown on a part's card and in its detail sidebar, which comes from an
+optional `collection.json` placed **one level above** the part folders it
+covers — e.g. `library/ikea/malm/collection.json` governs every part under
+`library/ikea/malm/<part>/`. Its fields:
+
+| field | meaning |
+|---|---|
+| `schema` | Must be `1` if present. |
+| `label` | Optional. The family line's text on the card and in the sidebar. |
+| `description` | Optional. Shown as the family line's tooltip. |
+
+An absent `label` — `library/basic/`'s actual state — means no family line
+at all, not a placeholder: badging all 31 generic parts with an identical
+"Basic" would repeat the low-information line the card used to show instead
+(a monospaced row of parameter labels). When more than one `collection.json`
+could apply to a part, **the nearest ancestor wins** — a
+`library/ikea/malm/collection.json` overrides `library/ikea/collection.json`
+for parts under `malm/`, letting a pack later split into sub-collections
+without editing any part.
 
 There are two ways to give a part its geometry, and only one of them involves
 writing code:

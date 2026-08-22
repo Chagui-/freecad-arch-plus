@@ -29,6 +29,23 @@ class _FakeWidget:
         self._parent = parent
 
 
+class _FakeLayout:
+    """Enough QLayout for a subclass's class statement to execute.
+
+    FlowLayout's arithmetic lives in the pure flow_positions() and is tested
+    directly; what this stub buys is that importing archplus.common.widgets
+    headlessly does not explode on the class statement."""
+
+    def __init__(self, parent=None):
+        self._parent = parent
+
+    def setContentsMargins(self, *margins):
+        pass
+
+    def setGeometry(self, rect):
+        pass
+
+
 class _FakeDoubleSpinBox(_FakeWidget):
     """QDoubleSpinBox as far as LengthSpinBox uses it.
 
@@ -181,6 +198,7 @@ def _install_fakes():
     qtgui = types.ModuleType("PySide.QtGui")
     qtcore = types.ModuleType("PySide.QtCore")
     qtgui.QWidget = _FakeWidget
+    qtgui.QLayout = _FakeLayout
     qtgui.QDoubleSpinBox = _FakeDoubleSpinBox
     qtgui.QValidator = types.SimpleNamespace(
         Invalid="invalid", Intermediate="intermediate",
