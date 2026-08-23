@@ -418,7 +418,7 @@ def applyWindowSettings(obj, spec):
 
 
 def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
-               frameWidth=50.0, sashThk=45.0,
+               shape="Rectangular", frameWidth=50.0, sashThk=45.0,
                frameDepth=100.0, swingSide="Left", swingDir="Inward"):
     """Create a _Window-based window object with the given parameters."""
     from . import object as windowsplus_object
@@ -428,6 +428,7 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
 
     spec = dict(
         operation=operation,
+        shape=shape,
         width=width,
         height=height,
         frameWidth=frameWidth,

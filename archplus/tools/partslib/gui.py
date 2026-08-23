@@ -1302,8 +1302,16 @@ def showPanel():
             _panel.refresh()
             mdi = mainWindow.findChild(QtGui.QMdiArea)
             subWindow = _panel.parentWidget()
-            if mdi is not None and subWindow is not None:
+            # The tab was closed: the subwindow is detached from the MDI
+            # area (gone from subWindowList(), though its mdiArea() still
+            # answers) while the widget survives, so returning it would
+            # leave an invisible panel. Host it again.
+            if mdi is not None \
+                    and isinstance(subWindow, QtGui.QMdiSubWindow) \
+                    and subWindow in mdi.subWindowList():
                 mdi.setActiveSubWindow(subWindow)
+            else:
+                _hostInMdi(_panel)
             return _panel
         except RuntimeError:
             _panel = None

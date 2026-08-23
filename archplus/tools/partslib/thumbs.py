@@ -241,14 +241,26 @@ def _warn(message):
         pass
 
 
-def scene_from_shape(shape):
-    """Build a Coin scene graph from a bare Part.Shape - no document needed."""
+def scene_from_shape(shape, color=None):
+    """Build a Coin scene graph from a bare Part.Shape - no document needed.
+
+    `color` (an RGB tuple) forces the shape's diffuse color via an override
+    material; None keeps the shape's default white."""
     from pivy import coin
 
     buf = shape.writeInventor(*_tessellation_for(shape))
     reader = coin.SoInput()
     reader.setBuffer(buf)
-    return coin.SoDB.readAll(reader)
+    node = coin.SoDB.readAll(reader)
+    if node is None or color is None:
+        return node
+    material = coin.SoMaterial()
+    material.diffuseColor = coin.SbColor(*color)
+    material.setOverride(True)
+    holder = coin.SoSeparator()
+    holder.addChild(material)
+    holder.addChild(node)
+    return holder
 
 
 def _image_format_for(out_path):
@@ -314,20 +326,19 @@ def _save_buffer_as_image(renderer, out_path, size):
     return bool(image.save(out_path, image_type, quality))
 
 
-def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
-    """Render `shape` to an image file, in the format `out_path`'s extension
-    asks for. Returns True on success, False otherwise.
+def render_groups(items, out_path, size=THUMBNAIL_SIZE, timer=None):
+    """Render a list of (shape, color) pairs into one image file, in the
+    format `out_path`'s extension asks for. `color` is an RGB tuple or None
+    for the default white. Returns True on success, False otherwise.
 
     `timer` lets a caller that already did some of the work (building the
-    shape, say) hand in its own Timer so the slow-operation line covers the
+    shapes, say) hand in its own Timer so the slow-operation line covers the
     whole job rather than just this half of it."""
     own_timer = timer is None
     if own_timer:
         timer = Timer("rendering %s" % (os.path.basename(out_path),))
     try:
         from pivy import coin
-        node = scene_from_shape(shape)
-        timer.mark("tessellate")
 
         root = coin.SoSeparator()
         # CAMERA FIRST, then lights, then geometry - the order FreeCAD's own
@@ -347,7 +358,13 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
             light.direction = coin.SbVec3f(*direction)
             light.intensity = intensity
             root.addChild(light)
-        root.addChild(node)
+        for shape, color in items:
+            if shape is None or shape.isNull():
+                continue
+            node = scene_from_shape(shape, color)
+            if node is not None:
+                root.addChild(node)
+        timer.mark("tessellate")
 
         region = coin.SbViewportRegion(size, size)
         # Only the DIRECTION from position to target matters here: pointAt
@@ -392,6 +409,11 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
     finally:
         if own_timer:
             timer.report()
+
+
+def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
+    """Render a single white `shape` to an image file; see render_groups."""
+    return render_groups([(shape, None)], out_path, size=size, timer=timer)
 
 
 def ensure_thumbnail(entry, resolved):
