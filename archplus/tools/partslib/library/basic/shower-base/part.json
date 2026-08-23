@@ -19,14 +19,10 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 900,
-      "ui": "primary"
-    },
+      "default": 900},
     "Depth": {
       "type": "Length",
-      "default": 900,
-      "ui": "primary"
-    },
+      "default": 900},
     "Height": {
       "type": "Length",
       "default": 100

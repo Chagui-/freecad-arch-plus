@@ -81,8 +81,7 @@ def run():
     undo = _edit_manifest("basic/base-cabinet",
                           lambda d: d["params"].update(
                               {"Height": {"type": "Length",
-                                          "default": 1000,
-                                          "ui": "primary"}}))
+                                          "default": 1000}}))
     try:
         FreeCAD.closeDocument(doc.Name)
         reopened = FreeCAD.openDocument(doc_path)

@@ -80,11 +80,10 @@ def test_scan_finds_every_part(tmp_path):
 def test_entries_carry_the_params_block_and_no_variants(tmp_path):
     library = _library(
         tmp_path, _part("wc-a", "WC A"),
-        params={"Width": {"type": "Length", "default": 600,
-                           "ui": "primary"}})
+        params={"Width": {"type": "Length", "default": 600}})
     entry = px.scan(library)["entries"][0]
     assert entry["params"] == {
-        "Width": {"type": "Length", "default": 600, "ui": "primary"}}
+        "Width": {"type": "Length", "default": 600}}
     assert "variants" not in entry
 
 

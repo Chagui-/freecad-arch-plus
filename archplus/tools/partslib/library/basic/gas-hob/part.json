@@ -19,7 +19,7 @@
   },
   "params": {
     "BurnerCount": {
-      "type": "Choice", "default": "4", "ui": "primary",
+      "type": "Choice", "default": "4",
       "label": "Burners",
       "resets": ["Width", "Depth"],
       "options": {
@@ -29,8 +29,8 @@
         "5": { "label": "5 burners" }
       }
     },
-    "Width": { "type": "Length", "default": "auto", "ui": "primary" },
-    "Depth": { "type": "Length", "default": "auto", "ui": "primary" }
+    "Width": { "type": "Length", "default": "auto"},
+    "Depth": { "type": "Length", "default": "auto"}
   },
   "placement": {
     "host": "floor",

@@ -845,7 +845,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             self.detailName.setText("")
             self.detailFamily.setText("")
             self.detailFamily.setVisible(False)
-            self.paramForm.setSpecs({}, [])
+            self.paramForm.setSpecs({})
             self.buildError.setText("")
             self.description.setText("")
             return
@@ -860,9 +860,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         from . import manifest as partslib_manifest
 
         shaped = {"params": entry.get("params") or {}}
-        self.paramForm.setSpecs(
-            partslib_manifest.param_specs(shaped),
-            partslib_manifest.primary_params(shaped))
+        self.paramForm.setSpecs(partslib_manifest.param_specs(shaped))
         self._refreshPreview()
 
     def _onParamsChanged(self):

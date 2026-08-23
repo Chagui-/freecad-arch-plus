@@ -14,7 +14,7 @@ Room, Bedroom, Living Room, Bathroom, Office). All 31 ship a committed
 `thumbnail.jpg` and a `builder.py`; none uses the model-file (assets) path.
 
 Everything scriptable runs inside FreeCAD via
-`archplus/freecad_tests/run_all.py` (57 checks) — from the repository root
+`archplus/freecad_tests/run_all.py` (56 checks) — from the repository root
 run `"C:\Program Files\FreeCAD 1.1\bin\freecad.exe" archplus/freecad_tests/run_all.py`,
 which prints PASS/FAIL lines and exits non-zero on failure. The items below
 are what remains for a human: visual judgments (dark-theme legibility, leaf

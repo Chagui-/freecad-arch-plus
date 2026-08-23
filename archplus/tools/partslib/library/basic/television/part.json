@@ -19,10 +19,10 @@
     ]
   },
   "params": {
-    "ScreenSize": { "type": "Integer", "default": 55, "ui": "primary",
+    "ScreenSize": { "type": "Integer", "default": 55,
                     "label": "Size (in)" },
     "Mounting": {
-      "type": "Choice", "default": "stand", "ui": "primary",
+      "type": "Choice", "default": "stand",
       "options": {
         "stand": { "label": "On stand",
                    "placement": { "host": "floor", "offset": 0 } },

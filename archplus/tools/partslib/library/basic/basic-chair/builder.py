@@ -7,8 +7,9 @@ def build(params, assets, ctx):
     """A dining chair: cushioned seat on four square legs, the rear pair
     running up as back posts carrying two broad rails.
 
-    Params: Width, Depth, SeatHeight, SeatThickness, BackHeight,
-    BackThickness, LegRadius (mm).
+    Params: Width, Depth (mm). Seat and back heights are fixed - 450 mm is
+    what a dining chair is - and the rail and leg proportions scale from
+    them.
 
     Everything here is square section and deliberately chunky. The first
     version used thin cylindrical legs and a thin-slatted back, and it

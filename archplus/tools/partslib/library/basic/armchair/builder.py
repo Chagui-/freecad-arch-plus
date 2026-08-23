@@ -7,8 +7,9 @@ def build(params, assets, ctx):
     """A single upholstered armchair: winged back, rolled arms, one deep
     seat cushion, on short square feet.
 
-    Params: Width, Depth, SeatHeight, BackHeight, BackThickness, ArmWidth,
-    ArmHeight (mm).
+    Params: Width, Depth (mm). Seat and back heights and the arm
+    proportions are fixed - they are what makes it an armchair, not a
+    sofa.
 
     Bespoke rather than `sofa()` with SeatCount 1. An armchair is
     proportioned differently - deeper relative to its width, with a taller

@@ -18,11 +18,11 @@
     ]
   },
   "params": {
-    "DrawerCount": { "type": "Integer", "default": 3, "ui": "primary",
+    "DrawerCount": { "type": "Integer", "default": 3,
                      "label": "Drawers" },
-    "Width": { "type": "Length", "default": 900, "ui": "primary" },
-    "Depth": { "type": "Length", "default": 450, "ui": "primary" },
-    "Height": { "type": "Length", "default": "auto", "ui": "primary" }
+    "Width": { "type": "Length", "default": 900},
+    "Depth": { "type": "Length", "default": 450},
+    "Height": { "type": "Length", "default": "auto"}
   },
   "placement": {
     "host": "floor",
