@@ -196,14 +196,14 @@ def test_load_manifest_raises_on_bad_json(tmp_path):
 
 
 def test_a_manifest_declaring_variants_is_rejected():
-    data = _part_with_ui()
+    data = _param_part()
     data["variants"] = [{"label": "800 mm"}]
     errors, _warnings = pm.validate_manifest(data, {})
     assert any("variants" in error for error in errors)
 
 
 def test_variants_is_an_error_not_an_ignored_unknown_field():
-    data = _part_with_ui()
+    data = _param_part()
     data["variants"] = []
     errors, warnings = pm.validate_manifest(data, {})
     assert any("variants" in error for error in errors)
@@ -238,8 +238,8 @@ def _part_with_params():
 
 
 def test_param_specs_returns_the_declared_params_block():
-    assert pm.param_specs(_part_with_ui())["Width"] == {
-        "type": "Length", "default": 600, "ui": "primary"}
+    assert pm.param_specs(_param_part())["Width"] == {
+        "type": "Length", "default": 600}
 
 
 def test_param_specs_is_empty_when_params_block_absent():
@@ -309,56 +309,36 @@ def test_a_manifest_without_an_id_is_valid():
     assert [e for e in errors if "id" in e] == []
 
 
-# -- primary_params ---------------------------------------------------------
+# -- param specs ------------------------------------------------------------
 
-def _part_with_ui():
+def _param_part():
     return {
         "schema": 1, "name": "Cabinet",
         "facets": {}, "geometry": {},
         "params": {
-            "Width": {"type": "Length", "default": 600, "ui": "primary"},
-            "Depth": {"type": "Length", "default": 600, "ui": "primary"},
+            "Width": {"type": "Length", "default": 600},
+            "Depth": {"type": "Length", "default": 600},
             "KickHeight": {"type": "Length", "default": 100},
             "DoorCount": {"type": "Integer", "default": "auto"},
         },
     }
 
 
-def test_primary_params_are_the_ones_marked_in_declared_order():
-    assert pm.primary_params(_part_with_ui()) == ["Width", "Depth"]
-
-
-def test_primary_params_falls_back_to_the_first_three_declared():
-    data = _part_with_ui()
-    for spec in data["params"].values():
-        spec.pop("ui", None)
-    assert pm.primary_params(data) == ["Width", "Depth", "KickHeight"]
-
-
-def test_primary_params_fallback_stops_at_what_exists():
-    data = {"params": {"Width": {"type": "Length", "default": 600}}}
-    assert pm.primary_params(data) == ["Width"]
-
-
-def test_primary_params_is_empty_when_no_params_declared():
-    assert pm.primary_params({"params": {}}) == []
-
-
 # -- "auto" defaults --------------------------------------------------------
 
 def test_merge_params_resolves_an_auto_default_to_none():
-    merged = pm.merge_params(_part_with_ui(), None)
+    merged = pm.merge_params(_param_part(), None)
     assert merged["DoorCount"] is None
     assert merged["Width"] == 600
 
 
 def test_merge_params_override_pins_an_auto_param():
-    merged = pm.merge_params(_part_with_ui(), {"DoorCount": 3})
+    merged = pm.merge_params(_param_part(), {"DoorCount": 3})
     assert merged["DoorCount"] == 3
 
 
 def test_merge_params_still_drops_an_undeclared_override():
-    merged = pm.merge_params(_part_with_ui(), {"Nonsense": 1})
+    merged = pm.merge_params(_param_part(), {"Nonsense": 1})
     assert "Nonsense" not in merged
 
 
@@ -370,9 +350,9 @@ def _part_with_choice():
         "facets": {}, "geometry": {},
         "placement": {"host": "floor", "offset": 0},
         "params": {
-            "ScreenSize": {"type": "Integer", "default": 55, "ui": "primary"},
+            "ScreenSize": {"type": "Integer", "default": 55},
             "Mounting": {
-                "type": "Choice", "default": "stand", "ui": "primary",
+                "type": "Choice", "default": "stand",
                 "options": {
                     "stand": {"label": "On stand"},
                     "wall": {"label": "Wall-mounted",

@@ -18,8 +18,8 @@
     ]
   },
   "params": {
-    "Width": { "type": "Length", "default": 600, "ui": "primary" },
-    "Depth": { "type": "Length", "default": 500, "ui": "primary" },
+    "Width": { "type": "Length", "default": 600},
+    "Depth": { "type": "Length", "default": 500},
     "Height": { "type": "Length", "default": 850 }
   },
   "placement": {

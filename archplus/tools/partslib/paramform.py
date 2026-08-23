@@ -3,7 +3,7 @@
 # PartsLib param form - the browser panel's editor for one part's params.
 #
 # Split out of gui.py, which is already long. Every DECISION this makes -
-# which params are primary, in what order, which are derived - comes from
+# which fields exist, in what order, which are derived - comes from
 # manifest.py, which is FreeCAD-free and unit-tested. What is left here is
 # widget construction and value read-back, which the headless suite cannot
 # exercise because conftest fakes PySide.
@@ -22,7 +22,12 @@ _DERIVED_TIP = "Derived from the other parameters. Editing this pins it."
 
 
 class ParamForm(QtGui.QWidget):
-    """Primary params in a row, the rest behind a collapsed expander."""
+    """Every declared param as one flat list of fields.
+
+    There used to be a primary/secondary split, with the secondary params
+    behind a collapsed "More parameters" expander. No part declares more than
+    a handful of params, so the expander hid one or two fields behind a click
+    for no reason - the form now shows everything it gets."""
 
     changed = QtCore.Signal()
 
@@ -37,25 +42,15 @@ class ParamForm(QtGui.QWidget):
         self._pristine = True
         self._imperial = False
         self._tips = {}
-        # Remembered for the session, not per part: a user who opens the
-        # expander is telling us they work in detail, and re-collapsing it on
-        # every selection would fight them.
-        self._expanded = False
 
         layout = QtGui.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self._primaryRow = QtGui.QGridLayout()
-        layout.addLayout(self._primaryRow)
+        self._fieldsRow = QtGui.QGridLayout()
+        layout.addLayout(self._fieldsRow)
 
         controls = QtGui.QHBoxLayout()
-        self._toggle = QtGui.QToolButton()
-        self._toggle.setAutoRaise(True)
-        self._toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self._toggle.setArrowType(QtCore.Qt.RightArrow)
-        self._toggle.clicked.connect(self._onToggle)
-        controls.addWidget(self._toggle)
         controls.addStretch(1)
         self._resetButton = QtGui.QPushButton("Reset")
         self._resetButton.setFlat(True)
@@ -63,14 +58,8 @@ class ParamForm(QtGui.QWidget):
         controls.addWidget(self._resetButton)
         layout.addLayout(controls)
 
-        self._more = QtGui.QWidget()
-        self._moreRow = QtGui.QGridLayout(self._more)
-        self._moreRow.setContentsMargins(0, 0, 0, 0)
-        self._more.setVisible(False)
-        layout.addWidget(self._more)
-
-    def setSpecs(self, specs, primary):
-        """Rebuild for one part. `primary` is manifest.primary_params()."""
+    def setSpecs(self, specs):
+        """Rebuild for one part, one field per declared param."""
         self._specs = dict(specs or {})
         self._tips = {}
         # Resolved per rebuild, not per field: every length in one form must
@@ -81,28 +70,17 @@ class ParamForm(QtGui.QWidget):
         self._auto = set(
             name for name, spec in self._specs.items()
             if (spec or {}).get("default") == partslib_manifest.AUTO)
-        _clearGrid(self._primaryRow)
-        _clearGrid(self._moreRow)
+        _clearGrid(self._fieldsRow)
 
-        primary = [name for name in (primary or []) if name in self._specs]
-        secondary = [name for name in self._specs if name not in primary]
-
-        # One field per ROW, not primary params side by side. The sidebar is
+        # One field per ROW, not params side by side. The sidebar is
         # 240-340 px wide (gui.py), so three label+field pairs across left
         # each spinbox about 40 px - too narrow to show "180.0 cm", let alone
         # with its spin arrows, and narrowing the pane clipped it further. A
         # row each gives every field the sidebar's full width and does not
         # care how many params a part declares.
-        for row, name in enumerate(primary):
-            self._addField(self._primaryRow, row, 0, name)
-        for row, name in enumerate(secondary):
-            self._addField(self._moreRow, row, 0, name)
+        for row, name in enumerate(self._specs):
+            self._addField(self._fieldsRow, row, 0, name)
 
-        self._toggle.setVisible(bool(secondary))
-        self._toggle.setText("More parameters (%d)" % len(secondary))
-        self._more.setVisible(bool(secondary) and self._expanded)
-        self._toggle.setArrowType(
-            QtCore.Qt.DownArrow if self._expanded else QtCore.Qt.RightArrow)
         # A rebuild is a fresh part (or reset()), so nothing is edited yet.
         # This is also what makes reset() restore the committed thumbnail:
         # it goes through setSpecs, so the form comes back pristine.
@@ -172,9 +150,7 @@ class ParamForm(QtGui.QWidget):
 
     def reset(self):
         """Back to manifest defaults, which also restores derived fields."""
-        self.setSpecs(self._specs,
-                      partslib_manifest.primary_params(
-                          {"params": self._specs}))
+        self.setSpecs(self._specs)
         self.changed.emit()
 
     def _addField(self, grid, row, column, name):
@@ -235,12 +211,6 @@ class ParamForm(QtGui.QWidget):
             self._applyDerivedStyle(target)
         self._pristine = False
         self.changed.emit()
-
-    def _onToggle(self):
-        self._expanded = not self._expanded
-        self._more.setVisible(self._expanded)
-        self._toggle.setArrowType(
-            QtCore.Qt.DownArrow if self._expanded else QtCore.Qt.RightArrow)
 
 
 class LengthSpinBox(QtGui.QDoubleSpinBox):

@@ -19,19 +19,13 @@
   "params": {
     "BowlWidth": {
       "type": "Length",
-      "default": 380,
-      "ui": "primary"
-    },
+      "default": 380},
     "BowlDepth": {
       "type": "Length",
-      "default": 700,
-      "ui": "primary"
-    },
+      "default": 700},
     "BowlHeight": {
       "type": "Length",
-      "default": 400,
-      "ui": "primary"
-    }
+      "default": 400}
   },
   "placement": {
     "host": "floor",

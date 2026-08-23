@@ -19,22 +19,11 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 900,
-      "ui": "primary"
+      "default": 900
     },
     "Depth": {
       "type": "Length",
-      "default": 880,
-      "ui": "primary"
-    },
-    "SeatHeight": {
-      "type": "Length",
-      "default": 420,
-      "ui": "primary"
-    },
-    "BackHeight": {
-      "type": "Length",
-      "default": 460
+      "default": 880
     }
   },
   "placement": {

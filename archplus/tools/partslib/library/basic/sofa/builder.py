@@ -6,8 +6,9 @@ from archplus.tools.partslib import shapes as sh
 def build(params, assets, ctx):
     """A sofa: solid base, back and arms, with cushion divisions cut in.
 
-    Params: Width, Depth, SeatHeight, BackHeight, BackThickness, ArmWidth,
-    ArmHeight (mm), SeatCount (integer).
+    Params: SeatCount (integer), Width (mm, derived from SeatCount when
+    unset), Depth (mm). Seat and back heights and the arm proportions are
+    fixed.
 
     This is deliberately close to simple massing. An earlier version built
     the cushions as separate floating solids with air around them, and it

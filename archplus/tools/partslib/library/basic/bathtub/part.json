@@ -19,19 +19,13 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 1700,
-      "ui": "primary"
-    },
+      "default": 1700},
     "Depth": {
       "type": "Length",
-      "default": 700,
-      "ui": "primary"
-    },
+      "default": 700},
     "Height": {
       "type": "Length",
-      "default": 550,
-      "ui": "primary"
-    }
+      "default": 550}
   },
   "placement": {
     "host": "floor",

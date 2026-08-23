@@ -21,14 +21,10 @@
   "params": {
     "Width": {
       "type": "Length",
-      "default": 600,
-      "ui": "primary"
-    },
+      "default": 600},
     "Height": {
       "type": "Length",
-      "default": 800,
-      "ui": "primary"
-    }
+      "default": 800}
   },
   "placement": {
     "host": "wall",
