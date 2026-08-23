@@ -41,6 +41,7 @@ _GLASS_COLOR = (0.70, 0.85, 0.95)
 
 DOORS = [
     ("door_single_swing", dict(operation="Single swing", panelStyle="Solid")),
+    ("doors_double_swing", dict(operation="Double swing", panelStyle="Solid")),
 ]
 
 WINDOWS = [
