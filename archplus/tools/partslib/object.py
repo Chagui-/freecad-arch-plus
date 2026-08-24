@@ -473,7 +473,14 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         return os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
 
     def setEdit(self, vobj, mode):
-        return False
+        # No edit-mode task for a library part (mode 0 = Default). Other
+        # modes must NOT be refused: FreeCAD 1.1 runs its transform tool as
+        # edit mode ViewProvider::Transform, and a blanket False here is
+        # what made the gizmo never appear. None says "not implemented",
+        # which hands the mode back to the C++ ViewProviderDragger.
+        if mode == 0:
+            return False
+        return None
 
     def setupContextMenu(self, vobj, menu):
         from PySide import QtGui
