@@ -14,12 +14,13 @@ Room, Bedroom, Living Room, Bathroom, Office). All 31 ship a committed
 `thumbnail.jpg` and a `builder.py`; none uses the model-file (assets) path.
 
 Everything scriptable runs inside FreeCAD via
-`archplus/freecad_tests/run_all.py` (57 checks) — from the repository root
+`archplus/freecad_tests/run_all.py` (65 checks) — from the repository root
 run `"C:\Program Files\FreeCAD 1.1\bin\freecad.exe" archplus/freecad_tests/run_all.py`,
 which prints PASS/FAIL lines and exits non-zero on failure. The items below
 are what remains for a human: visual judgments (dark-theme legibility, leaf
 counts in the preview, "looks right"), the mouse-driven placement tracker
-(D7-D9), and the imperial-schema readout (U3).
+(D7-D9), the imperial-schema readout (U3), and the mouse-driven edit entry
+points (L7-L9).
 
 | Room | Parts |
 |---|---|
@@ -119,6 +120,30 @@ placed part stay in millimetres.
       clicking. Confirm: (1) the ghost tracker box disappears — no leftover
       geometry in the 3D view; (2) no further object is placed; (3) the MDI
       area switches back to the ArchPlus Library tab automatically.
+
+## Part L — Editing placed parts
+
+L1-L6 are scripted (`verify_edit.py`): opening the edit task panel loads
+the part's current values with the object's derived fields shown derived,
+field edits rebuild the placed part live, Reset returns to the manifest's
+answer, Apply commits the whole session as one undo step, Discard rolls it
+back, and a second edit refuses while one is open. The edit lives in a task
+panel (FreeCAD's task area), never in the library tab. What remains for a
+human is the mouse routing into that same panel:
+
+- [ ] **L7 (double-click).** Place a king bed, then double-click it in the
+      3D view. A task panel titled "Edit King bed" opens in the task area
+      with Width ≈ 180.0 cm, Length ≈ 200.0 cm. The ArchPlus Library tab
+      does not change. Cancel.
+- [ ] **L8 (context menu).** Right-click the bed in the tree. The menu
+      shows **Edit in Parts Library** above **Reload from library**; both
+      behave (Edit opens the same task panel; Reload still rebuilds from
+      the library). Cancel any open edit.
+- [ ] **L9 (Cancel/Esc discards).** Open the edit panel for a part, change
+      a field so the 3D view rebuilds, then press Esc (or the native Cancel
+      button). The part returns to its pre-edit values (the discarded
+      transaction), the task panel closes, and nothing in the console
+      reports a transaction error.
 
 ---
 

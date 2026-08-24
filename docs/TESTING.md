@@ -46,6 +46,14 @@ is narrow but real: `_onChipSelected`'s same-room guard, `_populateChips`'s
 retired-room reconciliation, and `detailFamily`'s show/hide. Those three are
 covered only by the manual checklist in `docs/PARTS-LIBRARY-VERIFICATION.md`.
 
+The edit panel's form bookkeeping (`loadValues` / `autoNames` / `setField` /
+`displayed`) is the exception: it runs against the same minimal field fakes
+the existing `_bare_form` ParamForm tests use, so its pinning and derived
+styling are unit-tested in `test_partslib_paramform.py`. The edit session
+itself — the task panel, the transaction, the live rebuild of the placed
+object, Apply/Discard — is a FreeCAD-GUI concern and is covered by
+`verify_edit.py` (checks L1-L6).
+
 ## The edit round-trip
 
 These tests drive each panel's real `_loadFromObject()` then `_collect()`

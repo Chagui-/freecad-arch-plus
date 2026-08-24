@@ -216,6 +216,28 @@ _DEBOUNCE_MS = 250
 
 _panel = None
 
+# The task panel currently editing a placed part, if any. Kept module-level
+# so the FreeCAD verification can reach the live form, and so a second
+# editPart() while one is showing can be refused before showDialog.
+_editPanel = None
+
+
+def _panel_tokens():
+    """Theme tokens for a ParamForm hosted outside the library panel.
+
+    The library panel owns the tokens normally; a task panel may open
+    without the panel ever having been shown, so fall back to reading the
+    theme directly."""
+    try:
+        if _panel is not None:
+            return _panel._tokens
+    except Exception:
+        pass
+    from . import theme as partslib_theme
+
+    dark = partslib_theme.read_is_dark_theme()
+    return _DARK_TOKENS if dark else _LIGHT_TOKENS
+
 
 def _warnPreviewUnavailable(exc):
     """Note, once per session, that the live pivy.quarter preview could not be
@@ -288,12 +310,14 @@ class PartsLibraryPanel(QtGui.QWidget):
         # safe before any of them exist.
         self._applyTheme()
 
-        # There is no QStackedWidget here any more. The panel used to open
-        # on a catalogue page of room cards listing element rows - but 25 of
-        # the library's 36 element rows lead to exactly one part, so the page
-        # was two clicks to reach a single card. The rooms survive as filter
-        # chips above the grid; the element facet stays in part.json, feeding
-        # search and the IFC type mapping, and is simply not navigable.
+        # There is no QStackedWidget here. The panel used to open on a
+        # catalogue page of room cards listing element rows - but 25 of the
+        # library's 36 element rows lead to exactly one part, so the page
+        # was two clicks to reach a single card. The rooms survive as
+        # filter chips above the grid; the element facet stays in part.json,
+        # feeding search and the IFC type mapping, and is simply not
+        # navigable. (Editing a placed part lives in a TaskPanel, not in
+        # this widget - see PartEditTaskPanel below.)
         self.chipRow = QtGui.QWidget()
         self.chipLayout = archplus_widgets.FlowLayout(self.chipRow)
         outer.addWidget(self.chipRow)
@@ -1316,6 +1340,185 @@ def showPanel():
     _panel = PartsLibraryPanel(mainWindow)
     _hostInMdi(_panel)
     return _panel
+
+
+class PartEditTaskPanel:
+    """Task panel for editing a placed library part.
+
+    Hosted in FreeCAD's task panel area, not in the library tab: FreeCAD
+    supplies OK/Cancel and routes them to accept()/reject(); the body's
+    Apply/Discard buttons do the same thing, so either pair ends the edit.
+    The edit lives in one document transaction - every live rebuild happens
+    inside it, Apply/OK commits, Discard/Cancel aborts - so the whole
+    session is one undo step, exactly as a door's edit panel owns its
+    transaction (doors/gui.py)."""
+
+    def __init__(self, obj, manifest, specs):
+        from . import object as partslib_object
+        from . import paramform as partslib_paramform
+
+        self.obj = obj
+        self.manifest = manifest
+        self.specs = specs
+
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Edit %s" % (obj.Label,))
+        layout = QtGui.QVBoxLayout(self.form)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        title = QtGui.QLabel(obj.Label)
+        font = title.font()
+        font.setBold(True)
+        title.setFont(font)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        self.editForm = partslib_paramform.ParamForm(
+            self.form, _panel_tokens())
+        self.editForm.changed.connect(self._onChanged)
+        layout.addWidget(self.editForm)
+
+        # Live rebuilds are debounced exactly like the browser preview's:
+        # typing "800" into Width is one rebuild, not three.
+        self._timer = QtCore.QTimer(self.form)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(_DEBOUNCE_MS)
+        self._timer.timeout.connect(self._applyLiveEdit)
+
+        buttons = QtGui.QHBoxLayout()
+        buttons.addStretch(1)
+        self.applyButton = QtGui.QPushButton("Apply")
+        self.applyButton.clicked.connect(self._onApply)
+        buttons.addWidget(self.applyButton)
+        self.discardButton = QtGui.QPushButton("Discard")
+        self.discardButton.clicked.connect(self._onDiscard)
+        buttons.addWidget(self.discardButton)
+        layout.addLayout(buttons)
+
+        values, auto = partslib_object.panelValues(obj, specs)
+        self.editForm.setSpecs(specs)
+        self.editForm.loadValues(values, auto)
+
+        self._open = False
+        try:
+            obj.Document.openTransaction("Edit library part")
+            self._open = True
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot open the edit transaction: %s\n" % (exc,))
+
+    # -- live editing ----------------------------------------------------
+    def _onChanged(self):
+        self._timer.start()
+
+    def _applyLiveEdit(self):
+        """Rebuild the placed part from the form's current state.
+
+        The object updates in place - Placement is untouched - so the 3D
+        view shows exactly what Apply would commit. Derived fields are then
+        refreshed from the values execute() wrote back onto the object, the
+        same way the browser's preview re-measures."""
+        from . import object as partslib_object
+
+        if self.obj is None:
+            return
+        try:
+            self.obj.Proxy.applyEdit(self.obj, self.manifest,
+                                     self.editForm.values(),
+                                     self.editForm.autoNames())
+            self.obj.Proxy.execute(self.obj)
+            self.obj.Document.recompute()
+        except Exception as exc:
+            FreeCAD.Console.PrintError(
+                "ArchPlus: cannot apply the edit to %s: %s\n"
+                % (self.obj.Label, exc))
+            return
+        values, auto = partslib_object.panelValues(self.obj, self.specs)
+        self.editForm.setDerived(
+            {name: values[name] for name in auto if name in values})
+
+    def _onApply(self):
+        self.accept()
+
+    def _onDiscard(self):
+        self.reject()
+
+    def _endEdit(self, commit):
+        """Commit or abort the edit transaction, once.
+
+        obj is cleared first, so an Apply button press followed by the OK
+        button (or any other double-close) is a no-op the second time."""
+        obj = self.obj
+        if obj is None:
+            return
+        self.obj = None
+        self._timer.stop()
+        if self._open:
+            try:
+                if commit:
+                    obj.Document.commitTransaction()
+                else:
+                    obj.Document.abortTransaction()
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: cannot %s the edit: %s\n"
+                    % ("apply" if commit else "discard", exc))
+            self._open = False
+
+    # -- task panel callbacks (FreeCAD's OK / Cancel) ---------------------
+    def accept(self):
+        self._endEdit(commit=True)
+        FreeCADGui.Control.closeDialog()
+        return True
+
+    def reject(self):
+        self._endEdit(commit=False)
+        FreeCADGui.Control.closeDialog()
+        return True
+
+
+def editPart(obj):
+    """Open a task panel to edit a placed library part.
+
+    The one entry every route funnels into - the view provider's setEdit
+    (double-click and the Edit menu) and the context-menu entry both call
+    this - so editing always means the same task panel. Returns True when
+    the panel is now showing."""
+    from . import manifest as partslib_manifest
+    from . import object as partslib_object
+
+    if not partslib_object.isLibraryPart(obj):
+        FreeCAD.Console.PrintError(
+            "ArchPlus: %s is not a placed library part\n" % (obj.Label,))
+        return False
+    # activeDialog() answers False (not None) with nothing open, so the
+    # truthiness check is load-bearing - the doors guard is written the
+    # same way.
+    if FreeCADGui.Control.activeDialog():
+        FreeCAD.Console.PrintError(
+            "ArchPlus: close the open task panel before editing %s\n"
+            % (obj.Label,))
+        return False
+
+    found = partslib_object.resolveEntry(getattr(obj, "PartId", ""))
+    if found is None:
+        FreeCAD.Console.PrintError(
+            "ArchPlus: part %r is not in the library; cannot edit %s\n"
+            % (getattr(obj, "PartId", ""), obj.Label))
+        return False
+    entry, _facets = found
+    try:
+        manifest = partslib_manifest.load_manifest(entry["path"])
+    except Exception as exc:
+        FreeCAD.Console.PrintError(
+            "ArchPlus: cannot edit %s: %s\n" % (obj.Label, exc))
+        return False
+    specs = partslib_manifest.param_specs(manifest)
+
+    global _editPanel
+    _editPanel = PartEditTaskPanel(obj, manifest, specs)
+    FreeCADGui.Control.showDialog(_editPanel)
+    return True
 
 
 class PartsLibraryCommand:

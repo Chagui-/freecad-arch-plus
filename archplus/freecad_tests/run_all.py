@@ -24,6 +24,7 @@ from archplus.freecad_tests import verify_browser
 from archplus.freecad_tests import verify_panel
 from archplus.freecad_tests import verify_parameters
 from archplus.freecad_tests import verify_placement
+from archplus.freecad_tests import verify_edit
 from archplus.freecad_tests import verify_reload
 from archplus.freecad_tests import verify_rendering
 
@@ -58,6 +59,7 @@ def main():
     _run_one("verify_browser", verify_browser.run)
     _run_one("verify_parameters", verify_parameters.run)
     _run_one("verify_placement", verify_placement.run)
+    _run_one("verify_edit", verify_edit.run)
     _run_one("verify_panel", verify_panel.run)
     _run_one("verify_reload", verify_reload.run)
     _run_one("verify_rendering", verify_rendering.run)
