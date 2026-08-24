@@ -20,19 +20,13 @@
   "params": {
     "PlateWidth": {
       "type": "Length",
-      "default": 50,
-      "ui": "primary"
-    },
+      "default": 50},
     "PlateHeight": {
       "type": "Length",
-      "default": 50,
-      "ui": "primary"
-    },
+      "default": 50},
     "ArmLength": {
       "type": "Length",
-      "default": 70,
-      "ui": "primary"
-    }
+      "default": 70}
   },
   "placement": {
     "host": "wall",

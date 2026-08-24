@@ -19,19 +19,13 @@
   "params": {
     "PlateWidth": {
       "type": "Length",
-      "default": 55,
-      "ui": "primary"
-    },
+      "default": 55},
     "PlateHeight": {
       "type": "Length",
-      "default": 55,
-      "ui": "primary"
-    },
+      "default": 55},
     "Projection": {
       "type": "Length",
-      "default": 65,
-      "ui": "primary"
-    }
+      "default": 65}
   },
   "placement": {
     "host": "wall",

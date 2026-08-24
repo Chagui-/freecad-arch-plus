@@ -18,9 +18,9 @@
     ]
   },
   "params": {
-    "Width": { "type": "Length", "default": 600, "ui": "primary" },
-    "Depth": { "type": "Length", "default": 600, "ui": "primary" },
-    "Height": { "type": "Length", "default": 900, "ui": "primary" }
+    "Width": { "type": "Length", "default": 600},
+    "Depth": { "type": "Length", "default": 600},
+    "Height": { "type": "Length", "default": 900}
   },
   "placement": {
     "host": "floor",

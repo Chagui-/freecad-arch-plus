@@ -435,24 +435,32 @@ def test_no_shipped_manifest_declares_variants():
             "%s still declares variants" % (entry["id"],))
 
 
-def test_every_part_marks_at_least_one_primary_param_explicitly():
+def test_no_shipped_manifest_declares_a_ui_key():
+    # The primary/secondary split is gone: the panel shows every declared
+    # param in one flat list, so a "ui" mark would be dead data that the
+    # form ignores - and a stale mark is how a param ends up looking
+    # deliberately hidden when nothing hides it any more.
     index = _scan()
     for entry in index["entries"]:
         data = partslib_manifest.load_manifest(entry["path"])
-        marked = [name for name, spec
-                  in partslib_manifest.param_specs(data).items()
-                  if (spec or {}).get("ui") == "primary"]
-        assert marked, "%s marks no ui:primary param" % (entry["id"],)
+        for name, spec in partslib_manifest.param_specs(data).items():
+            assert "ui" not in (spec or {}), (
+                "%s param %r still declares a ui mark" % (entry["id"], name))
 
 
-def test_every_primary_param_name_is_declared():
+def test_seating_parts_declare_no_seat_or_back_height():
+    # Seat and back heights are proportions the builders scale from the
+    # declared size, not things a user adjusts: an armchair is an armchair
+    # because of them. Declaring them surfaced two extra fields per part
+    # whose edits just made the piece look wrong.
     index = _scan()
-    for entry in index["entries"]:
+    for part_id in ("armchair", "sofa", "basic-chair"):
+        entry = _entry(index, part_id)
         data = partslib_manifest.load_manifest(entry["path"])
-        specs = partslib_manifest.param_specs(data)
-        for name in partslib_manifest.primary_params(data):
-            assert name in specs, (
-                "%s marks unknown primary %r" % (entry["id"], name))
+        declared = partslib_manifest.param_specs(data)
+        for name in ("SeatHeight", "BackHeight"):
+            assert name not in declared, (
+                "%s still declares %s" % (entry["id"], name))
 
 
 def test_a_bath_width_screen_is_reachable_at_walk_in_height():

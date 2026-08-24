@@ -52,9 +52,6 @@ AUTO_PARAM_TYPES = ("Integer", "Length")
 # that wants a count now simply decides it, with no property involved.
 AUTO_PARAM_NAMES = ("Width", "Depth", "Height")
 
-# How many params a part that marks none gets promoted to the browser panel.
-PRIMARY_FALLBACK = 3
-
 # Order in which facets are consulted for an IfcType mapping when the part
 # does not declare one explicitly.
 IFC_TYPE_FACET_ORDER = ("element", "function")
@@ -204,7 +201,7 @@ def validate_manifest(data, facets):
         # so placing it would silently use the wrong defaults. A hard error
         # keeps it out of the index instead of quietly ignoring it.
         errors.append(
-            "'variants' was removed; declare params with \"ui\", \"label\", "
+            "'variants' was removed; declare params with \"label\", "
             "\"default\": \"auto\" and \"options\" instead")
 
     geometry = data.get("geometry")
@@ -331,19 +328,6 @@ def derived_metric_names():
 def param_specs(manifest):
     """The manifest's `params` block, or {} if it declares none."""
     return dict(manifest.get("params") or {})
-
-
-def primary_params(manifest):
-    """Ordered names of the params the browser panel shows.
-
-    A part that marks none gets its first PRIMARY_FALLBACK declared params,
-    so a panel is never empty and a lazily-authored manifest still works."""
-    specs = param_specs(manifest)
-    marked = [name for name, spec in specs.items()
-              if (spec or {}).get("ui") == "primary"]
-    if marked:
-        return marked
-    return list(specs)[:PRIMARY_FALLBACK]
 
 
 def choice_options(spec):

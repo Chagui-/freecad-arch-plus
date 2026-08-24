@@ -44,8 +44,8 @@ wall the way a door does.
   cause). An unedited selection serves the part's committed `thumbnail.jpg`
   directly rather than rebuilding it, so most parts show a preview
   immediately rather than after a rebuild.
-- **Declared parameters** — parts expose primary parameters in the sidebar and
-  keep additional parameters behind **More parameters**; editing them rebuilds
+- **Declared parameters** — parts expose their declared parameters in the
+  sidebar as one flat list; editing them rebuilds
   the shape in place. A parameter declared `"auto"` is measured back off the
   built shape, so a derived dimension can never disagree with the geometry.
 - **Host-aware click-to-place** — click **Place**, then click a floor or
@@ -167,7 +167,6 @@ a manufacturer's download, or something too organic to describe in code.
 
 | key | meaning |
 |---|---|
-| `params.<name>.ui` | `"primary"` shows the param in the browser panel. Absent means it sits behind **More parameters**. |
 | `params.<name>.label` | Display name. The key itself stays the builder argument and the property name. |
 | `params.<name>.default` | A number, a string, or `"auto"` — meaning the builder derives it. Only `Width`, `Depth` and `Height` may be `"auto"`: those are what a built shape can be measured for, so the derived value can be read back into the property editor. Anything else would show 0 forever, so derive it in the builder without declaring a param. |
 | `params.<name>.options` | `Choice` only: ordered value to `{label, placement?}`. A selected option's `placement` merges per key over the part's. |
@@ -187,9 +186,9 @@ Whichever unit a field shows, the user can still type any other one into it
 
 ```json
 "params": {
-  "ScreenSize": { "type": "Integer", "default": 55,     "ui": "primary" },
+  "ScreenSize": { "type": "Integer", "default": 55 },
   "Width":      { "type": "Length",  "default": "auto" },
-  "Mounting":   { "type": "Choice",  "default": "stand", "ui": "primary",
+  "Mounting":   { "type": "Choice",  "default": "stand",
                   "options": {
                     "stand": { "label": "On stand" },
                     "wall":  { "label": "Wall-mounted",

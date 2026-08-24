@@ -3,8 +3,8 @@
 # Parameter form and display-unit checks: Parts P and U of
 # docs/PARTS-LIBRARY-VERIFICATION.md. The derived-field checks use the
 # chest of drawers (DrawerCount drives a derived Height) - the one shipped
-# part whose primary params, secondary params and an auto field line up
-# for the pin/reset flow.
+# part whose declared params and an auto field line up for the pin/reset
+# flow.
 
 from archplus.freecad_tests import _harness as h
 
@@ -44,26 +44,18 @@ def _edit(form, name, value=None, text=None):
 def run():
     panel = partslib_gui.showPanel()
 
-    # --- chest of drawers: primary fields, collapsed More, derived Height.
+    # --- chest of drawers: all fields flat, derived Height.
     _select(panel, "chest of drawers")
     form = panel.paramForm
-    h.check("P1 DrawerCount/Width/Depth are editable primary fields",
+    h.check("P1 DrawerCount/Width/Depth are editable fields",
             all(_field(form, n) is not None
                 for n in ("DrawerCount", "Width", "Depth")))
-    h.check("P1 More parameters collapsed by default",
-            not form._more.isVisible()
-            and "More parameters" in form._toggle.text(),
-            detail="visible=%r toggle=%r"
-            % (form._more.isVisible(), form._toggle.text()))
-
-    h.check("P3 Height exists behind More and starts derived (auto)",
+    h.check("P1 Height is visible in the same flat list and starts "
+            "derived (auto)",
             _field(form, "Height") is not None
             and "Height" in form._auto,
             detail="widgets=%r auto=%r"
             % (sorted(form._widgets), sorted(form._auto)))
-    form._onToggle()
-    h.check("P3 expanding shows the secondary fields",
-            form._more.isVisible())
 
     # --- pinning and reset.
     _edit(form, "Height", value=100)
