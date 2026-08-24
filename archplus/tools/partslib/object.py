@@ -351,6 +351,20 @@ class _LibraryPart(ArchComponent.Component):
         finally:
             self._reseeding = False
 
+    def applyEdit(self, obj, manifest, overrides, auto):
+        """Write the edit form's state onto a placed part.
+
+        The pinned side goes through _applyParamOverrides(); the derived
+        side is what it cannot express - that method only ever removes
+        names from AutoParams, while the form's Reset returns fields to
+        derived, so AutoParams is set to exactly the names the form still
+        shows derived. The caller rebuilds once afterwards."""
+        self._applyParamOverrides(obj, manifest, overrides)
+        specs = partslib_manifest.param_specs(manifest)
+        auto = [name for name in (auto or ())
+                if name in specs and name in obj.PropertiesList]
+        setattr(obj, PROP_AUTO_PARAMS, auto)
+
     def _resolveCurrent(self, obj):
         """The manifest for obj's current PartId, or None.
 
@@ -473,14 +487,73 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         return os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
 
     def setEdit(self, vobj, mode):
-        return False
+        # Mode 0 (Default) opens the library panel's edit page - FreeCAD
+        # itself must NOT enter edit mode, so the opener runs and False is
+        # returned, exactly as doors/gui.py documents. Other modes must
+        # NOT be refused: FreeCAD 1.1 runs its transform tool as edit mode
+        # ViewProvider::Transform, and a blanket False here is what made
+        # the gizmo never appear. None says "not implemented", which hands
+        # the mode back to the C++ ViewProviderDragger.
+        if mode == 0:
+            editLibraryPart(vobj.Object)
+            return False
+        return None
+
+    def doubleClicked(self, vobj):
+        # The same opener as setEdit: every entry point - double-click,
+        # Edit menu, context menu - lands on the one edit page.
+        editLibraryPart(vobj.Object)
+        return True
 
     def setupContextMenu(self, vobj, menu):
         from PySide import QtGui
 
+        editAction = QtGui.QAction("Edit in Parts Library", menu)
+        editAction.triggered.connect(
+            lambda: editLibraryPart(vobj.Object))
+        menu.addAction(editAction)
+
         action = QtGui.QAction("Reload from library", menu)
         action.triggered.connect(lambda: reloadFromLibrary(vobj.Object))
         menu.addAction(action)
+
+
+def isLibraryPart(obj):
+    """True when `obj` is a placed library part."""
+    try:
+        return isinstance(getattr(obj, "Proxy", None), _LibraryPart)
+    except Exception:
+        return False
+
+
+def panelValues(obj, specs):
+    """(values, auto) for the edit form: every declared param's current
+    value - Choice mapped to its stable value - plus which are still
+    derived.
+
+    `auto` is what obj.AutoParams declares: the placed object's truth,
+    which a save/reload or a hand edit may have moved on from the manifest
+    defaults the browser's own form derives from."""
+    auto = set(getattr(obj, PROP_AUTO_PARAMS, ()) or ())
+    values = {}
+    for name in specs:
+        if name not in obj.PropertiesList:
+            continue
+        try:
+            values[name] = _paramValue(obj, name, specs.get(name))
+        except Exception:
+            continue
+    return values, auto
+
+
+def editLibraryPart(obj):
+    """Open the library panel to edit a placed part.
+
+    The one entry every route - double-click, Edit menu, the context-menu
+    entry - funnels into, so editing always means the same dialog."""
+    from . import gui as partslib_gui
+
+    partslib_gui.editPart(obj)
 
 
 def _applyMetadata(obj, resolved, facets):

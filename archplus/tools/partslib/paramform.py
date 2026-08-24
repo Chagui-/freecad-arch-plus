@@ -148,6 +148,65 @@ class ParamForm(QtGui.QWidget):
             finally:
                 widget.blockSignals(False)
 
+    def loadValues(self, values, auto=()):
+        """Load a placed part's current values into the fields.
+
+        Like setDerived() but for every field: nothing here emits `changed`,
+        because a placed part arriving is not a user edit. `auto` names the
+        fields that are still derived ON THE OBJECT (its AutoParams), which
+        need not match the manifest defaults a browser selection derives
+        from: a user may have pinned a derived field, or a driver's reset
+        may have re-derived one. Either way the form must present the
+        object's truth, so every field is (re)styled to match it.
+        """
+        values = values or {}
+        for name, widget in self._widgets.items():
+            if name not in values:
+                continue
+            widget.blockSignals(True)
+            try:
+                _setValueOf(widget, self._specs.get(name) or {}, values[name])
+            finally:
+                widget.blockSignals(False)
+        self._auto = set(name for name in (auto or ())
+                         if name in self._widgets)
+        for name, widget in self._widgets.items():
+            if name in self._auto:
+                self._applyDerivedStyle(name)
+            else:
+                widget.setStyleSheet("")
+                widget.setToolTip(self._tips.get(name, ""))
+        self._pristine = True
+
+    def autoNames(self):
+        """The names of the fields currently shown as derived."""
+        return set(self._auto)
+
+    def displayed(self):
+        """{name: value} for EVERY field, derived or pinned.
+
+        The edit page's verification reads this to compare what the form
+        shows with what the placed object holds."""
+        return {name: _valueOf(widget, self._specs.get(name) or {})
+                for name, widget in self._widgets.items()}
+
+    def setField(self, name, value):
+        """Set one field exactly as an edit would.
+
+        What the widget's own signal would have done is reproduced: the
+        field is pinned, a driver's reset targets return to derived, and
+        `changed` is emitted. The edit page's FreeCAD verification uses this
+        to simulate typing without driving real Qt events."""
+        widget = self._widgets.get(name)
+        if widget is None:
+            return
+        widget.blockSignals(True)
+        try:
+            _setValueOf(widget, self._specs.get(name) or {}, value)
+        finally:
+            widget.blockSignals(False)
+        self._onEdited(name)
+
     def reset(self):
         """Back to manifest defaults, which also restores derived fields."""
         self.setSpecs(self._specs)

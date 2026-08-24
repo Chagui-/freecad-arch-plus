@@ -12,6 +12,7 @@ from archplus.freecad_tests import _harness as h
 
 import Arch
 import FreeCAD
+import FreeCADGui
 import Part
 from FreeCAD import Vector
 
@@ -125,5 +126,26 @@ def run():
     finally:
         if os.path.exists(out_path):
             os.remove(out_path)
+
+    # D11 - FreeCAD's own transform tool must work on a placed part. The
+    # command enters edit mode ViewProvider::Transform on the selected
+    # object's view provider; getInEdit() reporting one afterwards is how
+    # a script can see the gizmo started.
+    doc = h.fresh_doc()
+    bed = _make("basic/king-bed",
+                placement=FreeCAD.Placement(Vector(100, 100, 0),
+                                            FreeCAD.Rotation()))
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(doc.Name, bed.Name)
+    try:
+        FreeCADGui.runCommand("Std_TransformManip", 0)
+        h.process_events(200)
+        h.check("D11 transform tool enters transform edit mode",
+                FreeCADGui.ActiveDocument.getInEdit() is not None,
+                detail="inEdit=%r" % (FreeCADGui.ActiveDocument.getInEdit(),))
+    finally:
+        if FreeCADGui.ActiveDocument.getInEdit() is not None:
+            FreeCADGui.ActiveDocument.resetEdit()
+        FreeCADGui.Selection.clearSelection()
 
     return h.failures()

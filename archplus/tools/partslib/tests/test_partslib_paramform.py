@@ -123,6 +123,8 @@ class _Field:
     def __init__(self):
         self.value = None
         self.blocked = []
+        self.tooltip = None
+        self.stylesheet = None
 
     def blockSignals(self, state):
         self.blocked.append(state)
@@ -130,11 +132,14 @@ class _Field:
     def setMmValue(self, value):
         self.value = value
 
-    def setStyleSheet(self, _sheet):
-        pass
+    def mmValue(self):
+        return self.value
 
-    def setToolTip(self, _text):
-        pass
+    def setStyleSheet(self, sheet):
+        self.stylesheet = sheet
+
+    def setToolTip(self, text):
+        self.tooltip = text
 
 
 def _bare_form(auto=(), widgets=None):
@@ -231,3 +236,135 @@ def test_has_derived_fields_is_false_without_auto_params():
 
 def test_has_derived_fields_is_true_while_one_is_unpinned():
     assert _bare_form(auto=["Width"]).hasDerivedFields()
+
+
+class _Choice:
+    """A combo as far as _valueOf/_setValueOf need one."""
+
+    def __init__(self):
+        self.index = 0
+        self.items = []
+
+    def addItem(self, label, data):
+        self.items.append((label, data))
+
+    def blockSignals(self, state):
+        pass
+
+    def setStyleSheet(self, sheet):
+        pass
+
+    def setToolTip(self, text):
+        pass
+
+    def setCurrentIndex(self, index):
+        self.index = index
+
+    def findData(self, data):
+        for i, (_label, item_data) in enumerate(self.items):
+            if item_data == data:
+                return i
+        return -1
+
+    def currentIndex(self):
+        return self.index
+
+    def itemData(self, index):
+        return self.items[index][1]
+
+
+def _value_of(form, name):
+    spec = form._specs.get(name) or {}
+    widget = form._widgets.get(name)
+    assert widget is not None, name
+    return pf._valueOf(widget, spec)
+
+
+def test_load_values_writes_every_field_and_leaves_the_form_pristine():
+    # Entering edit loads the placed object's values; that is not a user
+    # edit, so the form must still count as pristine and not emit changed.
+    width, depth = _Field(), _Field()
+    form = _bare_form(widgets={"Width": width, "Depth": depth})
+    form._specs = {"Width": {"type": "Length"}, "Depth": {"type": "Length"}}
+    form.loadValues({"Width": 1600.0, "Depth": 2000.0})
+
+    assert width.value == 1600.0
+    assert depth.value == 2000.0
+    assert form.isPristine()
+    assert form.changed.count == 0
+
+
+def test_load_values_marks_the_objects_derived_fields():
+    # The placed object's AutoParams is the truth about what is derived; it
+    # need not match the manifest defaults a browser selection derives from.
+    width, depth = _Field(), _Field()
+    form = _bare_form(auto=["Width"], widgets={"Width": width, "Depth": depth})
+    form._specs = {"Width": {"type": "Length"}, "Depth": {"type": "Length"}}
+    form.loadValues({"Width": 1800.0, "Depth": 2000.0}, auto=["Depth"])
+
+    assert form.autoNames() == {"Depth"}
+    assert form.hasDerivedFields()
+
+
+def test_load_values_skips_values_it_has_no_widget_for():
+    field = _Field()
+    form = _bare_form(widgets={"Width": field})
+    form._specs = {"Width": {"type": "Length"}}
+    form.loadValues({"Width": 1600.0, "NotAField": 1.0})
+
+    assert field.value == 1600.0
+    assert form.changed.count == 0
+
+
+def test_set_field_edits_like_a_user_edit():
+    # The verification scripts need a way to simulate typing into a field;
+    # it must behave exactly like the signal path: pin the field, emit
+    # changed, dirty the form.
+    field = _Field()
+    form = _bare_form(auto=["Width"], widgets={"Width": field})
+    form._specs = {"Width": {"type": "Length"}}
+    form.setField("Width", 1600.0)
+
+    assert field.value == 1600.0
+    assert form.autoNames() == set()
+    assert not form.isPristine()
+    assert form.changed.count == 1
+
+
+def test_set_field_on_an_unknown_name_is_a_noop():
+    form = _bare_form()
+    form.setField("Nothing", 1.0)
+    assert form.isPristine()
+    assert form.changed.count == 0
+
+
+def test_displayed_reads_every_field_stable_values():
+    width, mounting = _Field(), _Choice()
+    mounting.items = [("Wall-mounted", "wall"), ("Free-standing", "free")]
+    form = _bare_form(widgets={"Width": width, "Mounting": mounting})
+    form._specs = {
+        "Width": {"type": "Length"},
+        "Mounting": {"type": "Choice", "options": {"wall": {}, "free": {}}},
+    }
+    form.loadValues({"Width": 1600.0, "Mounting": "wall"})
+
+    assert form.displayed() == {"Width": 1600.0, "Mounting": "wall"}
+
+
+def test_load_values_restyles_fields_to_the_objects_truth():
+    # A field the manifest derives but the object has pinned must come back
+    # with the pinned look, and vice versa: derived-ness on a placed object
+    # is AutoParams, not the manifest default.
+    field = _Field()
+    form = _bare_form(widgets={"Width": field})
+    form._specs = {"Width": {"type": "Length", "default": "auto"}}
+    form._tips["Width"] = "base tip"
+    form.loadValues({"Width": 1600.0}, auto=[])
+
+    assert "Width" not in form.autoNames()
+    assert field.stylesheet == ""
+    assert field.tooltip == "base tip"
+
+    form.loadValues({"Width": 1600.0}, auto=["Width"])
+    assert form.autoNames() == {"Width"}
+    assert field.tooltip is not None and "Derived" in field.tooltip
