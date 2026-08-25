@@ -82,6 +82,42 @@ def test_round_is_two_concentric_circles():
     assert not _modes(flat)                       # round windows are fixed
 
 
+def test_moving_glass_inherits_its_sashs_transform():
+    # Glass must carry no Edge/Mode of its own: it inherits the transform of
+    # the moving part immediately before it (the native FreeCAD convention).
+    # An explicit mode would derive the movement from the glass's own,
+    # smaller wire, so sliding glass would lag its sash by the inset amount.
+    cases = {
+        "Single casement": {"Glass": "Wire3"},
+        "Single sliding": {"SlideGlass": "Wire5"},
+        "Double casement": {"LeftGlass": "Wire3", "RightGlass": "Wire5"},
+    }
+    for op, glasses in cases.items():
+        _, flat = wg._makeWindowGeometry(_spec(operation=op))
+        g = _groups(flat)
+        for name, wires in glasses.items():
+            assert g[name] == wires, "%s: %s = %r" % (op, name, g[name])
+
+
+def test_moving_glass_directly_follows_its_sash():
+    # The inheritance only holds while the glass entry immediately follows
+    # the moving part it inherits from; a fixed part inserted between them
+    # would wrongly inherit the same transform.
+    cases = {
+        "Single casement": [("Sash", "Glass")],
+        "Single sliding": [("SlideSash", "SlideGlass")],
+        "Double casement": [("LeftSash", "LeftGlass"),
+                            ("RightSash", "RightGlass")],
+    }
+    for op, pairs in cases.items():
+        _, flat = wg._makeWindowGeometry(_spec(operation=op))
+        names = [flat[i] for i in range(0, len(flat), 5)]
+        for sash, glass in pairs:
+            assert names.index(glass) == names.index(sash) + 1, \
+                "%s: %s must immediately follow %s (order: %r)" \
+                % (op, glass, sash, names)
+
+
 # --- edit round-trip ------------------------------------------------------
 def _panel(obj):
     """A WindowsPlusTaskPanel wired with fake widgets, skipping Qt setup, so the
@@ -146,3 +182,16 @@ def test_legacy_object_without_spec_infers_round_shape():
     p._loadFromObject()
     assert p.shape.currentText() == "Round"
     assert p._collect()["width"] == 800.0
+
+
+def test_rebuild_hides_the_new_base_sketch():
+    # _apply swaps a freshly created sketch in as Base. A new sketch is
+    # visible by default, so the panel must hide it — otherwise every live
+    # update (and the final accept) leaves the construction sketch visible
+    # in the 3D view.
+    spec = _spec(operation="Single casement")
+    obj = _configured_obj(spec)
+    p = _panel(obj)
+    p._sketch = fake_base(z=950.0)
+    p._apply()
+    assert obj.Base.ViewObject.Visibility is False

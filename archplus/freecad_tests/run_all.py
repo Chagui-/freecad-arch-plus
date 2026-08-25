@@ -27,6 +27,8 @@ from archplus.freecad_tests import verify_placement
 from archplus.freecad_tests import verify_edit
 from archplus.freecad_tests import verify_reload
 from archplus.freecad_tests import verify_rendering
+from archplus.freecad_tests import verify_openings
+from archplus.freecad_tests import verify_sketch_visibility
 
 # FreeCAD can process the command-line script more than once per session.
 # The first pass creates this marker; later passes skip the work (and exit),
@@ -63,6 +65,8 @@ def main():
     _run_one("verify_panel", verify_panel.run)
     _run_one("verify_reload", verify_reload.run)
     _run_one("verify_rendering", verify_rendering.run)
+    _run_one("verify_openings", verify_openings.run)
+    _run_one("verify_sketch_visibility", verify_sketch_visibility.run)
     h.report_exceptions()
 
     failed = h.failures()

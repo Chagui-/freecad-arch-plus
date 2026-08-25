@@ -259,6 +259,10 @@ def _makeDoorGeometry(spec):
         fw = "%.4f" % pt
         wp.append(["InnerFrame", "Frame", "Wire2,Wire3,Edge%d,Mode%d" % (hinge, _swingMode()),
                    fw, leaf_off])
+        # The glass deliberately carries no Edge/Mode: it inherits
+        # InnerFrame's transform (native FreeCAD convention, see
+        # object.py buildShapes), so it swings/slides exactly with the
+        # leaf. It must stay the entry right after its frame.
         wp.append(["InnerGlass", "Glass panel", "Wire3",
                    "%.4f" % (pt / gla), glass_off])
 
@@ -306,6 +310,9 @@ def _makeDoorGeometry(spec):
 
         wp.append(["LeftFrame", "Frame", "Wire2,Wire3,Edge12,Mode%d" % _swingMode(0),
                    "%.4f" % pt, leaf_off])
+        # Each glass deliberately carries no Edge/Mode: it inherits the
+        # transform of the frame immediately before it (native FreeCAD
+        # convention), so it swings/slides exactly with its leaf.
         wp.append(["LeftGlass", "Glass panel", "Wire3",
                    "%.4f" % (pt / gla), glass_off])
         wp.append(["RightFrame", "Frame", "Wire4,Wire5,Edge18,Mode%d" % _swingMode(1),
@@ -758,6 +765,14 @@ class DoorsPlusTaskPanel:
             # doesn't hold internal references that block the swap.
             self.obj.Base = None
             self.obj.Base = sketch
+            # A freshly created sketch is visible by default; keep it hidden
+            # like the placement command does (the door is what the user
+            # wants to see, not its construction sketch).
+            try:
+                sketch.ViewObject.DisplayMode = "Wireframe"
+                sketch.ViewObject.hide()
+            except Exception:
+                pass
             self.obj.WindowParts = wp
             self.obj.Width = spec["width"]
             self.obj.Height = spec["height"]

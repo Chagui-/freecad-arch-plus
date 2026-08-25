@@ -123,6 +123,17 @@ class _Constraint:
         self.args = args
 
 
+class _FakeViewObject:
+    """Enough ViewObject for the panels' base-sketch hiding: a sketch starts
+    visible and hide() flips it, exactly like a real 3D-view object."""
+
+    def __init__(self):
+        self.Visibility = True
+
+    def hide(self):
+        self.Visibility = False
+
+
 class _FakeSketch:
     """Records geometry and constraints the way Sketcher::SketchObject would,
     enough for the *Plus geometry builders to run and produce WindowParts."""
@@ -130,6 +141,7 @@ class _FakeSketch:
     def __init__(self):
         self.Geometry = []
         self.Constraints = []
+        self.ViewObject = _FakeViewObject()
 
     @property
     def GeometryCount(self):
@@ -156,6 +168,9 @@ class _FakeDocument:
         return _FakeSketch()
 
     def recompute(self):
+        pass
+
+    def removeObject(self, name):
         pass
 
 
@@ -237,6 +252,9 @@ class FakeObj:
         return self
 
     def setEditorMode(self, name, mode):
+        pass
+
+    def touch(self):
         pass
 
 
