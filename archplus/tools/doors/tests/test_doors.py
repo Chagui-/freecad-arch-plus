@@ -49,6 +49,42 @@ def test_opening_only_has_no_leaf():
     assert not _modes(flat)               # a bare hole, no operable leaf
 
 
+def test_glass_inherits_its_frames_transform():
+    # Glass panels deliberately carry no Edge/Mode: they inherit the moving
+    # frame immediately before them (the native FreeCAD convention), so
+    # sliding glass travels exactly with its leaf.
+    cases = {
+        ("Single swing", "Glass (full)"): {"InnerGlass": "Wire3"},
+        ("Sliding (single)", "Glass (full)"): {"InnerGlass": "Wire3"},
+        ("Double swing", "Glass (full)"): {"LeftGlass": "Wire3",
+                                           "RightGlass": "Wire5"},
+    }
+    for (op, style), glasses in cases.items():
+        _, flat = dg._makeDoorGeometry(_spec(operation=op, panelStyle=style))
+        g = _groups(flat)
+        for name, wires in glasses.items():
+            assert g[name] == wires, "%s/%s: %s = %r" % (op, style, name, g[name])
+
+
+def test_glass_directly_follows_its_frame():
+    # The inheritance only holds while the glass entry immediately follows
+    # the moving frame it inherits from; a fixed part inserted between them
+    # would wrongly inherit the same transform.
+    cases = {
+        ("Single swing", "Glass (full)"): [("InnerFrame", "InnerGlass")],
+        ("Sliding (single)", "Glass (full)"): [("InnerFrame", "InnerGlass")],
+        ("Double swing", "Glass (full)"): [("LeftFrame", "LeftGlass"),
+                                           ("RightFrame", "RightGlass")],
+    }
+    for (op, style), pairs in cases.items():
+        _, flat = dg._makeDoorGeometry(_spec(operation=op, panelStyle=style))
+        names = [flat[i] for i in range(0, len(flat), 5)]
+        for frame, glass in pairs:
+            assert names.index(glass) == names.index(frame) + 1, \
+                "%s/%s: %s must immediately follow %s (order: %r)" \
+                % (op, style, glass, frame, names)
+
+
 # --- edit round-trip ------------------------------------------------------
 def _panel(obj):
     p = object.__new__(dg.DoorsPlusTaskPanel)
@@ -106,3 +142,16 @@ def test_legacy_object_without_spec_falls_back():
     p = _panel(obj)
     p._loadFromObject()                   # must not raise without a stored spec
     assert p._collect()["width"] == 900.0
+
+
+def test_rebuild_hides_the_new_base_sketch():
+    # _apply swaps a freshly created sketch in as Base. A new sketch is
+    # visible by default, so the panel must hide it — otherwise every live
+    # update (and the final accept) leaves the construction sketch visible
+    # in the 3D view.
+    spec = _spec(operation="Single swing")
+    obj = _configured_obj(spec)
+    p = _panel(obj)
+    p._sketch = fake_base(z=0.0)
+    p._apply()
+    assert obj.Base.ViewObject.Visibility is False

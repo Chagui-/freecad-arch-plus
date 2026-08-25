@@ -327,7 +327,11 @@ def _makeWindowGeometry(spec):
         mode = _swingMode()
         wp.append(["SlideSash", "Frame", "Wire4,Wire5,Edge18,Mode%d" % mode,
                    "%.4f" % pt, slide_off])
-        wp.append(["SlideGlass", "Glass panel", "Wire5,Edge18,Mode%d" % mode,
+        # The glass carries no Edge/Mode: it inherits SlideSash's transform
+        # (native FreeCAD convention). An explicit mode would compute the
+        # slide from the glass's own, smaller wire and the glass would lag
+        # the sash by the sash-frame inset.
+        wp.append(["SlideGlass", "Glass panel", "Wire5",
                    "%.4f" % (pt / gla), slide_glass])
 
     elif sash_count == 1:
@@ -353,7 +357,9 @@ def _makeWindowGeometry(spec):
         mode = _swingMode()
         wp.append(["Sash", "Frame", "Wire2,Wire3,Edge%d,Mode%d" % (hinge, mode),
                    "%.4f" % pt, leaf_off])
-        wp.append(["Glass", "Glass panel", "Wire3,Edge%d,Mode%d" % (hinge, mode),
+        # The glass carries no Edge/Mode: it inherits the Sash's transform
+        # (native FreeCAD convention, see object.py buildShapes).
+        wp.append(["Glass", "Glass panel", "Wire3",
                    "%.4f" % (pt / gla), glass_off])
 
     elif sash_count == 2:
@@ -386,11 +392,13 @@ def _makeWindowGeometry(spec):
         rmode = _swingMode(1)
         wp.append(["LeftSash", "Frame", "Wire2,Wire3,Edge12,Mode%d" % lmode,
                    "%.4f" % pt, leaf_off])
-        wp.append(["LeftGlass", "Glass panel", "Wire3,Edge12,Mode%d" % lmode,
+        # Each glass carries no Edge/Mode: it inherits the transform of the
+        # sash immediately before it (native FreeCAD convention).
+        wp.append(["LeftGlass", "Glass panel", "Wire3",
                    "%.4f" % (pt / gla), glass_off])
         wp.append(["RightSash", "Frame", "Wire4,Wire5,Edge18,Mode%d" % rmode,
                    "%.4f" % pt, leaf_off])
-        wp.append(["RightGlass", "Glass panel", "Wire5,Edge18,Mode%d" % rmode,
+        wp.append(["RightGlass", "Glass panel", "Wire5",
                    "%.4f" % (pt / gla), glass_off])
 
     # Flatten WindowParts list for the property (5-element groups)
@@ -944,6 +952,14 @@ class WindowsPlusTaskPanel:
             # creates an intermediate null-shape state that can propagate to
             # the host wall during an auto-recompute).
             self.obj.Base = sketch
+            # A freshly created sketch is visible by default; keep it hidden
+            # like the placement command does (the window is what the user
+            # wants to see, not its construction sketch).
+            try:
+                sketch.ViewObject.DisplayMode = "Wireframe"
+                sketch.ViewObject.hide()
+            except Exception:
+                pass
             self.obj.WindowParts = wp
             self.obj.Width = spec["width"]
             self.obj.Height = spec["height"]

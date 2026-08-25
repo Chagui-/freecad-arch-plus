@@ -399,6 +399,12 @@ class _Window(ArchComponent.Component):
         self.sshapes = []
         self.vshapes = []
         shapes = []
+        # rotdata/slidevec deliberately persist ACROSS parts: a part without
+        # Edge/Mode (e.g. a glass panel) inherits the transform of the last
+        # moving part before it — the native FreeCAD convention, and what
+        # glass panels rely on to travel with their leaf. A part that
+        # defines its own Edge/Mode clears them below, so a fixed part must
+        # never be appended after a moving one.
         rotdata = None
         slidevec = None
         for i in range(int(len(obj.WindowParts) / 5)):
@@ -447,6 +453,11 @@ class _Window(ArchComponent.Component):
                         )
                         norm = norm.negative()
                 if hinge and omode:
+                    # A new movement is defined for this part: clear any
+                    # transform inherited from the previous part, so this
+                    # part always uses its own hinge.
+                    rotdata = None
+                    slidevec = None
                     opening = None
                     if hasattr(obj, "Opening"):
                         if obj.Opening:
