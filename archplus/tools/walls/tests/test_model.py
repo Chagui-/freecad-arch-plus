@@ -120,6 +120,28 @@ def test_claim_on_missing_edge_warns_and_is_dropped():
     assert any("Edge9" in w for w in warnings)
 
 
+def test_descendant_claim_takes_the_edge_from_its_ancestor():
+    group = _node("group", ("Edge1",))
+    short = _node("short", ("Edge1",))
+    group.children.append(short)
+    built, warnings = model.resolve_claims([group], EDGES)
+    assert built[short.node] == frozenset(["Edge1"])
+    assert built[group.node] == frozenset()
+    assert warnings == []
+
+
+def test_unrelated_duplicate_claim_still_builds_nowhere():
+    group = _node("group", ("Edge1",))
+    short = _node("short", ("Edge1",))
+    group.children.append(short)
+    other = _node("other", ("Edge1",))
+    built, warnings = model.resolve_claims([group, other], EDGES)
+    assert built[group.node] == frozenset()
+    assert built[short.node] == frozenset()
+    assert built[other.node] == frozenset()
+    assert any("Edge1" in w for w in warnings)
+
+
 # --- match_edge --------------------------------------------------------------
 
 def test_match_edge_finds_nearest_polyline():

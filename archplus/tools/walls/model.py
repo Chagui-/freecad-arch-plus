@@ -96,7 +96,13 @@ def resolve_claims(nodes, sketch_edge_names):
                 warnings.append("Claim on missing edge %s ignored" % sub)
                 continue
             owners.setdefault(sub, []).append(node)
-    conflicted = {sub for sub, ns in owners.items() if len(ns) > 1}
+    ancestors = _ancestor_sets(nodes)
+    conflicted = set()
+    for sub, ns in owners.items():
+        for i, a in enumerate(ns):
+            for b in ns[i + 1:]:
+                if a not in ancestors[b] and b not in ancestors[a]:
+                    conflicted.add(sub)
     for sub in sorted(conflicted):
         warnings.append(
             "Edge %s claimed by several segments; it builds nowhere" % sub)
@@ -151,6 +157,19 @@ def _point_seg_dist(p, a, b):
     cx, cy, cz = ax + t * abx, ay + t * aby, az + t * abz
     dx, dy, dz = px - cx, py - cy, pz - cz
     return (dx * dx + dy * dy + dz * dz) ** 0.5
+
+
+def _ancestor_sets(nodes):
+    out = {}
+
+    def walk(node, trail):
+        out[node] = set(trail)
+        for child in node.children:
+            walk(child, trail + [node])
+
+    for node in nodes:
+        walk(node, [])
+    return out
 
 
 def _walk_descendants(n):
