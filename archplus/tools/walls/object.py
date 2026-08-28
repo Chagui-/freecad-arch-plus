@@ -94,10 +94,17 @@ class _Wall:
                 seg.touch()
 
     def execute(self, obj):
+        """Root: clear the placeholder shape, report claims, and re-mark the
+        segments when hosted openings exist — Hosts-only windows reach the
+        root through no dependency or property change, so without this their
+        cuts never reach the segments. Segment: build."""
         import Part
         if self.Type == TYPE_WALL:
             obj.Shape = Part.Shape()
             self._reportClaims(obj)
+            if _hostedOpenings(obj):
+                for seg in all_segments(obj):
+                    seg.touch()
             return
         self._buildSegment(obj)
 
@@ -118,7 +125,7 @@ class _Wall:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: %d sketch edge(s) unclaimed and no rest segment "
                     "to build them\n" % len(unclaimed))
-        for win in list(getattr(obj, "Subtractions", None) or []):
+        for win in _hostedOpenings(obj):
             sub = opening_volume(win, obj)
             if sub is None:
                 continue
@@ -170,7 +177,7 @@ class _Wall:
             shape = shape.fuse(s)
         root = obj.Wall
         if root is not None:
-            for win in list(getattr(root, "Subtractions", None) or []):
+            for win in _hostedOpenings(root):
                 sub = opening_volume(win, root)
                 if sub is None or sub.Volume == 0:
                     continue
@@ -301,6 +308,19 @@ def footprint(edge, width, align, offset):
         return Part.Face(wire)
     except Exception:
         return None
+
+
+def _hostedOpenings(root):
+    """The doors/windows cutting this wall: everything listed in
+    Subtractions plus anything hosted Arch-style through a Hosts link,
+    deduplicated."""
+    out = list(getattr(root, "Subtractions", None) or [])
+    for obj in root.InList:
+        if obj in out:
+            continue
+        if root in (getattr(obj, "Hosts", None) or []):
+            out.append(obj)
+    return out
 
 
 def opening_volume(win, root):

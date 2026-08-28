@@ -186,6 +186,7 @@ def _w6_hosting(doc):
             not seg.Shape.isInside(FreeCAD.Vector(1000, 0, 500), 1e-6, True)
             and seg.Shape.isInside(FreeCAD.Vector(2000, 0, 500), 1e-6, True))
     wall.Subtractions = []
+    win.Hosts = []
     doc.recompute()
     h.check("W6 unhosting restores the segment",
             abs(seg.Shape.Volume - full) < 1e-3)
@@ -212,6 +213,16 @@ def _w6_hosting(doc):
     doc.recompute()
     h.check("W6 spanning window cuts both collinear segments",
             a.Shape.Volume < fa - 100 and b.Shape.Volume < fb - 100)
+    gb = b.Shape.Volume
+    wsk3, wp3 = wg._makeWindowGeometry(spec)
+    win3 = wo.makeWindow(wsk3, 1000, 1000, wp3, name="Win3")
+    wsk3.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(3500, 5000, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win3.Hosts = [wall2]
+    doc.recompute()
+    h.check("W6 Hosts-only window cuts its segment",
+            b.Shape.Volume < gb)
     return wall, sk
 
 
