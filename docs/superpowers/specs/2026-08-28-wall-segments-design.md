@@ -14,25 +14,26 @@ built on assumptions that contradict that workflow.
 `Components`; the sketch is effectively owned by the wall. Deriving two wall
 types (e.g. 300 mm exterior and 200 mm interior) from one floor plan means
 fighting the component system, and a sketch cannot be shared with a future
-slab or beam tool.
+slab or beam tool. This is the main issue.
 
 **One wall, one configuration.** All sketch edges are extruded into one fused
-solid with one width, height and alignment. Per-segment variation exists only
-as `OverrideWidth`/`OverrideAlign`/`OverrideOffset` — plain lists indexed by
-edge number, which break when the sketch's edge numbering shifts (they are
-toponaming-tolerant only with the SketchArch add-on, whose
-`ArchSketchData`/`ArchSketchEdges`/`ArchSketchPropertySet` machinery is dead
-weight without it).
-
-**Hosting through math, not geometry.** A door or window cuts its opening by
-computing a subvolume from the host wall's width probing — fragile enough
-that ArchPlus's own copy admits it (`archplus/tools/windows/object.py:782`):
-the robust approach is to extrude each segment and punch the hole in the
-exact segment before fusing.
+solid with one width, height and alignment. Varying a single setting — say
+the width of one run — means creating another wall with another base sketch,
+so real floor plans degenerate into multiple interdependent sketches, one
+per width. Arch's answer, the `OverrideWidth`/`OverrideAlign`/`OverrideOffset`
+lists indexed by edge number, breaks when the sketch's edge numbering shifts
+(toponaming-tolerant only with the SketchArch add-on and its
+`ArchSketchData`/`ArchSketchEdges`/`ArchSketchPropertySet` machinery).
 
 **Dead surface.** Much of Arch Wall is deprecated or dormant — `Refine` is
 commented out, block generation supports a single wire only, and a long tail
 of properties exists for workflows ArchPlus does not have.
+
+**Editing through the data viewer.** Wall configuration happens in FreeCAD's
+property data view: long property lists, raw values, and conventions like
+"0 means inherit" that the user must learn. ArchPlus already replaces that
+style with focused task panels — reference diagrams, descriptions, live
+preview — for windows, doors and stairs; walls deserve the same.
 
 This spec adds an ArchPlus Wall that references a sketch without owning it,
 builds one wall segment per claimed sketch edge as real objects in the tree,
