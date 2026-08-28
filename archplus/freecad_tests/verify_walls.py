@@ -98,8 +98,29 @@ def _w3_sketch_edits(doc):
     return wall, sk
 
 
+def _w4_panel(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.walls import gui as walls_gui
+    panel = walls_gui.WallPlusTaskPanel(wall)
+    panel._loadFromObject()
+    from archplus.common import widgets
+    widgets.set_mm(panel.width, 450.0)
+    panel.align.setCurrentText("Left")
+    panel._apply()
+    doc.recompute()
+    h.check("W4 panel edits reach the wall and its child",
+            abs(wall.Width.Value - 450.0) < 1e-9
+            and wall.Align == "Left"
+            and abs(wall.Group[0].Shape.Volume
+                    - _expected_volume(450, 2800, [4000])) < 1e-3)
+    panel.reject()
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
     _w2_inheritance(doc)
     _w3_sketch_edits(doc)
+    _w4_panel(doc)

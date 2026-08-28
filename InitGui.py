@@ -20,7 +20,7 @@ def _injectIntoBIM():
 
     toolbar = "ArchPlus"
     commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows",
-                "ArchPlus_PartsLibrary", "ArchPlus_WalkThrough"]
+                "ArchPlus_PartsLibrary", "ArchPlus_WalkThrough", "ArchPlus_Walls"]
 
     wb = Gui.getWorkbench("BIMWorkbench")
     if wb is None:
@@ -41,6 +41,7 @@ def _injectIntoBIM():
         import archplus.tools.windows.gui  # noqa: F401
         import archplus.tools.partslib.gui  # noqa: F401
         import archplus.tools.walk.gui  # noqa: F401
+        import archplus.tools.walls.gui  # noqa: F401
         workbench.appendToolbar(toolbar, commands)
         workbench.appendMenu(toolbar, commands)
 
