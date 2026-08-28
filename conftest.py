@@ -298,6 +298,9 @@ class FakeNum:
     def setMinimum(self, _):
         pass
 
+    def setEnabled(self, _):
+        pass
+
 
 class FakeCheck:
     def __init__(self, value=False):

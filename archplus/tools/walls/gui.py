@@ -297,19 +297,217 @@ def showSegmentPanel(obj):
 
 
 class WallSegmentTaskPanel:
-    """Edit panel for one segment: overrides with the inherit-checkbox
-    pattern plus a read-only claims summary. Implemented in Task 5; this
-    stub lets Task 4's imports and _ensureVP wiring stay complete."""
+    """Edit panel for one segment: W/H/Align overrides with the
+    inherit-checkbox pattern, plus a read-only claims summary."""
 
     def __init__(self, obj=None):
         self.obj = obj
+        self.editing = obj is not None
+        self._building = True
+
         self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Edit Segment")
+        if os.path.exists(ICON):
+            self.form.setWindowIcon(QtGui.QIcon(ICON))
+        outer = QtGui.QVBoxLayout(self.form)
+
+        ovBox = QtGui.QGroupBox("Override")
+        ovV = QtGui.QVBoxLayout(ovBox)
+        ovV.addWidget(widgets.ref_image(_ICON_DIR, "dimensions_ref_plan",
+                                        QtCore.QSize(290, 110)))
+        ovForm = QtGui.QFormLayout()
+        self.overrideW = QtGui.QCheckBox("W · Width")
+        self.overrideH = QtGui.QCheckBox("H · Height")
+        self.width = widgets.length_input(0)
+        self.height = widgets.length_input(0)
+        self.align = QtGui.QComboBox()
+        self.align.addItems(["Inherit", "Center", "Left", "Right"])
+        ovForm.addRow(self.overrideW, self.width)
+        ovV.addWidget(_desc("Checked = this segment overrides the wall default."))
+        ovForm.addRow(self.overrideH, self.height)
+        ovV.addWidget(_desc("Inherited from the wall/group. Check to override, "
+                            "pre-filled with the inherited value."))
+        ovForm.addRow("Align", self.align)
+        ovV.addLayout(ovForm)
+        outer.addWidget(ovBox)
+
+        clBox = QtGui.QGroupBox("Claims")
+        clV = QtGui.QVBoxLayout(clBox)
+        self.stats = QtGui.QLabel()
+        self.stats.setStyleSheet("color: #2e7d32;")
+        clV.addWidget(self.stats)
+        clV.addWidget(_desc("Split / reassign edges with \"Split from "
+                            "selection…\" in the 3D view. Rest and Sketch are "
+                            "set in the wall panel."))
+        outer.addWidget(clBox)
+
+        self._timer = QtCore.QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(200)
+        self._timer.timeout.connect(self._apply)
+
+        for w in (self.width, self.height):
+            w.valueChanged.connect(self._schedule)
+        self.align.currentIndexChanged.connect(self._schedule)
+        self.overrideW.toggled.connect(self._onOverrideW)
+        self.overrideH.toggled.connect(self._onOverrideH)
+
+        self._building = False
+        self._loadFromObject()
+        self._updateStats()
+
+    def _schedule(self, *args):
+        if not self._building and self.obj is not None:
+            self._timer.start()
+
+    def _inherited(self):
+        try:
+            return walls_object.effectiveValues(self.obj)
+        except Exception:
+            return dict(model.DEFAULT_CONFIG)
+
+    def _onOverrideW(self, checked):
+        if self._building or self.obj is None:
+            return
+        if checked:
+            widgets.set_mm(self.width, self._inherited()["Width"])
+        else:
+            self.obj.Width = 0
+            self._loadFromObject()
+
+    def _onOverrideH(self, checked):
+        if self._building or self.obj is None:
+            return
+        if checked:
+            widgets.set_mm(self.height, self._inherited()["Height"])
+        else:
+            self.obj.Height = 0
+            self._loadFromObject()
+
+    def _apply(self):
+        try:
+            vals = self._collect()
+            o = self.obj
+            o.Width = "%s mm" % vals["width"]
+            o.Height = "%s mm" % vals["height"]
+            o.Align = vals["align"]
+            o.recompute()
+        except Exception as exc:
+            FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
+
+    def _collect(self):
+        return dict(
+            width=widgets.mm(self.width) if self.overrideW.isChecked() else 0.0,
+            height=widgets.mm(self.height) if self.overrideH.isChecked() else 0.0,
+            align=self.align.currentText(),
+        )
+
+    def _loadFromObject(self):
+        self._building = True
+        o = self.obj
+        w = getattr(o, "Width", None)
+        wv = w.Value if w is not None else 0.0
+        self.overrideW.setChecked(wv != 0.0)
+        inherited = self._inherited()
+        widgets.set_mm(self.width, wv if wv else inherited["Width"])
+        h = getattr(o, "Height", None)
+        hv = h.Value if h is not None else 0.0
+        self.overrideH.setChecked(hv != 0.0)
+        widgets.set_mm(self.height, hv if hv else inherited["Height"])
+        self.align.setCurrentText(getattr(o, "Align", "Inherit"))
+        self.width.setEnabled(self.overrideW.isChecked())
+        self.height.setEnabled(self.overrideH.isChecked())
+        self._building = False
+
+    def _updateStats(self):
+        try:
+            o = self.obj
+            root = walls_object.wall_root(o) or o
+            if root.Base is None:
+                self.stats.setText("")
+                return
+            nodes = [walls_object._claimNode(n) for n in root.Group
+                     if walls_object.is_segment(n)]
+            built, _warnings = model.resolve_claims(
+                nodes, walls_object._sketchEdgeNames(root.Base))
+            mine = built.get(o, frozenset())
+            auto = len(mine)
+            self.stats.setText("%d edges claimed · %d auto" % (auto, auto))
+        except Exception:
+            self.stats.setText("")
 
     def accept(self):
-        return True
+        self._apply()
+        if FreeCAD.ActiveDocument is not None:
+            FreeCAD.ActiveDocument.recompute()
 
     def reject(self):
-        return True
+        pass
 
 
 FreeCADGui.addCommand("ArchPlus_Walls", WallPlusCommand())
+
+
+def _claimedEdgePolylines(segment):
+    """[(subname, [global points])] for each claimed edge, for matching."""
+    sketch = segment.Base
+    out = []
+    if sketch is None or not hasattr(sketch, "Shape"):
+        return out
+    for sub in sorted(segment.Proxy._claimedEdges(segment)):
+        try:
+            edge = sketch.Shape.getElement(sub)
+            edge.transformShape(sketch.Placement.toMatrix())
+            pts = [edge.Vertexes[0].Point]
+            for p in edge.discretize(16)[1:]:
+                pts.append(p)
+            out.append((sub, pts))
+        except Exception:
+            continue
+    return out
+
+
+class WallSplitCommand:
+    def GetResources(self):
+        return {"Pixmap": ICON, "MenuText": "Split segment",
+                "ToolTip": "Move selected wall faces into a new segment group"}
+
+    def IsActive(self):
+        for sel in FreeCADGui.Selection.getSelectionEx():
+            if walls_object.is_segment(sel.Object):
+                return True
+        return False
+
+    def Activated(self):
+        from archplus.tools.walls import object as walls_object
+        doc = FreeCAD.ActiveDocument
+        doc.openTransaction("Split wall segment")
+        for sel in FreeCADGui.Selection.getSelectionEx():
+            obj = sel.Object
+            if not walls_object.is_segment(obj):
+                continue
+            if sel.HasSubObjects:
+                picked = []
+                for name in sel.SubElementNames:
+                    if not name.startswith("Face"):
+                        continue
+                    try:
+                        face = obj.Shape.getElement(name)
+                    except Exception:
+                        continue
+                    idx = model.match_edge(
+                        [pts for _sub, pts in _claimedEdgePolylines(obj)],
+                        tuple(face.CenterOfGravity), tol=5.0)
+                    if idx is not None:
+                        picked.append(_claimedEdgePolylines(obj)[idx][0])
+                if picked:
+                    walls_object.splitSegment(obj, sorted(set(picked)))
+            else:
+                subs = [sub for sub in obj.Proxy._claimedEdges(obj)]
+                if subs:
+                    walls_object.splitSegment(obj, subs)
+        doc.recompute()
+        doc.commitTransaction()
+
+
+FreeCADGui.addCommand("ArchPlus_WallSplit", WallSplitCommand())

@@ -118,9 +118,47 @@ def _w4_panel(doc):
     panel.reject()
 
 
+def _w5_split(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge1"], name="exterior")
+    doc.recompute()
+    new = [o for o in wall.Group if o is not rest][0]
+    h.check("W5 split moved the claim",
+            abs(new.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    h.check("W5 source keeps the remainder",
+            abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    nested = walls_object.makeSegment(new, name="short")
+    nested.Edges = [(sk, ("Edge2",))]
+    nested.Height = "2200 mm"
+    doc.recompute()
+    h.check("W5 nesting after split inherits the group",
+            abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3
+            and rest.Shape.Volume < 1e-3
+            and abs(new.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    wall.addObject(new)
+    doc.recompute()
+    h.check("W5 re-parenting preserves geometry",
+            abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3)
+    from archplus.tools.walls import gui as walls_gui
+    from archplus.tools.walls import model
+    polys = walls_gui._claimedEdgePolylines(new)
+    picked = model.match_edge([pts for _sub, pts in polys],
+                              (2000.0, 0.0, 0.0), tol=5.0)
+    h.check("W5 split helper matches a face pick to its edge",
+            len(polys) == 1 and picked == 0 and polys[picked][0] == "Edge1")
+    return wall, sk
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
     _w2_inheritance(doc)
     _w3_sketch_edits(doc)
     _w4_panel(doc)
+    _w5_split(doc)
