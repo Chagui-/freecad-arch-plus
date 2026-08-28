@@ -155,6 +155,93 @@ def _w5_split(doc):
     return wall, sk
 
 
+def _w6_hosting(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    full = seg.Shape.Volume
+
+    from archplus.tools.windows import gui as wg
+    from archplus.tools.windows import object as wo
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000, 1000, wp, name="Win")
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    h.check("W6 hosted window cuts its segment",
+            seg.Shape.Volume < full - 1000 * 300 * 1000 * 0.5)
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    wg._recomputeWithHosts(win)
+    h.check("W6 moved window re-cuts its segment",
+            not seg.Shape.isInside(FreeCAD.Vector(1000, 0, 500), 1e-6, True)
+            and seg.Shape.isInside(FreeCAD.Vector(2000, 0, 500), 1e-6, True))
+    wall.Subtractions = []
+    doc.recompute()
+    h.check("W6 unhosting restores the segment",
+            abs(seg.Shape.Volume - full) < 1e-3)
+
+    sk2 = _line_sketch(doc, [
+        ((0, 5000), (2000, 5000), False),
+        ((2000, 5000), (4000, 5000), False),
+    ], name="SplitRun")
+    wall2 = walls_object.makeWall(doc, sketch=sk2, name="Wall2")
+    doc.recompute()
+    a, b = wall2.Group[0], walls_object.makeSegment(wall2, name="b")
+    a.Edges = [(sk2, ("Edge1",))]
+    a.Rest = False
+    b.Edges = [(sk2, ("Edge2",))]
+    doc.recompute()
+    fa, fb = a.Shape.Volume, b.Shape.Volume
+    wsk2, wp2 = wg._makeWindowGeometry(spec)
+    win2 = wo.makeWindow(wsk2, 1000, 1000, wp2, name="Win2")
+    wsk2.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 5000, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win2.Hosts = [wall2]
+    wall2.Subtractions = [win2]
+    doc.recompute()
+    h.check("W6 spanning window cuts both collinear segments",
+            a.Shape.Volume < fa - 100 and b.Shape.Volume < fb - 100)
+    return wall, sk
+
+
+def _w7_reload(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    walls_object.splitSegment(wall.Group[0], ["Edge1"], name="exterior")
+    doc.recompute()
+    import os
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), "archplus_walls_reload.FCStd")
+    if os.path.exists(path):
+        os.remove(path)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    doc2 = FreeCAD.openDocument(path)
+    doc2.recompute()
+    wall2 = doc2.getObject("Wall")
+    ok = wall2 is not None and len(wall2.Group) == 2
+    for seg in (wall2.Group if ok else []):
+        ok = ok and abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+        ok = ok and seg.Proxy.Type == "WallSegment" and seg.Wall is wall2
+    h.check("W7 reload preserves tree, claims and inheritance", ok)
+    FreeCAD.closeDocument(doc2.Name)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -162,3 +249,6 @@ def run():
     _w3_sketch_edits(doc)
     _w4_panel(doc)
     _w5_split(doc)
+    _w6_hosting(doc)
+    doc = h.fresh_doc()
+    _w7_reload(doc)

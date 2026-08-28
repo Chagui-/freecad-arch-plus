@@ -44,7 +44,8 @@ class _Wall:
                                 "Extra distance between the baseline and the wall "
                                 "(Left/Right only)")
             if "Subtractions" not in pl:
-                obj.addProperty("App::PropertyLinkList", "Subtractions", "Wall",
+                obj.addProperty("App::PropertyLinkListHidden", "Subtractions",
+                                "Wall",
                                 "Hosted doors/windows; each segment cuts the ones "
                                 "intersecting it")
             if "Tag" not in pl:
@@ -303,10 +304,17 @@ def footprint(edge, width, align, offset):
 
 
 def opening_volume(win, root):
-    """The subtraction volume for a hosted door/window (or None)."""
+    """The subtraction volume for a hosted door/window (or None).
+
+    Segments recompute before their hosts' windows in one recompute pass, so
+    the window's base sketch can still be unbuilt when this runs; recompute it
+    on demand or the hole wires are not there yet."""
     proxy = getattr(win, "Proxy", None)
     if proxy is not None and hasattr(proxy, "getSubVolume"):
         try:
+            base = getattr(win, "Base", None)
+            if base is not None and "Touched" in base.State:
+                base.recompute()
             return proxy.getSubVolume(win, host=root)
         except Exception:
             return None

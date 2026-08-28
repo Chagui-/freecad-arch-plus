@@ -474,15 +474,19 @@ def _recomputeWithHosts(obj):
     so one recompute leaves the wall still cutting the window's previous shape
     and position — the change only appears after some later recompute. Touching
     the hosts and recomputing again makes the wall opening follow the window
-    now."""
+    now. Wall segments hang off their root through a dependency-free hidden
+    link, so they are touched explicitly or their opening cuts go stale."""
     if obj is None:
         return
     doc = obj.Document
     doc.recompute()
     touched = False
+    from archplus.tools.walls import object as walls_object
     for h in (getattr(obj, "Hosts", None) or []):
         try:
             h.touch()
+            for seg in walls_object.all_segments(h):
+                seg.touch()
             touched = True
         except Exception:
             pass
@@ -832,7 +836,10 @@ class WindowsPlusTaskPanel:
         zs = []
         for h in (getattr(self.obj, "Hosts", None) or []):
             try:
-                zs.append(h.Shape.BoundBox.ZMin)
+                if getattr(h, "Shape", None) is not None and not h.Shape.isNull():
+                    zs.append(h.Shape.BoundBox.ZMin)
+                elif getattr(h, "Base", None) is not None:
+                    zs.append(h.Base.Placement.Base.z)
             except Exception:
                 pass
         return min(zs) if zs else None
@@ -1152,6 +1159,8 @@ def repositionWindow(window, reopen=False):
             if state["face"] is not None:
                 import Draft
                 host = state["face"][0]
+                if Draft.getType(host) == "WallSegment":
+                    host = getattr(host, "Wall", host)
                 if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                     window.Hosts = [host]
             # Moving the sketch placement touches the window but NOT its host,
@@ -1317,6 +1326,8 @@ class WindowsPlusCommand:
         # Try to auto-host if a wall was clicked
         if self.baseFace is not None:
             host = self.baseFace[0]
+            if Draft.getType(host) == "WallSegment":
+                host = getattr(host, "Wall", host)
             if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                 window.Hosts = [host]
 
