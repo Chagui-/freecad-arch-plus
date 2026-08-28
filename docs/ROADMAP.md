@@ -1,5 +1,11 @@
 # Roadmap
 
+## Walls
+
+- [x] Shipped — sketch-based segmented walls with inherited overrides, rest
+  segment, hosted doors and windows, and interactive splitting (see
+  [TOOLS.md](TOOLS.md#walls)).
+
 ## Stairs
 
 - [ ] Add balusters and extend railing support to turns (railing links and
