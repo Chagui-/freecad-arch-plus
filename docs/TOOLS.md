@@ -4,10 +4,11 @@ User guide for the enhanced **Stairs**, **Doors**, **Windows** and **Walls**
 tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md); for the
 road ahead see [ROADMAP.md](ROADMAP.md).
 
-Each geometry engine is a modifiable copy of a native FreeCAD module —
-`ArchStairs` for stairs and `ArchWindow` for doors and windows — so every
-native feature (IFC export, hosting/opening cuts, presets, …) is preserved
-while new behaviour is added on top, without affecting the built-in tools.
+Stairs, doors and windows are each a modifiable copy of a native FreeCAD
+module — `ArchStairs` and `ArchWindow` respectively — so every native feature
+(IFC export, hosting/opening cuts, presets, …) is preserved while new
+behaviour is added on top, without affecting the built-in tools. Walls is a
+from-scratch engine built around a shared sketch.
 
 ## Stairs
 
@@ -137,8 +138,9 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   the hosted openings.
 - **Nesting with inherited overrides** — segments can be grouped and
   sub-grouped; a parent's settings flow down to its children unless they
-  override. A checkbox left off (value `0`/`Inherit`) means "take it from the
-  parent", and the panel shows the inherited value next to each override.
+  override. Width and height are overridden with a checkbox (unchecked =
+  inherit; the panel pre-fills the field with the inherited value), align
+  with an **Inherit** option in its combo.
 - **Rest segment** — an optional segment that auto-claims every sketch edge no
   other segment claims (at most one per wall, a direct child of the wall, set
   from the Edit Wall panel). New sketch edges land in the rest segment
@@ -158,12 +160,13 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   unless they override.
 - **Sketch & claims** — the base sketch, which segment (if any) is the rest
   segment, and a live count of claimed vs. unclaimed sketch edges.
-- **Metadata** — tag / mark and description.
+- **Metadata** — tag / mark.
 
 ### Edit Segment panel
 
-- **Overrides** — width, height and align with per-field checkboxes; an
-  unchecked field inherits from the parent (the inherited value is shown).
+- **Overrides** — width and height with per-field checkboxes (unchecked =
+  inherit, the field shows the inherited value); align with an **Inherit**
+  option in its combo.
 - **Claims** — a read-only summary of the sketch edges the segment claims.
 
 ### Usage
@@ -180,9 +183,9 @@ to move them into a new segment group.
   any two touching solids in FreeCAD).
 - Re-parenting segments in the tree needs a recompute before the geometry
   rebuilds.
-- **Split segment** matches faces whose centroid lies on a claimed edge:
-  side faces of thick walls may not map, so pick the wall end/bottom face or
-  the face containing the baseline.
+- **Split segment** matches faces whose centre lies on the baseline (within
+  a 5 mm tolerance) — practically, the wall's bottom face when centred on
+  the sketch line. Picking a side or end face does nothing.
 
 ## Regenerating the images
 
