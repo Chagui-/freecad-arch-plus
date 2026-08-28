@@ -52,9 +52,10 @@ One class, two roles, arbitrary nesting.
   the sketch stays free for other walls and future tools. Construction
   geometry cannot be claimed: Sketcher excludes it from `Shape` and its
   subnames (verified).
-- **Hosting is per segment.** Doors and windows host on the `WallSegment`
-  object; that segment's `execute()` subtracts the hosted volume from its own
-  extrusion — the exact-segment approach from the TODO above.
+- **Hosting resolves at the wall level.** Doors and windows host on the wall
+  root; each segment's `execute()` subtracts the openings that intersect its
+  own extrusion — the exact-segment approach from the TODO above, without the
+  "opening spans two segments" gap (see §7).
 
 ## 3. Objects and the tree
 
@@ -72,13 +73,13 @@ Wall "Ground floor"            width=300, height=2800, align=Center, offset=0
 | | `Height` | `App::PropertyLength` | default height, 2800 mm |
 | | `Align` | `App::PropertyEnumeration` | `Center`/`Left`/`Right`, default `Center` |
 | | `Offset` | `App::PropertyDistance` | baseline offset, default 0 (wall-level only in v1) |
+| | `Subtractions` | `App::PropertyLinkList` | hosted doors/windows; each segment cuts the ones intersecting it (§7) |
 | WallSegment | `Base` | `App::PropertyLink` | the sketch — Arch-compatible name, non-owning; auto-copied from the parent at creation |
 | | `Edges` | `App::PropertyLinkSubList` | claimed sketch subnames (e.g. `Edge1`, `Edge3`) |
 | | `Rest` | `App::PropertyBool` | this child claims *all unclaimed edges* |
 | | `Width` | `App::PropertyLength` | `0 = inherit` |
 | | `Height` | `App::PropertyLength` | `0 = inherit` |
 | | `Align` | `App::PropertyEnumeration` | `Inherit`/`Left`/`Right`/`Center` |
-| | `Subtractions` | `App::PropertyLinkList` | hosted doors/windows, cut in `execute()` |
 
 Type strings: `"Wall"` (root), `"WallSegment"` (children).
 
@@ -146,21 +147,41 @@ Dropped or deferred Arch Wall properties:
    width/align/offset (Arch semantics: Left/Right/Center around the
    baseline), close into a wire, extrude along the sketch normal by height.
 4. Fuse the per-edge solids into one shape.
-5. Subtract each `Subtractions` member's shape.
+5. Subtract the wall's hosted openings that intersect this segment (bbox
+   pre-check + OCC `common` test against the wall root's `Subtractions`).
 6. Assign the result; empty claims → empty shape.
 
 ## 7. Hosting (v1)
 
-- Doors/windows accept `WallSegment` as host: the host-type check in
-  `archplus/tools/windows/object.py` (and the shared door path) is extended
-  from `("Wall", "Structure", "Roof")` to include `"WallSegment"`.
-- Hosting a window adds it to the segment's `Subtractions`; the window's
-  existing re-cut-on-edit machinery (windows `gui.py`) recomputes the segment
-  after the window changes.
-- When the host is a `WallSegment`, the width-probing subvolume math is
-  bypassed: the segment subtracts the window's shape directly (the
-  per-segment hole the TODO asks for).
-- The root `Wall` cannot host (it has no shape).
+Openings resolve at the wall level, so an opening spanning two segments is
+cut from both (a window across a split run or a corner junction). A fused
+segment solid is a plain OCC solid — Boolean subtraction is unaffected by
+fusing; the fragile part of Arch's hosting was the width-probing subvolume
+math, which this design replaces entirely.
+
+- **Hosting targets the Wall root.** `Hosts = [wall]`; the root's
+  `Subtractions` holds the doors/windows. Deleting a segment never orphans an
+  opening.
+- **Per-segment cutting at recompute.** Each segment subtracts only the
+  openings whose volumes intersect its own extrusion: cheap bounding-box
+  pre-check, then an OCC `common` test. No user action needed for an opening
+  spanning segments.
+- **Placement unchanged**: pick a segment face in the 3D view; the tool walks
+  up to the wall root for the host.
+- **Door/window code**: the host-type check in `archplus/tools/windows/object.py`
+  (and the shared door path) is extended to accept the wall; the width-probing
+  path is bypassed — the opening's actual shape is what gets subtracted. The
+  root exposes the Arch-ish interface (`Width`/`Height`/`Align`/`Base`), so
+  the existing re-cut-on-edit machinery (windows `gui.py`) keeps working.
+- **Warning**: an opening that intersects no segment (floating in a gap)
+  reports "opening not applied" once.
+
+**Known limitation — sibling joint artifacts.** Two collinear edges placed in
+*different* groups butt with coplanar end faces and can flicker (z-fighting)
+in the 3D view — cosmetic only, the same artifact as any two touching solids
+in FreeCAD. Within one group it cannot happen (fusing merges the faces), and
+T-junctions between groups are unaffected. Accepted for v1; documented in
+`docs/TOOLS.md`.
 
 ## 8. Workflow and UI
 
@@ -250,7 +271,10 @@ host window → save/reload):
    follow, new edge lands in rest, deleted edge drops.
 5. Host a window on a segment: the segment's volume shrinks by the opening;
    unhosting restores it.
-6. Save/reload: tree, claims and inheritance survive.
+6. Host a window across a split run (two collinear segments): both segments
+   are cut, each exactly in its half; an opening intersecting nothing reports
+   "opening not applied".
+7. Save/reload: tree, claims and inheritance survive.
 
 ## 11. Scope boundaries
 
