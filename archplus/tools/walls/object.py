@@ -72,13 +72,17 @@ class _Wall:
             if "Align" not in pl:
                 obj.addProperty("App::PropertyEnumeration", "Align", "Wall",
                                 "Inherit = use the wall/group alignment")
-                obj.Align = ["Inherit", "Center", "Left", "Right"]
+                obj.Align = ["Inherit", "Left", "Right", "Center"]
                 obj.Align = "Inherit"
 
     def onChanged(self, obj, prop):
         if prop == "Base" and obj.Base is not None and self.Type == TYPE_WALL:
             for seg in all_segments(obj):
                 seg.Base = obj.Base
+        if prop == "Group":
+            root = wall_root(obj) or obj
+            for seg in all_segments(root):
+                seg.touch()
         if prop in ("Edges", "Rest"):
             root = wall_root(obj)
             if root is not None:
@@ -118,7 +122,7 @@ class _Wall:
         for w in warnings:
             FreeCAD.Console.PrintWarning("ArchPlus: %s\n" % w)
         claimed = set().union(*built.values()) if built else set()
-        has_rest = any(getattr(n, "Rest", False) for n in nodes)
+        has_rest = any(n.rest for n in nodes)
         if not has_rest:
             unclaimed = [n for n in names if n not in claimed]
             if unclaimed:
@@ -157,15 +161,18 @@ class _Wall:
         if height <= 0:
             obj.Shape = empty
             return
-        normal = sketch.Placement.Rotation.multVec(Vector(0, 0, 1))
+        normal = sketch.getGlobalPlacement().Rotation.multVec(Vector(0, 0, 1))
         solids = []
         for sub in subnames:
             try:
                 edge = sketch.Shape.getElement(sub)
             except Exception:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: sketch edge '%s' could not be read; skipped\n"
+                    % sub)
                 continue
-            edge.transformShape(sketch.Placement.toMatrix())
-            face = footprint(edge, cfg["Width"], cfg["Align"], cfg["Offset"])
+            face = footprint(edge, cfg["Width"], cfg["Align"], cfg["Offset"],
+                             normal)
             if face is None:
                 continue
             solids.append(face.extrude(normal * height))
@@ -267,12 +274,13 @@ def _propValue(obj, name):
         return None
 
 
-def _offset2d(edge, dist):
+def _offset2d(edge, dist, normal):
     """Offset a sketch edge within its plane.
 
     makeOffset2D refuses bare straight edges (a lone line segment does not
-    define a unique plane), so build that case directly: the offset runs
-    left of the travel direction, matching makeOffset2D's convention.
+    define a unique plane), so build that case directly: `normal` is the
+    sketch plane's global unit normal and the offset runs left of the travel
+    direction, matching makeOffset2D's convention.
     """
     if dist == 0:
         return edge.copy()
@@ -283,22 +291,22 @@ def _offset2d(edge, dist):
     p1 = edge.Vertexes[0].Point
     p2 = edge.Vertexes[-1].Point
     d = (p2 - p1).normalize()
-    perp = Vector(0, 0, 1).cross(d)
+    perp = normal.cross(d)
     import Part
     return Part.Edge(Part.LineSegment(p1 + perp * dist, p2 + perp * dist))
 
 
-def footprint(edge, width, align, offset):
+def footprint(edge, width, align, offset, normal):
     """The wall footprint face for one sketch edge, in global coords."""
     import Part
     try:
         if align == "Center":
-            a = _offset2d(edge, offset - width / 2.0)
-            b = _offset2d(edge, offset + width / 2.0)
+            a = _offset2d(edge, offset - width / 2.0, normal)
+            b = _offset2d(edge, offset + width / 2.0, normal)
         else:
-            side = 1.0 if align == "Right" else -1.0
-            a = _offset2d(edge, side * offset)
-            b = _offset2d(edge, side * (offset + width))
+            side = -1.0 if align == "Right" else 1.0
+            a = _offset2d(edge, side * offset, normal)
+            b = _offset2d(edge, side * (offset + width), normal)
         pa1, pa2 = a.Vertexes[0].Point, a.Vertexes[-1].Point
         pb1, pb2 = b.Vertexes[0].Point, b.Vertexes[-1].Point
         if pa1.distanceToPoint(pb1) > pa1.distanceToPoint(pb2):

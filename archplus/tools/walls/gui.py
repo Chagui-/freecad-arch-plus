@@ -147,6 +147,7 @@ class WallPlusTaskPanel:
         self._building = False
         if self.obj is not None:
             self._loadFromObject()
+            FreeCAD.ActiveDocument.openTransaction("Edit Wall")
         else:
             self._startPreview()
         self._updateCombos()
@@ -167,7 +168,7 @@ class WallPlusTaskPanel:
             o.Tag = vals["tag"]
             if vals["base"] is not None:
                 o.Base = vals["base"]
-            o.recompute()
+            FreeCAD.ActiveDocument.recompute()
             self._updateStats()
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
@@ -184,12 +185,14 @@ class WallPlusTaskPanel:
         )
 
     def _loadFromObject(self):
+        self._building = True
         o = self.obj
         widgets.set_mm(self.width, o.Width.Value)
         widgets.set_mm(self.height, o.Height.Value)
         self.align.setCurrentText(o.Align)
         widgets.set_mm(self.offset, o.Offset.Value)
         self.tag.setText(getattr(o, "Tag", ""))
+        self._building = False
 
     def _updateCombos(self):
         doc = FreeCAD.ActiveDocument
@@ -250,6 +253,7 @@ class WallPlusTaskPanel:
             pass
 
     def accept(self):
+        self._timer.stop()
         self._apply()
         vals = self._collect()
         if vals["rest"] is not None:
@@ -261,15 +265,20 @@ class WallPlusTaskPanel:
                 if walls_object.is_segment(o):
                     o.Rest = False
         if FreeCAD.ActiveDocument is not None:
-            if self.editing:
-                FreeCAD.ActiveDocument.recompute()
-            else:
-                FreeCAD.ActiveDocument.commitTransaction()
-                FreeCAD.ActiveDocument.recompute()
+            FreeCAD.ActiveDocument.commitTransaction()
+            FreeCAD.ActiveDocument.recompute()
+        self.obj = None
+        FreeCADGui.Control.closeDialog()
+        return True
 
     def reject(self):
+        self._timer.stop()
+        self.obj = None
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.abortTransaction()
+            FreeCAD.ActiveDocument.recompute()
+        FreeCADGui.Control.closeDialog()
+        return True
 
 
 class WallPlusCommand:
@@ -321,7 +330,7 @@ class WallSegmentTaskPanel:
         self.width = widgets.length_input(0)
         self.height = widgets.length_input(0)
         self.align = QtGui.QComboBox()
-        self.align.addItems(["Inherit", "Center", "Left", "Right"])
+        self.align.addItems(["Inherit", "Left", "Right", "Center"])
         ovForm.addRow(self.overrideW, self.width)
         ovV.addWidget(_desc("Checked = this segment overrides the wall default."))
         ovForm.addRow(self.overrideH, self.height)
@@ -355,6 +364,8 @@ class WallSegmentTaskPanel:
         self._building = False
         self._loadFromObject()
         self._updateStats()
+        if self.editing:
+            FreeCAD.ActiveDocument.openTransaction("Edit Segment")
 
     def _schedule(self, *args):
         if not self._building and self.obj is not None:
@@ -391,7 +402,7 @@ class WallSegmentTaskPanel:
             o.Width = "%s mm" % vals["width"]
             o.Height = "%s mm" % vals["height"]
             o.Align = vals["align"]
-            o.recompute()
+            FreeCAD.ActiveDocument.recompute()
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
@@ -431,18 +442,30 @@ class WallSegmentTaskPanel:
             built, _warnings = model.resolve_claims(
                 nodes, walls_object._sketchEdgeNames(root.Base))
             mine = built.get(o, frozenset())
-            auto = len(mine)
-            self.stats.setText("%d edges claimed · %d auto" % (auto, auto))
+            auto = len(mine) if getattr(o, "Rest", False) else 0
+            self.stats.setText("%d edges claimed · %d auto"
+                               % (len(mine), auto))
         except Exception:
             self.stats.setText("")
 
     def accept(self):
+        self._timer.stop()
         self._apply()
         if FreeCAD.ActiveDocument is not None:
+            FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
+        self.obj = None
+        FreeCADGui.Control.closeDialog()
+        return True
 
     def reject(self):
-        pass
+        self._timer.stop()
+        self.obj = None
+        if FreeCAD.ActiveDocument is not None:
+            FreeCAD.ActiveDocument.abortTransaction()
+            FreeCAD.ActiveDocument.recompute()
+        FreeCADGui.Control.closeDialog()
+        return True
 
 
 FreeCADGui.addCommand("ArchPlus_Walls", WallPlusCommand())
@@ -457,7 +480,6 @@ def _claimedEdgePolylines(segment):
     for sub in sorted(segment.Proxy._claimedEdges(segment)):
         try:
             edge = sketch.Shape.getElement(sub)
-            edge.transformShape(sketch.Placement.toMatrix())
             pts = [edge.Vertexes[0].Point]
             for p in edge.discretize(16)[1:]:
                 pts.append(p)

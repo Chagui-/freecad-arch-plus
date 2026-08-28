@@ -107,8 +107,7 @@ def resolve_claims(nodes, sketch_edge_names):
         warnings.append(
             "Edge %s claimed by several segments; it builds nowhere" % sub)
 
-    claimed_set = set(owners) - conflicted
-    rest_edges = sketch_set - claimed_set if rest_nodes else frozenset()
+    rest_edges = sketch_set - set(owners) if rest_nodes else frozenset()
     rest_node = rest_nodes[0] if rest_nodes else None
 
     built = {}

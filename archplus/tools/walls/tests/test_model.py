@@ -81,6 +81,17 @@ def test_conflicting_claims_build_nowhere_with_warning():
     assert any("Edge1" in w for w in warnings)
 
 
+def test_rest_child_builds_nothing_on_conflicted_edges():
+    rest = _node("rest", rest=True)
+    a = _node("a", ("Edge1",))
+    b = _node("b", ("Edge1",))
+    built, warnings = model.resolve_claims([rest, a, b], EDGES)
+    assert built[a.node] == frozenset()
+    assert built[b.node] == frozenset()
+    assert "Edge1" not in built[rest.node]
+    assert any("Edge1" in w for w in warnings)
+
+
 def test_two_rest_children_warns_and_keeps_first():
     r1 = _node("r1", rest=True)
     r2 = _node("r2", rest=True)

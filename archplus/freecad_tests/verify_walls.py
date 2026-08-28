@@ -152,6 +152,19 @@ def _w5_split(doc):
                               (2000.0, 0.0, 0.0), tol=5.0)
     h.check("W5 split helper matches a face pick to its edge",
             len(polys) == 1 and picked == 0 and polys[picked][0] == "Edge1")
+    new.Width = "200 mm"
+    doc.recompute()
+    h.check("W5 nested child inherits the group width override",
+            abs(nested.Shape.Volume - _expected_volume(200, 2200, [4000])) < 1e-3)
+    new.removeObject(nested)
+    wall.addObject(nested)
+    h.check("W5 re-parenting marks the moved child for rebuild",
+            "Touched" in nested.State)
+    doc.recompute()
+    h.check("W5 real re-parenting re-derives the inherited config",
+            nested.Wall is wall
+            and abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3
+            and abs(new.Shape.Volume - _expected_volume(200, 2800, [4000])) < 1e-3)
     return wall, sk
 
 
@@ -253,6 +266,95 @@ def _w7_reload(doc):
     FreeCAD.closeDocument(doc2.Name)
 
 
+def _w8_placed_sketch(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    sk.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 0, 2800),
+                                     FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    bb = seg.Shape.BoundBox
+    h.check("W8 placed sketch: volume and placement match the sketch",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3
+            and abs(bb.XMin) < 1.0 and abs(bb.XMax - 4000) < 1.0
+            and abs(bb.YMin + 2800) < 1.0 and abs(bb.YMax) < 1.0
+            and abs(bb.ZMin - 2650) < 1.0 and abs(bb.ZMax - 5950) < 1.0,
+            "bbox %s" % bb)
+
+
+def _w9_align_offset(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    wall.Align = "Left"
+    wall.Offset = "100 mm"
+    doc.recompute()
+    bb = seg.Shape.BoundBox
+    h.check("W9 Left builds left of travel with offset",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(bb.YMin - 100) < 1.0 and abs(bb.YMax - 400) < 1.0,
+            "bbox %s" % bb)
+    wall.Align = "Right"
+    doc.recompute()
+    bb = seg.Shape.BoundBox
+    h.check("W9 Right builds right of travel with offset",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(bb.YMin + 400) < 1.0 and abs(bb.YMax + 100) < 1.0,
+            "bbox %s" % bb)
+    rev = _line_sketch(doc, [((4000, 0), (0, 0), False)], name="RevPlan")
+    wall2 = walls_object.makeWall(doc, sketch=rev, name="Wall2")
+    wall2.Align = "Left"
+    doc.recompute()
+    bb = wall2.Group[0].Shape.BoundBox
+    h.check("W9 Left follows the edge travel direction",
+            abs(bb.YMin + 300) < 1.0 and abs(bb.YMax) < 1.0,
+            "bbox %s" % bb)
+
+
+def _w10_arc(doc):
+    import math
+    sk = doc.addObject("Sketcher::SketchObject", "ArcPlan")
+    sk.addGeometry(Part.ArcOfCircle(
+        Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 2000),
+        0.0, math.pi / 2), False)
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    area = (math.pi / 2) / 2.0 * (2150.0 ** 2 - 1850.0 ** 2)
+    expected = area * 2800.0
+    h.check("W10 arc wall matches the annular-sector volume",
+            abs(seg.Shape.Volume - expected) < 1e-6 * expected,
+            "volume %.3f vs expected %.3f" % (seg.Shape.Volume, expected))
+
+
+def _w11_delete_segment(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge2",))]
+    doc.recompute()
+    h.check("W11 explicit sibling and rest child each build one edge",
+            len(wall.Group) == 2
+            and abs(ext.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    doc.removeObject(ext.Name)
+    doc.recompute()
+    h.check("W11 deleting a segment frees its edge for the rest child",
+            len(wall.Group) == 1
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -261,5 +363,9 @@ def run():
     _w4_panel(doc)
     _w5_split(doc)
     _w6_hosting(doc)
+    _w8_placed_sketch(doc)
+    _w9_align_offset(doc)
+    _w10_arc(doc)
+    _w11_delete_segment(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

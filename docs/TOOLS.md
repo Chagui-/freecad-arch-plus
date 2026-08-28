@@ -181,8 +181,6 @@ to move them into a new segment group.
 - Collinear runs that belong to *different* groups butt with coplanar faces
   and can flicker in the 3D view (z-fighting — the same cosmetic artifact as
   any two touching solids in FreeCAD).
-- Re-parenting segments in the tree needs a recompute before the geometry
-  rebuilds.
 - **Split segment** matches faces whose centre lies on the baseline (within
   a 5 mm tolerance) — practically, the wall's bottom face when centred on
   the sketch line. Picking a side or end face does nothing.
