@@ -18,8 +18,6 @@ class _Wall:
     """Proxy for both roles: the root wall and its segments."""
 
     def __init__(self, obj, root=False):
-        # Type must exist before the Proxy assignment: attaching the proxy
-        # already fires onChanged, which branches on it.
         self.Type = TYPE_WALL if root else TYPE_SEGMENT
         obj.Proxy = self
         self.setProperties(obj, root)
@@ -53,9 +51,6 @@ class _Wall:
                 obj.addProperty("App::PropertyString", "Tag", "Wall",
                                 "Reference code shown in schedules")
         else:
-            # Hidden link: excluded from the dependency graph, else the
-            # group membership plus this back link form a dependency cycle
-            # and FreeCAD refuses to recompute ("The graph must be a DAG").
             if "Wall" not in pl:
                 obj.addProperty("App::PropertyLinkHidden", "Wall", "Wall",
                                 "The wall this segment belongs to")
@@ -83,10 +78,6 @@ class _Wall:
         if prop == "Base" and obj.Base is not None and self.Type == TYPE_WALL:
             for seg in all_segments(obj):
                 seg.Base = obj.Base
-        # The hidden Wall link keeps the dependency graph acyclic, so it
-        # carries no recompute: propagate invalidation manually instead.
-        # Claim changes affect every segment of the wall (claims interact);
-        # config changes affect the object and everything inheriting from it.
         if prop in ("Edges", "Rest"):
             root = wall_root(obj)
             if root is not None:
@@ -144,8 +135,6 @@ class _Wall:
 
     def _buildSegment(self, obj):
         import Part
-        # Valid-but-empty shape rather than a null one: callers may read
-        # .Volume, which raises on null shapes.
         empty = Part.makeCompound([])
         sketch = obj.Base
         if sketch is None or not hasattr(sketch, "Shape"):
@@ -215,9 +204,6 @@ def _claimNode(obj):
 
 
 def _sketchEdgeNames(sketch):
-    # ElementMap maps element hashes to names; the names are the values
-    # (e.g. {'g1;SKT': 'Edge1'}). Construction geometry gets no shape edge,
-    # so it never appears here.
     return [n for n in sketch.Shape.ElementMap.values()
             if n.startswith("Edge")]
 
