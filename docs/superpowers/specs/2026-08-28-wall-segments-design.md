@@ -4,33 +4,40 @@ Status: approved design, not yet implemented
 
 ## 1. Problem
 
-ArchPlus has no wall tool: doors, windows and stairs still host on FreeCAD's
-Arch Wall. That is not just a gap; Arch Wall's model is exactly wrong for how
-walls should behave here:
+The ArchPlus workflow starts with a floor-plan sketch: one sketch describes
+all the walls of a level, and walls, doors, windows and stairs are derived
+from it. Today walls cannot participate. ArchPlus has no wall tool, and
+FreeCAD's Arch Wall — which doors, windows and stairs currently host on — is
+built on assumptions that contradict that workflow.
 
-1. **The wall owns its sketch.** `ArchComponent` registers the wall in its
-   base sketch's `Components`, so one sketch belongs to one wall. Sharing a
-   floor-plan sketch between walls of different widths — or between a wall and
-   a future slab tool — is a fight with the component system.
-2. **One wall, one fused solid.** All sketch edges are extruded and fused into
-   a single shape. There are no per-segment objects, so per-segment control
-   happens through `OverrideWidth`/`OverrideAlign`/`OverrideOffset` — plain
-   lists indexed by edge number, which break the moment the sketch's edge
-   numbering shifts (they are only toponaming-tolerant with the SketchArch
-   add-on, which carries its own dead weight: `ArchSketchData`,
-   `ArchSketchEdges`, `ArchSketchPropertySet`).
-3. **Hosting is fragile.** A door or window subtracts its volume through
-   subvolume math against the whole wall. ArchPlus's own copy carries the
-   admission (`archplus/tools/windows/object.py:782`): the robust approach is
-   to extrude per segment and punch the hole in the exact segment before
-   fusing.
-4. **Much of Arch Wall is deprecated or dormant** — `Refine` is commented out,
-   blocks only support a single wire, the property-set machinery exists for an
-   add-on we do not ship.
+**One sketch, one owner.** Arch Wall registers itself in its base sketch's
+`Components`; the sketch is effectively owned by the wall. Deriving two wall
+types (e.g. 300 mm exterior and 200 mm interior) from one floor plan means
+fighting the component system, and a sketch cannot be shared with a future
+slab or beam tool.
 
-This spec replaces Arch Wall for ArchPlus work with a wall that *references* a
-sketch without owning it, and that builds one wall segment per claimed sketch
-edge, grouped as real objects in the tree.
+**One wall, one configuration.** All sketch edges are extruded into one fused
+solid with one width, height and alignment. Per-segment variation exists only
+as `OverrideWidth`/`OverrideAlign`/`OverrideOffset` — plain lists indexed by
+edge number, which break when the sketch's edge numbering shifts (they are
+toponaming-tolerant only with the SketchArch add-on, whose
+`ArchSketchData`/`ArchSketchEdges`/`ArchSketchPropertySet` machinery is dead
+weight without it).
+
+**Hosting through math, not geometry.** A door or window cuts its opening by
+computing a subvolume from the host wall's width probing — fragile enough
+that ArchPlus's own copy admits it (`archplus/tools/windows/object.py:782`):
+the robust approach is to extrude each segment and punch the hole in the
+exact segment before fusing.
+
+**Dead surface.** Much of Arch Wall is deprecated or dormant — `Refine` is
+commented out, block generation supports a single wire only, and a long tail
+of properties exists for workflows ArchPlus does not have.
+
+This spec adds an ArchPlus Wall that references a sketch without owning it,
+builds one wall segment per claimed sketch edge as real objects in the tree,
+groups those segments with inherited configuration, and cuts openings
+per segment.
 
 ## 2. Approach
 
