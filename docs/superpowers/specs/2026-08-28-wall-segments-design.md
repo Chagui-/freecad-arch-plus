@@ -62,8 +62,8 @@ One class, two roles, arbitrary nesting.
   subnames (verified).
 - **Hosting resolves at the wall level.** Doors and windows host on the wall
   root; each segment's `execute()` subtracts the openings that intersect its
-  own extrusion — the exact-segment approach from the TODO above, without the
-  "opening spans two segments" gap (see §7).
+  own extrusion — per-segment cutting without the "opening spans two
+  segments" gap (see §7).
 
 ## 3. Objects and the tree
 
@@ -76,13 +76,14 @@ Wall "Ground floor"            width=300, height=2800, align=Center, offset=0
 
 | object | property | type | meaning |
 |---|---|---|---|
-| Wall (root) | `Sketch` | `App::PropertyLink` | the base sketch, set at creation |
+| Wall (root) | `Base` | `App::PropertyLink` | the base sketch, set at creation (UI label: "Sketch") |
 | | `Width` | `App::PropertyLength` | default width, 300 mm |
 | | `Height` | `App::PropertyLength` | default height, 2800 mm |
 | | `Align` | `App::PropertyEnumeration` | `Center`/`Left`/`Right`, default `Center` |
 | | `Offset` | `App::PropertyDistance` | baseline offset, default 0 (wall-level only in v1) |
 | | `Subtractions` | `App::PropertyLinkList` | hosted doors/windows; each segment cuts the ones intersecting it (§7) |
 | WallSegment | `Base` | `App::PropertyLink` | the sketch — Arch-compatible name, non-owning; auto-copied from the parent at creation |
+| | `Wall` | `App::PropertyLink` | the root wall — the dependency edge: any root change (defaults, `Subtractions`) recomputes every segment |
 | | `Edges` | `App::PropertyLinkSubList` | claimed sketch subnames (e.g. `Edge1`, `Edge3`) |
 | | `Rest` | `App::PropertyBool` | this child claims *all unclaimed edges* |
 | | `Width` | `App::PropertyLength` | `0 = inherit` |
@@ -96,6 +97,9 @@ Naming rules:
 - Every segment carries its own `Base` link, seeded from its parent at
   creation. Re-parenting by drag-and-drop never invalidates a link; the
   inherited config is re-derived automatically.
+- Every segment's `Wall` link points at the root wall, set at creation and
+  independent of nesting: it is the recompute dependency edge, while config
+  inheritance walks the tree (`InList`/group parentage) instead.
 - Segments are plain groups, not `App::Part`: children keep global
   coordinates, so a child's placement is never compounded with its parent's.
 - Root `Placement` is identity and unused in v1 (moving a whole wall family as
@@ -142,21 +146,24 @@ Dropped or deferred Arch Wall properties:
 | `Refine` | dropped — already deprecated in Arch |
 | `MakeBlocks`, `BlockLength/Height`, `OffsetFirst/Second`, `Joint`, `CountEntire/Broken` | deferred v2 |
 | `Length`, `Area` | deferred (schedules) |
-| `Hosts`, `Additions` | dropped in v1 (additions = pilasters etc., later) |
+| `Hosts` (on the wall), `Additions` | dropped in v1 (additions = pilasters etc., later) |
 | IFC properties, `Material`, `MoveWithHost`, `HiRes` | deferred/dropped |
 
 ## 6. Geometry build
 
 `WallSegment.execute()`:
 
-1. Resolve effective config (width, height, align, offset).
+1. Resolve effective config (width, height, align, offset) by walking the
+   tree from this segment upward.
 2. Resolve effective edges (claims minus descendants).
-3. For each edge: offset a copy of the edge in the sketch plane by
-   width/align/offset (Arch semantics: Left/Right/Center around the
-   baseline), close into a wire, extrude along the sketch normal by height.
+3. For each edge: build the wall footprint in the sketch plane — Center: the
+   edge is the centerline, the footprint spans ±width/2; Left/Right: the
+   footprint spans from the edge to width on that side, shifted by Offset —
+   then extrude along the sketch normal by height.
 4. Fuse the per-edge solids into one shape.
 5. Subtract the wall's hosted openings that intersect this segment (bbox
-   pre-check + OCC `common` test against the wall root's `Subtractions`).
+   pre-check + OCC `common` test against the root wall's `Subtractions`,
+   reached through the `Wall` link).
 6. Assign the result; empty claims → empty shape.
 
 ## 7. Hosting (v1)
@@ -176,13 +183,14 @@ math, which this design replaces entirely.
   spanning segments.
 - **Placement unchanged**: pick a segment face in the 3D view; the tool walks
   up to the wall root for the host.
-- **Door/window code**: the host-type check in `archplus/tools/windows/object.py`
-  (and the shared door path) is extended to accept the wall; the width-probing
-  path is bypassed — the opening's actual shape is what gets subtracted. The
+- **Door/window code**: the root's Type `"Wall"` is already accepted by the
+  host-type check in `archplus/tools/windows/object.py` (and the shared door
+  path); the width-probing path is bypassed when the host has no shape (the
+  ArchPlus wall) — the opening's actual shape is what gets subtracted. The
   root exposes the Arch-ish interface (`Width`/`Height`/`Align`/`Base`), so
   the existing re-cut-on-edit machinery (windows `gui.py`) keeps working.
 - **Warning**: an opening that intersects no segment (floating in a gap)
-  reports "opening not applied" once.
+  warns "opening not applied" in the Report view.
 
 **Known limitation — sibling joint artifacts.** Two collinear edges placed in
 *different* groups butt with coplanar end faces and can flicker (z-fighting)
@@ -247,6 +255,8 @@ its description line suffices; the diagrams cover W, Align and Offset only.
 - Double claim: warning in Report view, edge builds nowhere.
 - New edges with no rest child: Report view warning listing the count.
 - A `Rest` child with explicit `Edges`: `Edges` ignored, warning once.
+- A `Rest` child nested deeper than the root's children: ignored with a
+  warning — rest applies only to a direct child of the root.
 - Invalid subnames (should not happen under TNP): skipped with a warning.
 
 ## 10. Files and testing
@@ -277,8 +287,8 @@ host window → save/reload):
    height 2200, effective width inherited from "exterior".
 4. Edit the sketch (move a vertex, add an edge, delete an edge): claims
    follow, new edge lands in rest, deleted edge drops.
-5. Host a window on a segment: the segment's volume shrinks by the opening;
-   unhosting restores it.
+5. Host a window whose opening lies within one segment: the segment's volume
+   shrinks by the opening; unhosting restores it.
 6. Host a window across a split run (two collinear segments): both segments
    are cut, each exactly in its half; an opening intersecting nothing reports
    "opening not applied".
@@ -286,8 +296,9 @@ host window → save/reload):
 
 ## 11. Scope boundaries
 
-In v1: geometry, grouping/split, nested inheritance, per-segment hosting,
-TNP-safe rebuild, task panels (root + segment), warnings.
+In v1: geometry, grouping/split, nested inheritance, hosted openings
+(wall-level resolution, per-segment cutting), TNP-safe rebuild, task panels
+(root + segment), warnings.
 
 Out (later): materials/colors, blocks, IFC, merge command,
 root-level placement/moving, Arch wall migration, `Length`/`Area`.
