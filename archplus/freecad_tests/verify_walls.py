@@ -432,7 +432,7 @@ def _w14_view_provider(doc):
             and seg.ViewObject.Proxy.claimChildren() == [])
 
 
-def _w15_split_context_menu(doc):
+def _w15_split_gate(doc):
     sk = _line_sketch(doc, [
         ((0, 0), (4000, 0), False),
         ((0, 3000), (4000, 3000), False),
@@ -441,7 +441,6 @@ def _w15_split_context_menu(doc):
     doc.recompute()
     seg = wall.Group[0]
     from archplus.tools.walls import gui as walls_gui
-    from PySide import QtGui
     import FreeCADGui
     FreeCADGui.Selection.clearSelection()
     h.check("W15 split command inactive without a segment selection",
@@ -455,27 +454,25 @@ def _w15_split_context_menu(doc):
             walls_gui.WallSplitCommand().IsActive())
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(wall)
-    h.check("W15 split command inactive with the wall root selected",
-            not walls_gui.WallSplitCommand().IsActive())
+    h.check("W15 split command active with the wall root selected",
+            walls_gui.WallSplitCommand().IsActive())
     FreeCADGui.Selection.clearSelection()
-    seg_menu = QtGui.QMenu()
-    seg.ViewObject.Proxy.setupContextMenu(seg.ViewObject, seg_menu)
-    root_menu = QtGui.QMenu()
-    wall.ViewObject.Proxy.setupContextMenu(wall.ViewObject, root_menu)
-    h.check("W15 context menu offers Split / move segment on segments only",
-            any(a.text() == "Split / move segment…" for a in seg_menu.actions())
-            and not any(a.text() == "Split / move segment…"
-                        for a in root_menu.actions()))
     FreeCADGui.Selection.addSelection(seg, "Face1")
     h.check("W15 selection gate accepts a picked segment face",
             walls_gui.wall_segment_selected())
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(wall)
-    h.check("W15 selection gate rejects the wall root",
-            not walls_gui.wall_segment_selected())
+    h.check("W15 selection gate accepts the wall root (3D picks of claimed "
+            "children select it)",
+            walls_gui.wall_segment_selected())
     FreeCADGui.Selection.clearSelection()
     h.check("W15 selection gate rejects an empty selection",
             not walls_gui.wall_segment_selected())
+    h.check("W15 view provider offers no tree context-menu entry "
+            "(the split entry is 3D-only)",
+            not hasattr(walls_object._ViewProviderWall, "setupContextMenu")
+            and not hasattr(wall.ViewObject.Proxy, "setupContextMenu")
+            and not hasattr(seg.ViewObject.Proxy, "setupContextMenu"))
 
 
 def _w16_split_ux(doc):
@@ -500,7 +497,7 @@ def _w16_split_ux(doc):
     finally:
         FreeCAD.Console.PrintWarning = orig
     h.check("W16 split without faces warns and creates nothing",
-            any("Select wall faces" in m for m in captured)
+            any("Click one or more wall faces" in m for m in captured)
             and len(wall.Group) == 1
             and abs(rest.Shape.Volume
                     - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
@@ -593,6 +590,37 @@ def _w16_split_ux(doc):
                     - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
     FreeCADGui.Selection.clearSelection()
 
+    sk4 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX4")
+    wall4 = walls_object.makeWall(doc, sketch=sk4)
+    doc.recompute()
+    a4 = walls_object.makeSegment(wall4, name="a4")
+    a4.Edges = [(sk4, ("Edge1",))]
+    a4.Rest = False
+    b4 = walls_object.makeSegment(wall4, name="b4")
+    b4.Edges = [(sk4, ("Edge2",))]
+    doc.recompute()
+    rest4 = wall4.Group[0]
+    pnt = a4.Shape.getElement("Face1").CenterOfGravity
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall4, "Face1", pnt.x, pnt.y, pnt.z)
+    h.check("W16 split command active with a picked root face", cmd.IsActive())
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new4 = [o for o in wall4.Group
+            if o is not rest4 and o is not a4 and o is not b4]
+    h.check("W16 root-face pick resolves to the owning segment and splits",
+            len(new4) == 1
+            and abs(new4[0].Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3
+            and a4.Shape.Volume < 1e-3
+            and abs(b4.Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
 
 def _w17_bim_context_menu(doc):
     sk = _line_sketch(doc, [((0, 0), (4000, 0), False)], name="CtxMenu")
@@ -658,7 +686,7 @@ def run():
     _w12_closed_corner(doc)
     _w13_closed_align(doc)
     _w14_view_provider(doc)
-    _w15_split_context_menu(doc)
+    _w15_split_gate(doc)
     _w16_split_ux(doc)
     _w17_bim_context_menu(doc)
     doc = h.fresh_doc()

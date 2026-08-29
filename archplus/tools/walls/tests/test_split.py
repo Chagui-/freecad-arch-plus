@@ -6,7 +6,11 @@
 
 import types
 
+import FreeCAD
+import Part
+
 from archplus.tools.walls import gui as wg
+from archplus.tools.walls import object as walls_object
 
 
 def _segment(name="Segments"):
@@ -15,11 +19,102 @@ def _segment(name="Segments"):
         Proxy=types.SimpleNamespace(Type="WallSegment"))
 
 
+def _root(*segments):
+    root = types.SimpleNamespace(
+        Name="Wall", Label="Wall",
+        Proxy=types.SimpleNamespace(Type="Wall"),
+        Group=list(segments), InList=[])
+    for seg in segments:
+        seg.Wall = root
+        seg.InList = [root]
+    return root
+
+
+class _FakeFace:
+    def __init__(self, x):
+        self.x = x
+
+
+class _FakeShape:
+    def __init__(self, faces):
+        self._faces = faces
+
+    def getElement(self, name):
+        if name not in self._faces:
+            raise KeyError(name)
+        return self._faces[name]
+
+
+class _FakeVertex:
+    def __init__(self, pnt):
+        self.pnt = pnt
+
+    def distToShape(self, face):
+        return (abs(self.pnt.x - face.x), [], None)
+
+
 def _sel(obj, subs=(), points=()):
     return types.SimpleNamespace(
         Object=obj, SubElementNames=tuple(subs),
         PickedPoints=tuple(points),
         HasSubObjects=bool(subs))
+
+
+def test_is_root_distinguishes_wall_roots():
+    assert walls_object.is_root(_root())
+    assert not walls_object.is_root(_segment())
+    assert not walls_object.is_root(types.SimpleNamespace(Name="Box"))
+
+
+def test_resolve_root_face_picks_nearest_segment(monkeypatch):
+    monkeypatch.setattr(Part, "Vertex", _FakeVertex, raising=False)
+    a = _segment("a")
+    a.Shape = _FakeShape({"Face1": _FakeFace(0.0)})
+    b = _segment("b")
+    b.Shape = _FakeShape({"Face1": _FakeFace(100.0)})
+    root = _root(a, b)
+    resolved = walls_object.resolveRootFace(root, "Face1",
+                                            FreeCAD.Vector(1.0, 0.0, 0.0))
+    assert resolved == (a, ["Face1"])
+    resolved = walls_object.resolveRootFace(root, "Face1",
+                                            FreeCAD.Vector(99.0, 0.0, 0.0))
+    assert resolved == (b, ["Face1"])
+
+
+def test_resolve_root_face_rejects_a_far_point(monkeypatch):
+    monkeypatch.setattr(Part, "Vertex", _FakeVertex, raising=False)
+    a = _segment("a")
+    a.Shape = _FakeShape({"Face1": _FakeFace(0.0)})
+    b = _segment("b")
+    b.Shape = _FakeShape({"Face1": _FakeFace(100.0)})
+    root = _root(a, b)
+    far = FreeCAD.Vector(1000.0, 0.0, 0.0)
+    assert walls_object.resolveRootFace(root, "Face1", far) is None
+
+
+def test_resolve_root_face_unique_without_point(monkeypatch):
+    a = _segment("a")
+    a.Shape = _FakeShape({"Face1": _FakeFace(0.0)})
+    root = _root(a)
+    assert walls_object.resolveRootFace(root, "Face1", None) == (a, ["Face1"])
+
+
+def test_resolve_root_face_ambiguous_without_point(monkeypatch):
+    a = _segment("a")
+    a.Shape = _FakeShape({"Face1": _FakeFace(0.0)})
+    b = _segment("b")
+    b.Shape = _FakeShape({"Face1": _FakeFace(100.0)})
+    root = _root(a, b)
+    assert walls_object.resolveRootFace(root, "Face1", None) is None
+
+
+def test_resolve_root_face_without_candidates_or_segments(monkeypatch):
+    a = _segment("a")
+    a.Shape = _FakeShape({"Face1": _FakeFace(0.0)})
+    root = _root(a)
+    assert walls_object.resolveRootFace(root, "Face9", None) is None
+    empty = _root()
+    assert walls_object.resolveRootFace(empty, "Face1", None) is None
 
 
 def test_wall_segment_selected_gates_on_selection(monkeypatch):
@@ -34,6 +129,12 @@ def test_wall_segment_selected_gates_on_selection(monkeypatch):
     monkeypatch.setattr(wg.FreeCADGui, "Selection", types.SimpleNamespace(
         getSelectionEx=lambda: []))
     assert not wg.wall_segment_selected()
+
+
+def test_wall_segment_selected_accepts_wall_root(monkeypatch):
+    monkeypatch.setattr(wg.FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(_root())]))
+    assert wg.wall_segment_selected()
 
 
 def test_split_command_active_only_for_segments(monkeypatch):

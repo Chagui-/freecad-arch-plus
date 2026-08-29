@@ -252,6 +252,10 @@ def is_segment(obj):
     return getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_SEGMENT
 
 
+def is_root(obj):
+    return getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_WALL
+
+
 def wall_root(segment):
     return getattr(segment, "Wall", None)
 
@@ -263,6 +267,51 @@ def all_segments(root):
             out.append(o)
             out.extend(all_segments(o))
     return out
+
+
+def resolveRootFace(root, subname, point):
+    """The segment owning a root face selection, as (segment, [subname]).
+
+    FreeCAD attributes a 3D pick of a claimed child's face to the top claim
+    parent, so a clicked wall face selects the root with a segment-local
+    face index while the root itself has no shape. Every segment whose
+    shape has that face is a candidate; with a pick point the nearest
+    candidate within 1 mm wins, and without one a unique candidate wins
+    while several are ambiguous."""
+    import Part
+    segments = all_segments(root)
+    if not segments:
+        return None
+    candidates = []
+    for seg in segments:
+        try:
+            candidates.append((seg, seg.Shape.getElement(subname)))
+        except Exception:
+            continue
+    if not candidates:
+        return None
+    if point is None:
+        if len(candidates) == 1:
+            return (candidates[0][0], [subname])
+        return None
+    try:
+        vertex = Part.Vertex(point)
+    except Exception:
+        return None
+    best = None
+    best_dist = None
+    for seg, face in candidates:
+        try:
+            dist = vertex.distToShape(face)[0]
+        except Exception:
+            continue
+        if dist > 1.0:
+            continue
+        if best_dist is None or dist < best_dist:
+            best, best_dist = seg, dist
+    if best is None:
+        return None
+    return (best, [subname])
 
 
 def parent_group(obj):
@@ -600,22 +649,6 @@ class _ViewProviderWall:
     def claimChildren(self):
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
-
-    def setupContextMenu(self, vobj, menu):
-        if not is_segment(vobj.Object):
-            return
-        try:
-            from draftutils.translate import translate
-        except Exception:
-            def translate(ctxt, txt):
-                return txt
-        import FreeCADGui
-        from PySide import QtGui
-        action = QtGui.QAction(translate("Arch", "Split / move segment…"),
-                               menu)
-        action.triggered.connect(
-            lambda: FreeCADGui.runCommand("ArchPlus_WallSplit", 0))
-        menu.addAction(action)
 
     def setEdit(self, vobj, mode=0):
         from archplus.tools.walls import gui

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # WallsPlus GUI: commands, the two task panels (wall root and segment) and
-# the split command's selection gate. Follows the stairs/windows panel
-# pattern: docked form, debounced live preview, reference diagrams,
-# description lines. The view provider lives in object.py; gui.py only
-# consumes it. InitGui.py injects the 3D-view context-menu entry by wrapping
-# the BIM workbench's ContextMenu handler.
+# the split command's selection gate with its pick-point recorder. Follows
+# the stairs/windows panel pattern: docked form, debounced live preview,
+# reference diagrams, description lines. The view provider lives in
+# object.py; gui.py only consumes it. InitGui.py injects the 3D-view
+# context-menu entry by wrapping the BIM workbench's ContextMenu handler.
 
 import os
 
@@ -478,12 +478,100 @@ def _claimedEdgePolylines(segment):
 NEW_SEGMENT = object()
 
 
+class _PickPointRecorder:
+    """Selection observer keeping each selection member's last pick point.
+
+    FreeCAD attributes a 3D pick of a claimed child's face to the top claim
+    parent, so a clicked wall face arrives as a root selection carrying a
+    segment-local face index. Resolving that face to its owning segment
+    needs the face subname together with the 3D point, which only this
+    observer sees, so it records them as the selection changes."""
+
+    def __init__(self):
+        self.picks = {}
+
+    def addSelection(self, doc, obj, sub, pnt):
+        try:
+            self.picks[(doc, obj)] = (sub, _asVector(pnt))
+        except Exception:
+            pass
+
+    def removeSelection(self, doc, obj, sub):
+        try:
+            self.picks.pop((doc, obj), None)
+        except Exception:
+            pass
+
+    def clearSelection(self, doc):
+        try:
+            keys = list(self.picks) if not doc else [
+                k for k in self.picks if k[0] == doc]
+            for key in keys:
+                del self.picks[key]
+        except Exception:
+            pass
+
+    def setSelection(self, doc):
+        self.clearSelection(doc)
+
+
+def _asVector(pnt):
+    """The pick point as a Vector (None when there is none)."""
+    if pnt is None:
+        return None
+    try:
+        return Vector(pnt.x, pnt.y, pnt.z)
+    except Exception:
+        pass
+    try:
+        return Vector(pnt[0], pnt[1], pnt[2])
+    except Exception:
+        return None
+
+
+def _name(obj):
+    return getattr(obj, "Name", obj)
+
+
+def _lastPick(doc, obj):
+    """The recorded (subname, pick point) for a selection member."""
+    try:
+        return _recorder.picks.get((_name(doc), _name(obj)))
+    except Exception:
+        return None
+
+
+_recorder = getattr(FreeCADGui, "_ArchPlusPickRecorder", None)
+if _recorder is None:
+    _recorder = _PickPointRecorder()
+    try:
+        FreeCADGui.Selection.addObserver(_recorder)
+        FreeCADGui._ArchPlusPickRecorder = _recorder
+    except Exception:
+        pass
+
+
 def wall_segment_selected():
-    """True when any selection member's object is a wall segment."""
+    """True when any selection member is a wall segment or the wall root.
+
+    Clicking a wall face selects the root (FreeCAD attributes picks of
+    claimed children to the top claim parent), so root selections count;
+    the split command resolves them to the owning segments when it runs."""
     for sel in FreeCADGui.Selection.getSelectionEx():
-        if walls_object.is_segment(sel.Object):
+        obj = sel.Object
+        if walls_object.is_segment(obj) or walls_object.is_root(obj):
             return True
     return False
+
+
+class _FaceSelection:
+    """Minimal selection stand-in for one picked face of a segment."""
+
+    def __init__(self, obj, sub, point):
+        self.Object = obj
+        self.SubElementNames = [sub]
+        self.PickedPoints = [point] if point is not None else []
+        self.HasSubObjects = True
 
 
 class WallSplitCommand:
@@ -502,15 +590,16 @@ class WallSplitCommand:
         sources = []
         for sel in FreeCADGui.Selection.getSelectionEx():
             obj = sel.Object
-            if not walls_object.is_segment(obj):
-                continue
-            subs = self._pickedEdges(obj, sel)
-            if subs:
-                sources.append((obj, subs))
+            if walls_object.is_segment(obj):
+                subs = self._pickedEdges(obj, sel)
+                if subs:
+                    sources.append((obj, subs))
+            elif walls_object.is_root(obj):
+                sources.extend(self._rootSources(doc, sel))
         if not sources:
             FreeCAD.Console.PrintWarning(
-                "ArchPlus: Select wall faces in the 3D view, then "
-                "Split segment\n")
+                "ArchPlus: Click one or more wall faces in the 3D view, "
+                "then choose Split / move segment\n")
             return
         roots = []
         for obj, _subs in sources:
@@ -533,6 +622,35 @@ class WallSplitCommand:
                 walls_object.moveSegmentEdges(obj, choice, subs)
         doc.recompute()
         doc.commitTransaction()
+
+    def _rootSources(self, doc, sel):
+        """(segment, subs) sources for a wall-root selection member.
+
+        Clicking a wall face selects the root (FreeCAD claims-children pick
+        behavior) with a segment-local face index, so each picked face is
+        resolved to its owning segment through the recorded pick point and
+        then mapped to its claimed run like a direct segment pick."""
+        root = sel.Object
+        picked = _lastPick(getattr(root, "Document", None) or doc, root)
+        sub, point = picked if picked is not None else (None, None)
+        names = [n for n in (sel.SubElementNames or ())
+                 if n.startswith("Face")]
+        if sub not in names:
+            point = None
+        sources = []
+        for name in names:
+            resolved = walls_object.resolveRootFace(root, name, point)
+            if resolved is None:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: could not resolve face '%s' of '%s'; click "
+                    "the face again\n" % (name, root.Label))
+                continue
+            segment, _subs = resolved
+            subs = self._pickedEdges(segment, _FaceSelection(segment, name,
+                                                             point))
+            if subs:
+                sources.append((segment, subs))
+        return sources
 
     def _chooseTarget(self, sources):
         """The dialog choice for the picked faces: NEW_SEGMENT (split into
