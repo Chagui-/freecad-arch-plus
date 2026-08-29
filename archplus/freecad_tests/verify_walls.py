@@ -466,16 +466,16 @@ def _w15_split_context_menu(doc):
             any(a.text() == "Split / move segment…" for a in seg_menu.actions())
             and not any(a.text() == "Split / move segment…"
                         for a in root_menu.actions()))
-    hook = walls_gui._WallMenuHook()
     FreeCADGui.Selection.addSelection(seg, "Face1")
-    h.check("W15 3D-view hook injects the split command for segments",
-            hook.modifyContextMenu("View")
-            == [{"insert": "ArchPlus_WallSplit",
-                 "menuItem": "Std_Placement"}]
-            and hook.modifyContextMenu("Tree") is None)
+    h.check("W15 selection gate accepts a picked segment face",
+            walls_gui.wall_segment_selected())
     FreeCADGui.Selection.clearSelection()
-    h.check("W15 3D-view hook stays out without a wall selection",
-            hook.modifyContextMenu("View") is None)
+    FreeCADGui.Selection.addSelection(wall)
+    h.check("W15 selection gate rejects the wall root",
+            not walls_gui.wall_segment_selected())
+    FreeCADGui.Selection.clearSelection()
+    h.check("W15 selection gate rejects an empty selection",
+            not walls_gui.wall_segment_selected())
 
 
 def _w16_split_ux(doc):
@@ -594,6 +594,46 @@ def _w16_split_ux(doc):
     FreeCADGui.Selection.clearSelection()
 
 
+def _w17_bim_context_menu(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)], name="CtxMenu")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    import FreeCADGui
+    from archplus.tools.walls import gui as walls_gui
+    h.check("W17 old workbench-manipulator hook is gone",
+            not hasattr(FreeCADGui, "_ArchPlusWallsMenuHook"))
+    wb = FreeCADGui.getWorkbench("BIMWorkbench")
+    if not h.check("W17 BIM workbench exposes a callable ContextMenu handler",
+                   wb is not None
+                   and callable(getattr(wb, "ContextMenu", None))):
+        return
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg, "Face1")
+    h.check("W17 selection gate accepts a segment face",
+            walls_gui.wall_segment_selected())
+    if not hasattr(wb, "snapmenu"):
+        wb.snapmenu = []
+    recorded = []
+    orig_append = wb.appendContextMenu
+    wb.appendContextMenu = lambda *args: recorded.append(args)
+    threw = None
+    try:
+        wb.ContextMenu("View")
+    except Exception as exc:
+        threw = exc
+    finally:
+        wb.appendContextMenu = orig_append
+    FreeCADGui.Selection.clearSelection()
+    if threw is None:
+        detail = "recorded: %r" % (recorded,)
+    else:
+        detail = "handler raised: %r" % (threw,)
+    h.check("W17 wrapped BIM handler appends the split command",
+            threw is None and ("", ["ArchPlus_WallSplit"]) in recorded,
+            detail)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -611,5 +651,6 @@ def run():
     _w14_view_provider(doc)
     _w15_split_context_menu(doc)
     _w16_split_ux(doc)
+    _w17_bim_context_menu(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

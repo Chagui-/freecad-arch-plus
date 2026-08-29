@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Headless tests for the split/move command plumbing: 3D-view menu-hook
-# gating, command activation and the picked-faces contract, driven through
-# the conftest fakes like the panel tests.
+# Headless tests for the split/move command plumbing: selection gating,
+# command activation and the picked-faces contract, driven through the
+# conftest fakes like the panel tests.
 
 import types
 
@@ -22,16 +22,18 @@ def _sel(obj, subs=(), points=()):
         HasSubObjects=bool(subs))
 
 
-def test_menu_hook_gates_on_recipient_and_selection(monkeypatch):
-    hook = wg._WallMenuHook()
+def test_wall_segment_selected_gates_on_selection(monkeypatch):
     monkeypatch.setattr(wg.FreeCADGui, "Selection", types.SimpleNamespace(
         getSelectionEx=lambda: [_sel(_segment())]))
-    assert hook.modifyContextMenu("View") == [
-        {"insert": "ArchPlus_WallSplit", "menuItem": "Std_Placement"}]
-    assert hook.modifyContextMenu("Tree") is None
+    assert wg.wall_segment_selected()
+    monkeypatch.setattr(wg.FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(types.SimpleNamespace(
+            Name="Box", Label="Box",
+            Proxy=types.SimpleNamespace(Type="Part")))]))
+    assert not wg.wall_segment_selected()
     monkeypatch.setattr(wg.FreeCADGui, "Selection", types.SimpleNamespace(
         getSelectionEx=lambda: []))
-    assert hook.modifyContextMenu("View") is None
+    assert not wg.wall_segment_selected()
 
 
 def test_split_command_active_only_for_segments(monkeypatch):

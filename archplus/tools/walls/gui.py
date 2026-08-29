@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # WallsPlus GUI: commands, the two task panels (wall root and segment) and
-# the 3D-view context-menu hook for the split command. Follows the
-# stairs/windows panel pattern: docked form, debounced live preview,
-# reference diagrams, description lines. The view provider lives in
-# object.py; gui.py only consumes it.
+# the split command's selection gate. Follows the stairs/windows panel
+# pattern: docked form, debounced live preview, reference diagrams,
+# description lines. The view provider lives in object.py; gui.py only
+# consumes it. InitGui.py injects the 3D-view context-menu entry by wrapping
+# the BIM workbench's ContextMenu handler.
 
 import os
 
@@ -477,6 +478,14 @@ def _claimedEdgePolylines(segment):
 NEW_SEGMENT = object()
 
 
+def wall_segment_selected():
+    """True when any selection member's object is a wall segment."""
+    for sel in FreeCADGui.Selection.getSelectionEx():
+        if walls_object.is_segment(sel.Object):
+            return True
+    return False
+
+
 class WallSplitCommand:
     def GetResources(self):
         return {"Pixmap": ICON, "MenuText": "Split / move segment…",
@@ -486,10 +495,7 @@ class WallSplitCommand:
     def IsActive(self):
         if FreeCAD.ActiveDocument is None:
             return False
-        for sel in FreeCADGui.Selection.getSelectionEx():
-            if walls_object.is_segment(sel.Object):
-                return True
-        return False
+        return wall_segment_selected()
 
     def Activated(self):
         doc = FreeCAD.ActiveDocument
@@ -618,32 +624,6 @@ class WallSplitCommand:
         idx = model.match_edge([pts for _sub, pts in polys],
                                (point.x, point.y, point.z), tol)
         return None if idx is None else polys[idx][0]
-
-
-class _WallMenuHook:
-    """Injects the split command into the 3D-view right-click menu.
-
-    FreeCAD 1.1 builds the 3D-view context menu from workbench items and
-    WorkbenchManipulator hooks; view-provider setupContextMenu fires only
-    for tree selections, so the 3D entry comes from here. The command stays
-    greyed out unless a wall segment is selected."""
-
-    def modifyContextMenu(self, recipient):
-        if recipient != "View":
-            return None
-        for sel in FreeCADGui.Selection.getSelectionEx():
-            if walls_object.is_segment(sel.Object):
-                return [{"insert": "ArchPlus_WallSplit",
-                         "menuItem": "Std_Placement"}]
-        return None
-
-
-_hook = getattr(FreeCADGui, "_ArchPlusWallsMenuHook", None)
-if _hook is None:
-    _hook = _WallMenuHook()
-    if hasattr(FreeCADGui, "addWorkbenchManipulator"):
-        FreeCADGui.addWorkbenchManipulator(_hook)
-    FreeCADGui._ArchPlusWallsMenuHook = _hook
 
 
 FreeCADGui.addCommand("ArchPlus_WallSplit", WallSplitCommand())
