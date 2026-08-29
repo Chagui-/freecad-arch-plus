@@ -614,23 +614,32 @@ def _w17_bim_context_menu(doc):
             walls_gui.wall_segment_selected())
     if not hasattr(wb, "snapmenu"):
         wb.snapmenu = []
-    recorded = []
-    orig_append = wb.appendContextMenu
-    wb.appendContextMenu = lambda *args: recorded.append(args)
-    threw = None
-    try:
-        wb.ContextMenu("View")
-    except Exception as exc:
-        threw = exc
-    finally:
-        wb.appendContextMenu = orig_append
+
+    def _run_handler():
+        recorded = []
+        orig_append = wb.appendContextMenu
+        wb.appendContextMenu = lambda *args: recorded.append(args)
+        threw = None
+        try:
+            wb.ContextMenu("View")
+        except Exception as exc:
+            threw = exc
+        finally:
+            wb.appendContextMenu = orig_append
+        return threw, recorded
+
+    threw_sel, recorded_sel = _run_handler()
     FreeCADGui.Selection.clearSelection()
-    if threw is None:
-        detail = "recorded: %r" % (recorded,)
+    threw_empty, recorded_empty = _run_handler()
+    if threw_sel is None and threw_empty is None:
+        detail = "with segment face: %r; empty selection: %r" % (
+            recorded_sel, recorded_empty)
     else:
-        detail = "handler raised: %r" % (threw,)
+        detail = "handler raised: %r" % (threw_sel or threw_empty,)
     h.check("W17 wrapped BIM handler appends the split command",
-            threw is None and ("", ["ArchPlus_WallSplit"]) in recorded,
+            threw_sel is None and threw_empty is None
+            and ("", ["ArchPlus_WallSplit"]) in recorded_sel
+            and ("", ["ArchPlus_WallSplit"]) in recorded_empty,
             detail)
 
 

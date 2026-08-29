@@ -64,13 +64,7 @@ def _injectIntoBIM():
             _origContextMenu(recipient)
         if recipient == "View":
             try:
-                import FreeCADGui as GuiInner
-                for sel in GuiInner.Selection.getSelectionEx():
-                    proxy_type = getattr(getattr(sel.Object, "Proxy", None),
-                                         "Type", None)
-                    if proxy_type == "WallSegment":
-                        wb.appendContextMenu("", ["ArchPlus_WallSplit"])
-                        break
+                wb.appendContextMenu("", ["ArchPlus_WallSplit"])
             except Exception as exc:
                 FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
