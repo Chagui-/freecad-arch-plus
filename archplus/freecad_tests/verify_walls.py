@@ -575,6 +575,23 @@ def _w16_split_ux(doc):
             and rest3.Shape.Volume < 1e-3
             and rest3.Rest)
     FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(b, "Face1", 2500.0, 0.0, 0.0)
+    FreeCADGui.Selection.addSelection(d, "Face1", 500.0, 0.0, 0.0)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        cmd.Activated()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W16 selection across walls aborts with a warning",
+            any("several walls" in m for m in captured)
+            and len(b.Shape.Solids) == 1
+            and abs(b.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3
+            and abs(d.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
 
 
 def run():

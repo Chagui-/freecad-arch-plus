@@ -506,6 +506,16 @@ class WallSplitCommand:
                 "ArchPlus: Select wall faces in the 3D view, then "
                 "Split segment\n")
             return
+        roots = []
+        for obj, _subs in sources:
+            root = walls_object.wall_root(obj) or obj
+            if not any(root is r for r in roots):
+                roots.append(root)
+        if len(roots) > 1:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: Selected segments belong to several walls; "
+                "split or move one wall at a time\n")
+            return
         choice = self._chooseTarget(sources)
         if choice is None:
             return
@@ -521,44 +531,47 @@ class WallSplitCommand:
     def _chooseTarget(self, sources):
         """The dialog choice for the picked faces: NEW_SEGMENT (split into
         a new sibling per source), an existing target segment, or None when
-        the dialog is cancelled."""
+        the dialog is cancelled. The dialog's item strings map one-to-one
+        to the options (repeated labels get a " (n)" suffix), so a choice
+        always binds to the exact segment it listed."""
         options = self._targetOptions(sources)
-        items = ["<new segment>"] + [seg.Label for seg in options]
+        items = []
+        by_item = {}
+        for seg in options:
+            item = seg.Label
+            n = 2
+            while item in by_item:
+                item = "%s (%d)" % (seg.Label, n)
+                n += 1
+            by_item[item] = seg
+            items.append(item)
         choice, ok = QtGui.QInputDialog.getItem(
             None, "Split / move segment", "Move the selected faces to:",
-            items, 0, False)
+            ["<new segment>"] + items, 0, False)
         if not ok:
             return None
         if choice == "<new segment>":
             return NEW_SEGMENT
-        for seg in options:
-            if seg.Label == choice:
-                return seg
-        return None
+        return by_item.get(choice)
 
     def _targetOptions(self, sources):
         """The wall's other top-level segments, excluding the sources and
-        their ancestors (moving into an ancestor would conflict with the
-        source's own claims)."""
+        their ancestors: moving into the source's own ancestor would empty
+        the source into its parent group, the degenerate empty-segment
+        outcome this rework removes."""
         skip = set()
-        roots = []
-        seen_roots = set()
         for obj, _subs in sources:
             skip.add(obj.Name)
             node = walls_object.parent_group(obj)
             while node is not None and node.Name not in skip:
                 skip.add(node.Name)
                 node = walls_object.parent_group(node)
-            root = walls_object.wall_root(obj) or obj
-            if root.Name not in seen_roots:
-                seen_roots.add(root.Name)
-                roots.append(root)
+        root = walls_object.wall_root(sources[0][0]) or sources[0][0]
         options = []
-        for root in roots:
-            for seg in root.Group:
-                if not walls_object.is_segment(seg) or seg.Name in skip:
-                    continue
-                options.append(seg)
+        for seg in root.Group:
+            if not walls_object.is_segment(seg) or seg.Name in skip:
+                continue
+            options.append(seg)
         return options
 
     def _pickedEdges(self, obj, sel):
