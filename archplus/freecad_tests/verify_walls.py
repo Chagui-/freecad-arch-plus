@@ -248,6 +248,10 @@ def _w7_reload(doc):
     doc.recompute()
     walls_object.splitSegment(wall.Group[0], ["Edge1"], name="exterior")
     doc.recompute()
+    from archplus.tools.walls import gui as walls_gui
+    walls_gui._ensureVP(wall)
+    for seg in wall.Group:
+        walls_gui._ensureVP(seg)
     import os
     import tempfile
     path = os.path.join(tempfile.gettempdir(), "archplus_walls_reload.FCStd")
@@ -263,6 +267,9 @@ def _w7_reload(doc):
         ok = ok and abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
         ok = ok and seg.Proxy.Type == "WallSegment" and seg.Wall is wall2
     h.check("W7 reload preserves tree, claims and inheritance", ok)
+    h.check("W7 restored view provider nests the segments",
+            wall2 is not None
+            and wall2.ViewObject.Proxy.claimChildren() == list(wall2.Group))
     FreeCAD.closeDocument(doc2.Name)
 
 

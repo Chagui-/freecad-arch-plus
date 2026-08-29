@@ -8,6 +8,7 @@ import os
 
 import FreeCAD
 import FreeCADGui
+from FreeCAD import Vector
 
 from PySide import QtCore, QtGui
 
@@ -49,6 +50,9 @@ def _sketches_in_doc(doc):
 class _ViewProviderWall:
     def __init__(self, vobj):
         vobj.Proxy = self
+        self.Object = vobj.Object
+
+    def attach(self, vobj):
         self.Object = vobj.Object
 
     def getIcon(self):
@@ -492,6 +496,16 @@ class WallSegmentTaskPanel:
 FreeCADGui.addCommand("ArchPlus_Walls", WallPlusCommand())
 
 
+def _projectToSketchPlane(point, sketch):
+    """The point projected onto the sketch's global plane along the
+    plane's normal."""
+    if sketch is None or not hasattr(sketch, "getGlobalPlacement"):
+        return point
+    placement = sketch.getGlobalPlacement()
+    normal = placement.Rotation.multVec(Vector(0, 0, 1))
+    return point - normal * (point - placement.Base).dot(normal)
+
+
 def _claimedEdgePolylines(segment):
     """[(subname, [global points])] for each claimed edge, for matching."""
     sketch = segment.Base
@@ -527,35 +541,63 @@ class WallSplitCommand:
         return False
 
     def Activated(self):
-        from archplus.tools.walls import object as walls_object
         doc = FreeCAD.ActiveDocument
         doc.openTransaction("Split wall segment")
         for sel in FreeCADGui.Selection.getSelectionEx():
             obj = sel.Object
             if not walls_object.is_segment(obj):
                 continue
-            if sel.HasSubObjects:
-                picked = []
-                for name in sel.SubElementNames:
-                    if not name.startswith("Face"):
-                        continue
-                    try:
-                        face = obj.Shape.getElement(name)
-                    except Exception:
-                        continue
-                    idx = model.match_edge(
-                        [pts for _sub, pts in _claimedEdgePolylines(obj)],
-                        tuple(face.CenterOfGravity), tol=5.0)
-                    if idx is not None:
-                        picked.append(_claimedEdgePolylines(obj)[idx][0])
-                if picked:
-                    walls_object.splitSegment(obj, sorted(set(picked)))
-            else:
-                subs = [sub for sub in obj.Proxy._claimedEdges(obj)]
-                if subs:
-                    walls_object.splitSegment(obj, subs)
+            subs = self._pickedEdges(obj, sel)
+            if subs:
+                walls_object.splitSegment(obj, subs)
         doc.recompute()
         doc.commitTransaction()
+
+    def _pickedEdges(self, obj, sel):
+        """The claimed subnames under the selection's picked faces.
+
+        Each picked face maps through the user's actual click point —
+        projected onto the sketch plane and matched to the nearest claimed
+        edge within one effective wall width, since a point inside the
+        wall band can never be farther than that from its baseline. When
+        FreeCAD recorded no pick point the face centroid is projected and
+        matched instead. A face that maps to no claimed edge is reported
+        in the Report view instead of splitting nothing."""
+        polys = _claimedEdgePolylines(obj)
+        if not sel.HasSubObjects:
+            return sorted(sub for sub, _pts in polys)
+        if not polys:
+            return []
+        names = list(sel.SubElementNames)
+        points = list(sel.PickedPoints)
+        paired = points if len(points) == len(names) else [None] * len(names)
+        tol = walls_object.effectiveValues(obj)["Width"]
+        picked = []
+        for i, name in enumerate(names):
+            if not name.startswith("Face"):
+                continue
+            point = paired[i]
+            if point is None:
+                try:
+                    point = obj.Shape.getElement(name).CenterOfGravity
+                except Exception:
+                    continue
+            sub = self._nearestEdge(polys, _projectToSketchPlane(point,
+                                                                obj.Base),
+                                    tol)
+            if sub is not None:
+                picked.append(sub)
+            else:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: face '%s' of segment '%s' is not on any "
+                    "claimed run; nothing to split there\n"
+                    % (name, obj.Label))
+        return sorted(set(picked))
+
+    def _nearestEdge(self, polys, point, tol):
+        idx = model.match_edge([pts for _sub, pts in polys],
+                               (point.x, point.y, point.z), tol)
+        return None if idx is None else polys[idx][0]
 
 
 FreeCADGui.addCommand("ArchPlus_WallSplit", WallSplitCommand())

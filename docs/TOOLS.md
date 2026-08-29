@@ -154,9 +154,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   opening's `Hosts`, and an opening that spans two segments is cut from both.
 - **Split segment** — right-click a segment in the tree or the 3D view and
   choose **Split segment** to move all of its edges into a new segment group.
-  To split off only part of a segment, select the wall faces to move in the
-  3D view first, then right-click and choose **Split segment**. There is no
-  toolbar button; the entry lives in the segment's context menu.
+  To split off only part of a segment, click the faces to move in the 3D
+  view first, then right-click and choose **Split segment**: each clicked
+  face moves the run nearest to the click. There is no toolbar button; the
+  entry lives in the segment's context menu.
 
 ### Edit Wall panel
 
@@ -187,9 +188,9 @@ new segment group.
 - Collinear runs that belong to *different* groups butt with coplanar faces
   and can flicker in the 3D view (z-fighting — the same cosmetic artifact as
   any two touching solids in FreeCAD).
-- **Split segment** matches faces whose centre lies on the baseline (within
-  a 5 mm tolerance) — practically, the wall's bottom face when centred on
-  the sketch line. Picking a side or end face does nothing.
+- **Split segment** maps each clicked face to the claimed run nearest to
+  the click point (within one wall width); a clicked face that matches no
+  run is reported in the Report view and nothing is split for it.
 
 ## Regenerating the images
 
