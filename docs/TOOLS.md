@@ -134,7 +134,9 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 - **Sketch-based segments** — a wall references its base sketch (never owns
   it): each straight run of the sketch is claimed by a `WallSegment` group
   that extrudes it separately, so segments can be edited, split and
-  overridden independently. The `Wall` root holds the default dimensions and
+  overridden independently. Connected runs build as one mitered chain —
+  corners join cleanly and closed loops build as a single ring — exactly
+  like an Arch Wall. The `Wall` root holds the default dimensions and
   the hosted openings.
 - **Nesting with inherited overrides** — segments can be grouped and
   sub-grouped; a parent's settings flow down to its children unless they
@@ -150,8 +152,11 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
   opening's `Hosts`, and an opening that spans two segments is cut from both.
-- **Split segment** — select built wall faces in the 3D view and run the
-  command to move them into a new segment group with its own overrides.
+- **Split segment** — right-click a segment in the tree or the 3D view and
+  choose **Split segment** to move all of its edges into a new segment group.
+  To split off only part of a segment, select the wall faces to move in the
+  3D view first, then right-click and choose **Split segment**. There is no
+  toolbar button; the entry lives in the segment's context menu.
 
 ### Edit Wall panel
 
@@ -173,8 +178,9 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 
 BIM workbench → select a sketch → **ArchPlus** toolbar → **Wall** → set the
 default dimensions → **OK**. Double-click the wall or a segment to edit it.
-With the wall built, select its faces in the 3D view and run **Split segment**
-to move them into a new segment group.
+With the wall built, right-click a segment (or a face selection within it) in
+the tree or the 3D view and choose **Split segment** to move its edges into a
+new segment group.
 
 ### Known limitations
 

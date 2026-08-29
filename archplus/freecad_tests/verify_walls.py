@@ -355,6 +355,104 @@ def _w11_delete_segment(doc):
                     - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
 
 
+def _w12_closed_corner(doc):
+    L, W, H = 4000.0, 300.0, 2800.0
+    sk = _line_sketch(doc, [
+        ((-2000, -2000), (2000, -2000), False),
+        ((2000, -2000), (2000, 2000), False),
+        ((2000, 2000), (-2000, 2000), False),
+        ((-2000, 2000), (-2000, -2000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    expected = ((L + W) ** 2 - (L - W) ** 2) * H
+    bb = seg.Shape.BoundBox
+    h.check("W12 closed square: one mitered ring solid",
+            len(seg.Shape.Solids) == 1
+            and abs(seg.Shape.Volume - expected) < 1e-6 * expected,
+            "volume %.3f expected %.3f solids %d"
+            % (seg.Shape.Volume, expected, len(seg.Shape.Solids)))
+    h.check("W12 closed square: bbox (L+W) per side, centered on sketch",
+            abs(bb.XMin + (L + W) / 2) < 1e-3
+            and abs(bb.XMax - (L + W) / 2) < 1e-3
+            and abs(bb.YMin + (L + W) / 2) < 1e-3
+            and abs(bb.YMax - (L + W) / 2) < 1e-3,
+            "bbox %s" % bb)
+
+
+def _w13_closed_align(doc):
+    L, W, H = 4000.0, 300.0, 2800.0
+    sk = _line_sketch(doc, [
+        ((-2000, -2000), (-2000, 2000), False),
+        ((-2000, 2000), (2000, 2000), False),
+        ((2000, 2000), (2000, -2000), False),
+        ((2000, -2000), (-2000, -2000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    wall.Align = "Left"
+    doc.recompute()
+    seg = wall.Group[0]
+    expected = ((L + 2 * W) ** 2 - L ** 2) * H
+    bb = seg.Shape.BoundBox
+    h.check("W13 closed square Left: outward ring, no gaps",
+            len(seg.Shape.Solids) == 1
+            and abs(seg.Shape.Volume - expected) < 1e-6 * expected
+            and abs(bb.XMin + (L + 2 * W) / 2) < 1e-3
+            and abs(bb.XMax - (L + 2 * W) / 2) < 1e-3
+            and abs(bb.YMin + (L + 2 * W) / 2) < 1e-3
+            and abs(bb.YMax - (L + 2 * W) / 2) < 1e-3,
+            "volume %.3f expected %.3f bbox %s"
+            % (seg.Shape.Volume, expected, bb))
+
+
+def _w14_view_provider(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    from archplus.tools.walls import gui as walls_gui
+    walls_gui._ensureVP(wall)
+    walls_gui._ensureVP(seg)
+    h.check("W14 view provider nests segments under the wall",
+            wall.ViewObject.Proxy.claimChildren() == list(wall.Group)
+            and seg.ViewObject.Proxy.claimChildren() == [])
+
+
+def _w15_split_context_menu(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    from archplus.tools.walls import gui as walls_gui
+    from PySide import QtGui
+    import FreeCADGui
+    walls_gui._ensureVP(wall)
+    walls_gui._ensureVP(seg)
+    FreeCADGui.Selection.clearSelection()
+    h.check("W15 split command inactive without a segment selection",
+            not walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.addSelection(seg)
+    h.check("W15 split command active with a segment selected",
+            walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall)
+    h.check("W15 split command active with the wall root selected",
+            walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    seg_menu = QtGui.QMenu()
+    seg.ViewObject.Proxy.setupContextMenu(seg.ViewObject, seg_menu)
+    root_menu = QtGui.QMenu()
+    wall.ViewObject.Proxy.setupContextMenu(wall.ViewObject, root_menu)
+    h.check("W15 context menu offers Split segment on segments only",
+            any(a.text() == "Split segment" for a in seg_menu.actions())
+            and not any(a.text() == "Split segment"
+                        for a in root_menu.actions()))
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -367,5 +465,9 @@ def run():
     _w9_align_offset(doc)
     _w10_arc(doc)
     _w11_delete_segment(doc)
+    _w12_closed_corner(doc)
+    _w13_closed_align(doc)
+    _w14_view_provider(doc)
+    _w15_split_context_menu(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

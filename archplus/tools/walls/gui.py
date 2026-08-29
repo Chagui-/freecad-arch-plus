@@ -15,6 +15,12 @@ from archplus.common import widgets
 from archplus.tools.walls import object as walls_object
 from archplus.tools.walls import model
 
+try:
+    from draftutils.translate import translate
+except Exception:
+    def translate(ctxt, txt):
+        return txt
+
 _DIR = os.path.dirname(__file__)
 ICON = os.path.join(_DIR, "resources", "icons", "WallPlus.svg")
 _ICON_DIR = os.path.join(_DIR, "resources", "icons")
@@ -43,9 +49,24 @@ def _sketches_in_doc(doc):
 class _ViewProviderWall:
     def __init__(self, vobj):
         vobj.Proxy = self
+        self.Object = vobj.Object
 
     def getIcon(self):
         return ICON
+
+    def claimChildren(self):
+        """Nest the group's segments under this object in the tree (works
+        for the wall root and for nested segments alike)."""
+        obj = getattr(self, "Object", None)
+        return list(getattr(obj, "Group", None) or [])
+
+    def setupContextMenu(self, vobj, menu):
+        if not walls_object.is_segment(vobj.Object):
+            return
+        action = QtGui.QAction(translate("Arch", "Split segment"), menu)
+        action.triggered.connect(
+            lambda: FreeCADGui.runCommand("ArchPlus_WallSplit", 0))
+        menu.addAction(action)
 
     def setEdit(self, vobj, mode=0):
         obj = vobj.Object
@@ -497,6 +518,11 @@ class WallSplitCommand:
     def IsActive(self):
         for sel in FreeCADGui.Selection.getSelectionEx():
             if walls_object.is_segment(sel.Object):
+                return True
+            proxy_type = getattr(getattr(sel.Object, "Proxy", None),
+                                 "Type", None)
+            if proxy_type == walls_object.TYPE_WALL \
+                    and walls_object.all_segments(sel.Object):
                 return True
         return False
 

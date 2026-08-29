@@ -162,18 +162,36 @@ class _Wall:
             obj.Shape = empty
             return
         normal = sketch.getGlobalPlacement().Rotation.multVec(Vector(0, 0, 1))
-        solids = []
+        edges = []
         for sub in subnames:
             try:
-                edge = sketch.Shape.getElement(sub)
+                edges.append(sketch.Shape.getElement(sub))
             except Exception:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: sketch edge '%s' could not be read; skipped\n"
                     % sub)
-                continue
-            face = footprint(edge, cfg["Width"], cfg["Align"], cfg["Offset"],
-                             normal)
-            if face is None:
+        if not edges:
+            obj.Shape = empty
+            return
+        try:
+            chains = Part.getSortedClusters(edges)
+        except Exception:
+            chains = [[edge] for edge in edges]
+        solids = []
+        for chain in chains:
+            try:
+                face = chainFootprint(chain, cfg["Width"], cfg["Align"],
+                                      cfg["Offset"], normal)
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: segment '%s': mitered chain build failed (%s); "
+                    "building its edges separately\n" % (obj.Label, exc))
+                for edge in chain:
+                    face = footprint(edge, cfg["Width"], cfg["Align"],
+                                     cfg["Offset"], normal)
+                    if face is None:
+                        continue
+                    solids.append(face.extrude(normal * height))
                 continue
             solids.append(face.extrude(normal * height))
         if not solids:
@@ -316,6 +334,208 @@ def footprint(edge, width, align, offset, normal):
         return Part.Face(wire)
     except Exception:
         return None
+
+
+def chainFootprint(edges, width, align, offset, normal):
+    """The mitered wall footprint face for one connected chain of sketch
+    edges, in global coords. Raises when the chain cannot be offset; the
+    caller then falls back to per-edge footprints.
+
+    The chain wire is offset twice within the sketch plane — signed
+    distances are positive left of the sketch edges' travel directions,
+    the same convention as the per-edge footprints — and the wall band is
+    built between the two offset wires, so shared corners come out mitered
+    and closed loops build as one ring with a hole."""
+    import Part
+    wire = _chainWire(edges)
+    poly = _chainPolyline(edges)
+    d1, d2 = _chainOffsets(width, align, offset)
+    a = _offsetChainWire(wire, poly, d1, normal)
+    b = _offsetChainWire(wire, poly, d2, normal)
+    if wire.isClosed():
+        return _ringFace(a, b)
+    return _bandFace(a, b)
+
+
+def _chainWire(edges):
+    import Part
+    wire = Part.Wire(edges)
+    if not wire.isValid() or not wire.Edges:
+        raise ValueError("chain edges do not form a wire")
+    return wire
+
+
+def _chainOffsets(width, align, offset):
+    if align == "Center":
+        return offset - width / 2.0, offset + width / 2.0
+    side = -1.0 if align == "Right" else 1.0
+    return side * offset, side * (offset + width)
+
+
+def _edgePoints(edge):
+    """The edge's points in its own sketch travel direction."""
+    if type(edge.Curve).__name__ in ("Line", "LineSegment"):
+        return [v.Point for v in edge.Vertexes]
+    pts = edge.discretize(Number=24)
+    if edge.isClosed():
+        pts.append(pts[0])
+    return pts
+
+
+def _chainPolyline(edges):
+    """Discretized points along the chain, each edge taken in its own
+    sketch travel direction; raises when the edge directions do not
+    traverse the chain head-to-tail, since a doubled-back chain cannot
+    take one uniform offset side."""
+    remaining = []
+    for edge in edges:
+        if edge.Length >= 1e-9:
+            remaining.append(_edgePoints(edge))
+    if not remaining:
+        raise ValueError("chain has no usable edges")
+    pts = list(remaining.pop(0))
+    while remaining:
+        for i, ev in enumerate(remaining):
+            if ev[0].distanceToPoint(pts[-1]) <= 1e-3:
+                pts.extend(ev[1:])
+                remaining.pop(i)
+                break
+        else:
+            break
+    while remaining:
+        for i, ev in enumerate(remaining):
+            if ev[-1].distanceToPoint(pts[0]) <= 1e-3:
+                pts = ev[:-1] + pts
+                remaining.pop(i)
+                break
+        else:
+            raise ValueError("chain edges do not follow one travel direction")
+    return pts
+
+
+def _offsetChainWire(wire, poly, dist, normal):
+    """Offset a chain wire inside its sketch plane; positive dist is left
+    of the chain's sketch travel direction."""
+    import Part
+    if dist == 0:
+        return wire.copy()
+    if all(type(e.Curve).__name__ in ("Line", "LineSegment")
+           for e in wire.Edges):
+        return _offsetStraightWire(poly, dist, normal)
+    if wire.isClosed():
+        area = 0.0
+        for i in range(len(poly)):
+            area += poly[i].cross(poly[(i + 1) % len(poly)]).dot(normal)
+        return wire.makeOffset2D(-dist if area > 0 else dist, 2, False, False)
+    result = wire.makeOffset2D(-dist, 2, False, True)
+    if not _offsetIsLeft(poly, result, dist, normal):
+        result = wire.makeOffset2D(dist, 2, False, True)
+        if not _offsetIsLeft(poly, result, dist, normal):
+            raise ValueError("wire offset landed on the wrong side")
+    return result
+
+
+def _offsetIsLeft(poly, offset_wire, dist, normal):
+    """True when offset_wire sits dist left of the poly's travel at its
+    start."""
+    start = poly[0]
+    travel = poly[1] - start if len(poly) > 1 else None
+    if travel is None or travel.Length < 1e-9:
+        return True
+    left = normal.cross(travel.normalize())
+    near = min((v.Point for v in offset_wire.Vertexes),
+               key=lambda p: p.distanceToPoint(start))
+    return near.sub(start).dot(left) * dist > -1e-9
+
+
+def _offsetStraightWire(pts, dist, normal):
+    """Exact in-plane offset of a straight-chain polyline with mitered
+    corners.
+
+    makeOffset2D refuses straight-only wires (a straight chain does not
+    define a unique plane), so the offset lines are built by hand and
+    consecutive lines are intersected for the miters. Positive dist is
+    left of the chain's travel direction."""
+    import Part
+    closed = pts[0].distanceToPoint(pts[-1]) <= 1e-3
+    pts = pts[:-1] if closed else list(pts)
+    n = len(pts)
+    if n < (3 if closed else 2):
+        raise ValueError("degenerate chain")
+    count = n if closed else n - 1
+    dirs = [(pts[(i + 1) % n] - pts[i]).normalize() for i in range(count)]
+    perps = [normal.cross(d) for d in dirs]
+    q = [] if closed else [pts[0] + perps[0] * dist]
+    for i in range(0 if closed else 1, n if closed else n - 1):
+        u = dirs[(i - 1) % count]
+        v = dirs[i % count]
+        denom = u.cross(v).dot(normal)
+        if abs(denom) < 1e-9:
+            if u.dot(v) < 0:
+                raise ValueError("chain doubles back on itself")
+            continue
+        a1 = pts[(i - 1) % n] + perps[(i - 1) % count] * dist
+        a2 = pts[i] + perps[i % count] * dist
+        t = (a2 - a1).cross(v).dot(normal) / denom
+        q.append(a1 + u * t)
+    if not closed:
+        q.append(pts[n - 1] + perps[-1] * dist)
+    if len(q) < (3 if closed else 2):
+        raise ValueError("offset chain degenerated")
+    edges = []
+    for i in range(len(q) if closed else len(q) - 1):
+        p1 = q[i]
+        p2 = q[(i + 1) % len(q)]
+        if p1.distanceToPoint(p2) < 1e-9:
+            raise ValueError("offset chain degenerated")
+        edges.append(Part.LineSegment(p1, p2).toShape())
+    result = Part.Wire(edges)
+    if not result.isValid():
+        raise ValueError("offset wire is invalid")
+    return result
+
+
+def _ringFace(a, b):
+    """The annular face between two closed offset wires."""
+    import Part
+    f1 = Part.Face(a)
+    f2 = Part.Face(b)
+    outer, inner = (f1, f2) if f1.Area >= f2.Area else (f2, f1)
+    ring = outer.cut(inner)
+    if len(ring.Faces) != 1 or ring.Area <= 1e-9 or not ring.isValid():
+        raise ValueError("offset ring did not produce one face")
+    return ring
+
+
+def _bandFace(a, b):
+    """The band face between two open offset wires, closed at the free
+    ends with connecting lines."""
+    import Part
+    pa = [v.Point for v in a.Vertexes]
+    pb = [v.Point for v in b.Vertexes]
+    pa1, pa2 = pa[0], pa[-1]
+    pb1, pb2 = pb[0], pb[-1]
+    if pa1.distanceToPoint(pb1) > pa1.distanceToPoint(pb2):
+        pb1, pb2 = pb2, pb1
+    edges = ([Part.LineSegment(pa1, pb1).toShape()] + list(b.Edges)
+             + [Part.LineSegment(pb2, pa2).toShape()] + list(a.Edges))
+    wires = []
+    try:
+        wires.append(Part.Wire(Part.__sortEdges__(edges)))
+    except Exception:
+        pass
+    try:
+        wires.append(Part.Wire(edges))
+    except Exception:
+        pass
+    for wire in wires:
+        try:
+            face = Part.Face(wire)
+        except Exception:
+            continue
+        if face.isValid() and len(face.Faces) == 1 and face.Area > 1e-9:
+            return face
+    raise ValueError("chain band did not produce one face")
 
 
 def _hostedOpenings(root):
