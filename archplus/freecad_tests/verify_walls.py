@@ -787,6 +787,28 @@ def _w20_butt_fallbacks(doc):
             detail="volumes %s" % [round(s.Shape.Volume, 1) for s in segs])
 
 
+def _w21_segment_panel_toggle(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.walls import gui as walls_gui
+    from archplus.common import widgets
+    panel = walls_gui.WallSegmentTaskPanel(wall.Group[0])
+    try:
+        h.check("W21 width field starts disabled while inheriting",
+                not panel.width.isEnabled())
+        panel.overrideW.setChecked(True)
+        h.check("W21 checking the override enables the field immediately",
+                panel.width.isEnabled())
+        h.check("W21 the field pre-fills with the inherited value",
+                abs(widgets.mm(panel.width) - 300.0) < 1e-6)
+        panel.overrideW.setChecked(False)
+        h.check("W21 unchecking disables the field again",
+                not panel.width.isEnabled())
+    finally:
+        panel.reject()
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -808,5 +830,6 @@ def run():
     _w18_segment_miter(doc)
     _w19_mixed_width_miter(doc)
     _w20_butt_fallbacks(doc)
+    _w21_segment_panel_toggle(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

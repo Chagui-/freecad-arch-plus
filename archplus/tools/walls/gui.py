@@ -354,7 +354,10 @@ class WallSegmentTaskPanel:
             return dict(model.DEFAULT_CONFIG)
 
     def _onOverrideW(self, checked):
-        if self._building or self.obj is None:
+        if self._building:
+            return
+        self.width.setEnabled(checked)
+        if self.obj is None:
             return
         if checked:
             widgets.set_mm(self.width, self._inherited()["Width"])
@@ -363,7 +366,10 @@ class WallSegmentTaskPanel:
             self._loadFromObject()
 
     def _onOverrideH(self, checked):
-        if self._building or self.obj is None:
+        if self._building:
+            return
+        self.height.setEnabled(checked)
+        if self.obj is None:
             return
         if checked:
             widgets.set_mm(self.height, self._inherited()["Height"])
