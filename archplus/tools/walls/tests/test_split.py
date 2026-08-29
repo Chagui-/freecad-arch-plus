@@ -294,3 +294,4 @@ def test_activated_cancels_before_opening_a_transaction(monkeypatch):
     cmd._chooseTarget = lambda sources: None
     cmd.Activated()
     assert doc.calls == []
+

@@ -199,7 +199,7 @@ class _Wall:
             miters = None
             if owners:
                 try:
-                    miters = _miterEnds(obj, sketch, normal, chain,
+                    miters = _miterEnds(obj, normal, chain,
                                         sk_edges, owners, cfg)
                 except Exception:
                     miters = None
@@ -212,6 +212,9 @@ class _Wall:
                         face = chainFootprint(chain, cfg["Width"],
                                               cfg["Align"], cfg["Offset"],
                                               normal)
+                        FreeCAD.Console.PrintWarning(
+                            "ArchPlus: segment '%s': seam miter fell back "
+                            "to a butt joint\n" % obj.Label)
                         solids.append(face.extrude(normal * height))
                         continue
                     except Exception:
@@ -491,7 +494,7 @@ def _edgeOwners(root):
     return owners
 
 
-def _miterEnds(obj, sketch, normal, chain, sk_edges, owners, cfg):
+def _miterEnds(obj, normal, chain, sk_edges, owners, cfg):
     """(start_pair, end_pair) miter seam points for a chain that abuts
     other segments of the same wall; a pair is None for a butt end. Only
     all-straight chains take miters, since arcs offset through
@@ -550,10 +553,33 @@ def _miterAt(obj, normal, chain, poly, at_start, sk_edges, owners,
         return None
     edge = neighbor_edges[0]
     dir_e = (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).normalize()
-    if (edge.Vertexes[0].Point - v).Length < 1e-7:
-        a_in_n = Vector(dir_e)
-    elif (edge.Vertexes[-1].Point - v).Length < 1e-7:
-        a_in_n = dir_e * -1
+    import Part
+    edges_n = [e for name, e in sk_edges if owners.get(name) is neighbor]
+    try:
+        clusters = Part.getSortedClusters(edges_n)
+    except Exception:
+        return None
+    cluster = None
+    for cl in clusters:
+        if any(edge.isSame(c) for c in cl):
+            if cluster is not None:
+                return None
+            cluster = cl
+    if cluster is None:
+        return None
+    if not all(type(e.Curve).__name__ in ("Line", "LineSegment")
+               for e in cluster):
+        return None
+    try:
+        poly_n = _chainPolyline(cluster)
+    except Exception:
+        return None
+    if poly_n[0].distanceToPoint(poly_n[-1]) <= 1e-3:
+        return None
+    if (poly_n[0] - v).Length < 1e-7:
+        a_in_n = (poly_n[1] - poly_n[0]).normalize()
+    elif (poly_n[-1] - v).Length < 1e-7:
+        a_in_n = (poly_n[-2] - poly_n[-1]).normalize()
     else:
         return None
     m = a_in + a_in_n

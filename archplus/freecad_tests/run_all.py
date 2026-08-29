@@ -57,6 +57,7 @@ def main():
     with open(_MARKER, "w") as marker:
         marker.write("running\n")
 
+    h.reset_log()
     FreeCAD.Console.PrintMessage("ArchPlus FreeCAD verification\n")
     h._log_file("ArchPlus FreeCAD verification")
     _run_one("verify_browser", verify_browser.run)

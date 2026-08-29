@@ -30,6 +30,13 @@ from PySide import QtCore
 # an automated run reads its results from.
 LOG_PATH = os.path.join(tempfile.gettempdir(), "archplus_verify.log")
 
+
+def reset_log():
+    """Start a fresh log; without this the log appends across sessions and
+    stale FAIL lines from older runs masquerade as current ones."""
+    with open(LOG_PATH, "w") as log:
+        log.write("ArchPlus FreeCAD verification\n")
+
 _FAILURES = []
 _EXCEPTIONS = []
 _ORIG_HOOK = sys.excepthook
