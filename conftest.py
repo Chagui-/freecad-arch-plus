@@ -196,11 +196,14 @@ def _install_fakes():
     sys.modules["FreeCAD"] = freecad
 
     # FreeCADGui — the modules register their commands at import time
-    # (listCommands/addCommand); everything else is inside interactive code
-    # paths the tests don't exercise.
+    # (listCommands/addCommand) and, for the walls tool, install the 3D-view
+    # context-menu hook; everything else is inside interactive code paths
+    # the tests don't exercise.
     freecadgui = types.ModuleType("FreeCADGui")
     freecadgui.listCommands = lambda: []
     freecadgui.addCommand = lambda name, obj: None
+    freecadgui.Selection = types.SimpleNamespace(getSelectionEx=lambda: [])
+    freecadgui.addWorkbenchManipulator = lambda obj: None
     sys.modules["FreeCADGui"] = freecadgui
 
     # PySide.QtGui / QtCore — placeholders. Most widgets are never built in

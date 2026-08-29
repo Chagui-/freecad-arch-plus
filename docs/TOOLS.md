@@ -152,12 +152,15 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
   opening's `Hosts`, and an opening that spans two segments is cut from both.
-- **Split segment** — right-click a segment in the tree or the 3D view and
-  choose **Split segment** to move all of its edges into a new segment group.
-  To split off only part of a segment, click the faces to move in the 3D
-  view first, then right-click and choose **Split segment**: each clicked
-  face moves the run nearest to the click. There is no toolbar button; the
-  entry lives in the segment's context menu.
+- **Split / move segment** — click the wall faces to move in the 3D view,
+  then right-click and choose **Split / move segment…** (also offered in the
+  segment's tree context menu): a small picker offers **<new segment>**, which
+  splits the picked faces' runs into a new sibling segment, or one of the
+  wall's other top-level segments, which the runs are moved into (rejoining
+  that segment's chain). Splitting requires picked faces — running the
+  command with no face picked prints a Report-view warning and changes
+  nothing. Each clicked face moves the run nearest to the click. There is no
+  toolbar button; the entry lives in the context menus.
 
 ### Edit Wall panel
 
@@ -179,17 +182,17 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 
 BIM workbench → select a sketch → **ArchPlus** toolbar → **Wall** → set the
 default dimensions → **OK**. Double-click the wall or a segment to edit it.
-With the wall built, right-click a segment (or a face selection within it) in
-the tree or the 3D view and choose **Split segment** to move its edges into a
-new segment group.
+With the wall built, click the faces to move in the 3D view, right-click and
+choose **Split / move segment…**, then pick **<new segment>** or an existing
+segment to move the faces' runs into.
 
 ### Known limitations
 
 - Collinear runs that belong to *different* groups butt with coplanar faces
   and can flicker in the 3D view (z-fighting — the same cosmetic artifact as
   any two touching solids in FreeCAD).
-- **Split segment** maps each clicked face to the claimed run nearest to
-  the click point (within one wall width); a clicked face that matches no
+- **Split / move segment** maps each clicked face to the claimed run nearest
+  to the click point (within one wall width); a clicked face that matches no
   run is reported in the Report view and nothing is split for it.
 
 ## Regenerating the images

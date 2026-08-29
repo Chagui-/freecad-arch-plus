@@ -3,7 +3,11 @@
 # WallsPlus objects: a wall that references a shared sketch (never owns it)
 # and builds one segment group per claimed sketch edge. One class plays both
 # roles: the Wall root (no shape; defaults + hosted openings) and nestable
-# WallSegment children (fused extrusions minus intersecting openings).
+# WallSegment children (fused extrusions minus intersecting openings). The
+# view provider lives here too, so factories attach it with or without the
+# gui module — the stairs precedent.
+
+import os
 
 import FreeCAD
 from FreeCAD import Vector
@@ -12,6 +16,9 @@ from archplus.tools.walls import model
 
 TYPE_WALL = "Wall"
 TYPE_SEGMENT = "WallSegment"
+
+ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
+                    "WallPlus.svg")
 
 
 class _Wall:
@@ -569,12 +576,70 @@ def opening_volume(win, root):
     return getattr(win, "Shape", None)
 
 
+class _ViewProviderWall:
+    """View provider for both roles; defined here (not in gui.py) so every
+    factory-built wall and segment carries it, headless imports included.
+    GUI-side work is resolved lazily inside the methods."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        self.Object = vobj.Object
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+    def getIcon(self):
+        return ICON
+
+    def claimChildren(self):
+        obj = getattr(self, "Object", None)
+        return list(getattr(obj, "Group", None) or [])
+
+    def setupContextMenu(self, vobj, menu):
+        if not is_segment(vobj.Object):
+            return
+        try:
+            from draftutils.translate import translate
+        except Exception:
+            def translate(ctxt, txt):
+                return txt
+        import FreeCADGui
+        from PySide import QtGui
+        action = QtGui.QAction(translate("Arch", "Split / move segment…"),
+                               menu)
+        action.triggered.connect(
+            lambda: FreeCADGui.runCommand("ArchPlus_WallSplit", 0))
+        menu.addAction(action)
+
+    def setEdit(self, vobj, mode=0):
+        from archplus.tools.walls import gui
+        obj = vobj.Object
+        if getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_WALL:
+            gui.showWallPanel(obj)
+        else:
+            gui.showSegmentPanel(obj)
+        return True
+
+    def unsetEdit(self, vobj, mode=0):
+        import FreeCADGui
+        FreeCADGui.Control.closeDialog()
+        return False
+
+
 def makeWall(doc=None, sketch=None, name="Wall"):
     """Create the wall root plus one rest child. Returns the root."""
     doc = doc or FreeCAD.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", name)
     obj.addExtension("App::GroupExtensionPython")
     _Wall(obj, root=True)
+    if FreeCAD.GuiUp:
+        _ViewProviderWall(obj.ViewObject)
     obj.Base = sketch
     obj.Width = "300 mm"
     obj.Height = "2800 mm"
@@ -590,12 +655,41 @@ def makeSegment(parent, name="Segments"):
     obj = parent.Document.addObject("Part::FeaturePython", name)
     obj.addExtension("App::GroupExtensionPython")
     _Wall(obj, root=False)
+    if FreeCAD.GuiUp:
+        _ViewProviderWall(obj.ViewObject)
     root = wall_root(parent) if is_segment(parent) else parent
     obj.Wall = root
     obj.Base = parent.Base
     obj.Align = "Inherit"
     parent.addObject(obj)
     return obj
+
+
+def moveSegmentEdges(source, target, subnames):
+    """Move claimed edges from `source` into the existing `target` segment.
+
+    The target gains explicit claims; the source drops them from its own
+    claims, except when it is the rest segment — rest claims are dynamic,
+    so adding explicit claims to the target is enough (the rest rebuilds
+    without those edges on its own)."""
+    if target is source:
+        return
+    edges = []
+    claimed = set()
+    for link, subs in getattr(target, "Edges", None) or []:
+        edges.append((link, tuple(subs)))
+        claimed.update(subs)
+    fresh = tuple(s for s in subnames if s not in claimed)
+    if fresh and target.Base is not None:
+        edges.append((target.Base, fresh))
+        target.Edges = edges
+    if not source.Rest:
+        remaining = []
+        for link, subs in getattr(source, "Edges", None) or []:
+            subs = tuple(s for s in subs if s not in subnames)
+            if subs:
+                remaining.append((link, subs))
+        source.Edges = remaining
 
 
 def splitSegment(segment, subnames, name=None):

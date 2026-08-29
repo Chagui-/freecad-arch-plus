@@ -24,6 +24,11 @@ def _expected_volume(width, height, lengths):
     return width * height * sum(lengths)
 
 
+def _vp_name(obj):
+    return getattr(getattr(getattr(obj, "ViewObject", None), "Proxy", None),
+                   "__class__", None).__name__
+
+
 def _w1_creation(doc):
     sk = _line_sketch(doc, [
         ((0, 0), (4000, 0), False),
@@ -133,6 +138,10 @@ def _w5_split(doc):
             abs(new.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
     h.check("W5 source keeps the remainder",
             abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    h.check("W5 split-created segment carries the wall view provider",
+            _vp_name(new) == "_ViewProviderWall"
+            and _vp_name(wall) == "_ViewProviderWall"
+            and _vp_name(rest) == "_ViewProviderWall")
     nested = walls_object.makeSegment(new, name="short")
     nested.Edges = [(sk, ("Edge2",))]
     nested.Height = "2200 mm"
@@ -248,10 +257,6 @@ def _w7_reload(doc):
     doc.recompute()
     walls_object.splitSegment(wall.Group[0], ["Edge1"], name="exterior")
     doc.recompute()
-    from archplus.tools.walls import gui as walls_gui
-    walls_gui._ensureVP(wall)
-    for seg in wall.Group:
-        walls_gui._ensureVP(seg)
     import os
     import tempfile
     path = os.path.join(tempfile.gettempdir(), "archplus_walls_reload.FCStd")
@@ -269,6 +274,7 @@ def _w7_reload(doc):
     h.check("W7 reload preserves tree, claims and inheritance", ok)
     h.check("W7 restored view provider nests the segments",
             wall2 is not None
+            and _vp_name(wall2) == "_ViewProviderWall"
             and wall2.ViewObject.Proxy.claimChildren() == list(wall2.Group))
     FreeCAD.closeDocument(doc2.Name)
 
@@ -418,9 +424,9 @@ def _w14_view_provider(doc):
     wall = walls_object.makeWall(doc, sketch=sk)
     doc.recompute()
     seg = wall.Group[0]
-    from archplus.tools.walls import gui as walls_gui
-    walls_gui._ensureVP(wall)
-    walls_gui._ensureVP(seg)
+    h.check("W14 factory-built wall and segment carry the wall view provider",
+            _vp_name(wall) == "_ViewProviderWall"
+            and _vp_name(seg) == "_ViewProviderWall")
     h.check("W14 view provider nests segments under the wall",
             wall.ViewObject.Proxy.claimChildren() == list(wall.Group)
             and seg.ViewObject.Proxy.claimChildren() == [])
@@ -437,8 +443,6 @@ def _w15_split_context_menu(doc):
     from archplus.tools.walls import gui as walls_gui
     from PySide import QtGui
     import FreeCADGui
-    walls_gui._ensureVP(wall)
-    walls_gui._ensureVP(seg)
     FreeCADGui.Selection.clearSelection()
     h.check("W15 split command inactive without a segment selection",
             not walls_gui.WallSplitCommand().IsActive())
@@ -446,18 +450,131 @@ def _w15_split_context_menu(doc):
     h.check("W15 split command active with a segment selected",
             walls_gui.WallSplitCommand().IsActive())
     FreeCADGui.Selection.clearSelection()
-    FreeCADGui.Selection.addSelection(wall)
-    h.check("W15 split command active with the wall root selected",
+    FreeCADGui.Selection.addSelection(seg, "Face1")
+    h.check("W15 split command active with a segment face selected",
             walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall)
+    h.check("W15 split command inactive with the wall root selected",
+            not walls_gui.WallSplitCommand().IsActive())
     FreeCADGui.Selection.clearSelection()
     seg_menu = QtGui.QMenu()
     seg.ViewObject.Proxy.setupContextMenu(seg.ViewObject, seg_menu)
     root_menu = QtGui.QMenu()
     wall.ViewObject.Proxy.setupContextMenu(wall.ViewObject, root_menu)
-    h.check("W15 context menu offers Split segment on segments only",
-            any(a.text() == "Split segment" for a in seg_menu.actions())
-            and not any(a.text() == "Split segment"
+    h.check("W15 context menu offers Split / move segment on segments only",
+            any(a.text() == "Split / move segment…" for a in seg_menu.actions())
+            and not any(a.text() == "Split / move segment…"
                         for a in root_menu.actions()))
+    hook = walls_gui._WallMenuHook()
+    FreeCADGui.Selection.addSelection(seg, "Face1")
+    h.check("W15 3D-view hook injects the split command for segments",
+            hook.modifyContextMenu("View")
+            == [{"insert": "ArchPlus_WallSplit",
+                 "menuItem": "Std_Placement"}]
+            and hook.modifyContextMenu("Tree") is None)
+    FreeCADGui.Selection.clearSelection()
+    h.check("W15 3D-view hook stays out without a wall selection",
+            hook.modifyContextMenu("View") is None)
+
+
+def _w16_split_ux(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    import FreeCADGui
+    from archplus.tools.walls import gui as walls_gui
+    cmd = walls_gui.WallSplitCommand()
+
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(rest)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        cmd.Activated()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W16 split without faces warns and creates nothing",
+            any("Select wall faces" in m for m in captured)
+            and len(wall.Group) == 1
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(rest, "Face1", 500.0, 0.0, 0.0)
+    h.check("W16 split command active with a picked face", cmd.IsActive())
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new = [o for o in wall.Group if o is not rest]
+    h.check("W16 picked-face split moves the picked run into a new sibling",
+            len(new) == 1
+            and abs(new[0].Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3)
+    h.check("W16 split-created segment gets the wall view provider",
+            _vp_name(new[0]) == "_ViewProviderWall")
+    FreeCADGui.Selection.clearSelection()
+
+    sk2 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX2")
+    wall2 = walls_object.makeWall(doc, sketch=sk2)
+    doc.recompute()
+    a = walls_object.makeSegment(wall2, name="a")
+    a.Edges = [(sk2, ("Edge1",))]
+    a.Rest = False
+    b = walls_object.makeSegment(wall2, name="b")
+    b.Edges = [(sk2, ("Edge2",))]
+    doc.recompute()
+    rest2 = wall2.Group[0]
+    h.check("W16 two explicit segments and a dormant rest child",
+            abs(a.Shape.Volume - _expected_volume(300, 2800, [2000])) < 1e-3
+            and abs(b.Shape.Volume - _expected_volume(300, 2800, [2000])) < 1e-3
+            and rest2.Shape.Volume < 1e-3)
+    options = cmd._targetOptions([(a, ("Edge1",))])
+    h.check("W16 move targets list the other top-level segments only",
+            b in options and rest2 in options and a not in options)
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(a, "Face1", 500.0, 0.0, 0.0)
+    cmd._chooseTarget = lambda sources: b
+    cmd.Activated()
+    doc.recompute()
+    h.check("W16 move to existing: source empties, target joins the runs",
+            a.Shape.Volume < 1e-3
+            and len(b.Shape.Solids) == 1
+            and abs(b.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
+    sk3 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX3")
+    wall3 = walls_object.makeWall(doc, sketch=sk3)
+    doc.recompute()
+    rest3 = wall3.Group[0]
+    d = walls_object.makeSegment(wall3, name="d")
+    d.Edges = [(sk3, ("Edge2",))]
+    doc.recompute()
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(rest3, "Face1", 500.0, 0.0, 0.0)
+    cmd._chooseTarget = lambda sources: d
+    cmd.Activated()
+    doc.recompute()
+    h.check("W16 moving out of a rest source frees only the moved run",
+            abs(d.Shape.Volume
+                - _expected_volume(300, 2800, [2000, 2000])) < 1e-3
+            and rest3.Shape.Volume < 1e-3
+            and rest3.Rest)
+    FreeCADGui.Selection.clearSelection()
 
 
 def run():
@@ -476,5 +593,6 @@ def run():
     _w13_closed_align(doc)
     _w14_view_provider(doc)
     _w15_split_context_menu(doc)
+    _w16_split_ux(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# WallsPlus GUI: commands, ViewProvider and the two task panels (wall root
-# and segment). Follows the stairs/windows panel pattern: docked form,
-# debounced live preview, reference diagrams, description lines.
+# WallsPlus GUI: commands, the two task panels (wall root and segment) and
+# the 3D-view context-menu hook for the split command. Follows the
+# stairs/windows panel pattern: docked form, debounced live preview,
+# reference diagrams, description lines. The view provider lives in
+# object.py; gui.py only consumes it.
 
 import os
 
@@ -15,12 +17,6 @@ from PySide import QtCore, QtGui
 from archplus.common import widgets
 from archplus.tools.walls import object as walls_object
 from archplus.tools.walls import model
-
-try:
-    from draftutils.translate import translate
-except Exception:
-    def translate(ctxt, txt):
-        return txt
 
 _DIR = os.path.dirname(__file__)
 ICON = os.path.join(_DIR, "resources", "icons", "WallPlus.svg")
@@ -45,56 +41,6 @@ def _sketches_in_doc(doc):
         if o.isDerivedFrom("Sketcher::SketchObject"):
             out.append(o)
     return out
-
-
-class _ViewProviderWall:
-    def __init__(self, vobj):
-        vobj.Proxy = self
-        self.Object = vobj.Object
-
-    def attach(self, vobj):
-        self.Object = vobj.Object
-
-    def dumps(self):
-        return None
-
-    def loads(self, state):
-        return None
-
-    def getIcon(self):
-        return ICON
-
-    def claimChildren(self):
-        """Nest the group's segments under this object in the tree (works
-        for the wall root and for nested segments alike)."""
-        obj = getattr(self, "Object", None)
-        return list(getattr(obj, "Group", None) or [])
-
-    def setupContextMenu(self, vobj, menu):
-        if not walls_object.is_segment(vobj.Object):
-            return
-        action = QtGui.QAction(translate("Arch", "Split segment"), menu)
-        action.triggered.connect(
-            lambda: FreeCADGui.runCommand("ArchPlus_WallSplit", 0))
-        menu.addAction(action)
-
-    def setEdit(self, vobj, mode=0):
-        obj = vobj.Object
-        if getattr(getattr(obj, "Proxy", None), "Type", None) == walls_object.TYPE_WALL:
-            showWallPanel(obj)
-        else:
-            showSegmentPanel(obj)
-        return True
-
-    def unsetEdit(self, vobj, mode=0):
-        FreeCADGui.Control.closeDialog()
-        return False
-
-
-def _ensureVP(obj):
-    vp = obj.ViewObject
-    if getattr(getattr(vp, "Proxy", None), "__class__", None) is not _ViewProviderWall:
-        _ViewProviderWall(vp)
 
 
 class WallPlusTaskPanel:
@@ -275,8 +221,6 @@ class WallPlusTaskPanel:
         sel = FreeCADGui.Selection.getSelection()
         sketch = sel[0] if sel and sel[0].isDerivedFrom("Sketcher::SketchObject") else None
         self.obj = walls_object.makeWall(doc, sketch=sketch)
-        _ensureVP(self.obj)
-        _ensureVP(self.obj.Group[0])
         self._apply()
         try:
             FreeCADGui.SendMsgToActiveView("ViewFit")
@@ -376,9 +320,9 @@ class WallSegmentTaskPanel:
         self.stats = QtGui.QLabel()
         self.stats.setStyleSheet("color: #2e7d32;")
         clV.addWidget(self.stats)
-        clV.addWidget(_desc("Split / reassign edges with \"Split from "
-                            "selection…\" in the 3D view. Rest and Sketch are "
-                            "set in the wall panel."))
+        clV.addWidget(_desc("Split / reassign edges with \"Split / move "
+                            "segment…\" after picking wall faces in the 3D "
+                            "view. Rest and Sketch are set in the wall panel."))
         outer.addWidget(clBox)
 
         self._timer = QtCore.QTimer()
@@ -530,34 +474,92 @@ def _claimedEdgePolylines(segment):
     return out
 
 
+NEW_SEGMENT = object()
+
+
 class WallSplitCommand:
     def GetResources(self):
-        return {"Pixmap": ICON, "MenuText": "Split segment",
-                "ToolTip": "Move selected wall faces into a new segment group"}
+        return {"Pixmap": ICON, "MenuText": "Split / move segment…",
+                "ToolTip": "Move the selected wall faces into a new or an "
+                           "existing segment"}
 
     def IsActive(self):
+        if FreeCAD.ActiveDocument is None:
+            return False
         for sel in FreeCADGui.Selection.getSelectionEx():
             if walls_object.is_segment(sel.Object):
-                return True
-            proxy_type = getattr(getattr(sel.Object, "Proxy", None),
-                                 "Type", None)
-            if proxy_type == walls_object.TYPE_WALL \
-                    and walls_object.all_segments(sel.Object):
                 return True
         return False
 
     def Activated(self):
         doc = FreeCAD.ActiveDocument
-        doc.openTransaction("Split wall segment")
+        sources = []
         for sel in FreeCADGui.Selection.getSelectionEx():
             obj = sel.Object
             if not walls_object.is_segment(obj):
                 continue
             subs = self._pickedEdges(obj, sel)
             if subs:
+                sources.append((obj, subs))
+        if not sources:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: Select wall faces in the 3D view, then "
+                "Split segment\n")
+            return
+        choice = self._chooseTarget(sources)
+        if choice is None:
+            return
+        doc.openTransaction("Split / move wall segment")
+        for obj, subs in sources:
+            if choice is NEW_SEGMENT:
                 walls_object.splitSegment(obj, subs)
+            else:
+                walls_object.moveSegmentEdges(obj, choice, subs)
         doc.recompute()
         doc.commitTransaction()
+
+    def _chooseTarget(self, sources):
+        """The dialog choice for the picked faces: NEW_SEGMENT (split into
+        a new sibling per source), an existing target segment, or None when
+        the dialog is cancelled."""
+        options = self._targetOptions(sources)
+        items = ["<new segment>"] + [seg.Label for seg in options]
+        choice, ok = QtGui.QInputDialog.getItem(
+            None, "Split / move segment", "Move the selected faces to:",
+            items, 0, False)
+        if not ok:
+            return None
+        if choice == "<new segment>":
+            return NEW_SEGMENT
+        for seg in options:
+            if seg.Label == choice:
+                return seg
+        return None
+
+    def _targetOptions(self, sources):
+        """The wall's other top-level segments, excluding the sources and
+        their ancestors (moving into an ancestor would conflict with the
+        source's own claims)."""
+        skip = set()
+        roots = []
+        seen_roots = set()
+        for obj, _subs in sources:
+            skip.add(obj.Name)
+            node = walls_object.parent_group(obj)
+            while node is not None and node.Name not in skip:
+                skip.add(node.Name)
+                node = walls_object.parent_group(node)
+            root = walls_object.wall_root(obj) or obj
+            if root.Name not in seen_roots:
+                seen_roots.add(root.Name)
+                roots.append(root)
+        options = []
+        for root in roots:
+            for seg in root.Group:
+                if not walls_object.is_segment(seg) or seg.Name in skip:
+                    continue
+                options.append(seg)
+        return options
 
     def _pickedEdges(self, obj, sel):
         """The claimed subnames under the selection's picked faces.
@@ -567,12 +569,11 @@ class WallSplitCommand:
         edge within one effective wall width, since a point inside the
         wall band can never be farther than that from its baseline. When
         FreeCAD recorded no pick point the face centroid is projected and
-        matched instead. A face that maps to no claimed edge is reported
-        in the Report view instead of splitting nothing."""
+        matched instead. Splitting requires picked faces: a selection
+        without subelements maps to nothing. A face that maps to no claimed
+        edge is reported in the Report view instead of splitting nothing."""
         polys = _claimedEdgePolylines(obj)
-        if not sel.HasSubObjects:
-            return sorted(sub for sub, _pts in polys)
-        if not polys:
+        if not sel.HasSubObjects or not polys:
             return []
         names = list(sel.SubElementNames)
         points = list(sel.PickedPoints)
@@ -604,6 +605,32 @@ class WallSplitCommand:
         idx = model.match_edge([pts for _sub, pts in polys],
                                (point.x, point.y, point.z), tol)
         return None if idx is None else polys[idx][0]
+
+
+class _WallMenuHook:
+    """Injects the split command into the 3D-view right-click menu.
+
+    FreeCAD 1.1 builds the 3D-view context menu from workbench items and
+    WorkbenchManipulator hooks; view-provider setupContextMenu fires only
+    for tree selections, so the 3D entry comes from here. The command stays
+    greyed out unless a wall segment is selected."""
+
+    def modifyContextMenu(self, recipient):
+        if recipient != "View":
+            return None
+        for sel in FreeCADGui.Selection.getSelectionEx():
+            if walls_object.is_segment(sel.Object):
+                return [{"insert": "ArchPlus_WallSplit",
+                         "menuItem": "Std_Placement"}]
+        return None
+
+
+_hook = getattr(FreeCADGui, "_ArchPlusWallsMenuHook", None)
+if _hook is None:
+    _hook = _WallMenuHook()
+    if hasattr(FreeCADGui, "addWorkbenchManipulator"):
+        FreeCADGui.addWorkbenchManipulator(_hook)
+    FreeCADGui._ArchPlusWallsMenuHook = _hook
 
 
 FreeCADGui.addCommand("ArchPlus_WallSplit", WallSplitCommand())
