@@ -308,3 +308,33 @@ root-level placement/moving, Arch wall migration, `Length`/`Area`.
 - `docs/TOOLS.md` gains a Walls section (concepts: claims, rest, inheritance;
   commands: create, split).
 - `docs/ROADMAP.md` moves "walls" to shipped.
+
+## 13. Amendment: cross-segment corner mitering
+
+The original build miters corners within each segment's connected chain;
+boundaries between different segments ended in straight butt cuts, leaving
+a missing wedge on the outer side of the corner and an overlap on the inner
+side once an edge was split into its own segment.
+
+Amended build: when a segment's open chain end abuts a sketch edge claimed
+by another segment of the same wall, both segments compute the same seam —
+the intersection of their respective offset face lines, each using its own
+effective config. Each side trims or extends its end offset points to that
+seam, so the union tiles the corner with no gap and no overlap. Differing
+widths/aligns/offsets per segment are supported by construction (the seam
+slants; the wider segment takes the larger share of the corner); heights
+step at the seam plane, which is vertical and shared.
+
+Butt-joint fallbacks (unchanged behavior): open sketch ends (no neighbor),
+curved boundary edges (arcs offset through makeOffset2D cannot take
+replacement endpoints), vertices where three or more segments meet or where
+one segment presents more than one edge, bands that do not straddle their
+own edge (align/offset combinations outside Center), parallel or collinear
+face lines, and degenerate seams. Whenever a claim/config/Group change
+affects one segment, all segments of the wall rebuild, which keeps both
+sides of every seam consistent.
+
+Verified by W18 (equal-width split: exact analytic volumes, zero overlap,
+no corner gap), W19 (mixed widths: area invariance of the rest segment,
+seam-slant ownership, width-change propagation) and W20 (butt fallbacks:
+open ends and three-segment vertices keep exact butt bands).

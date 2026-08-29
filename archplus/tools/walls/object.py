@@ -101,7 +101,8 @@ class _Wall:
                 seg.touch()
         if self.Type == TYPE_SEGMENT and prop in (
                 "Width", "Height", "Align", "Offset"):
-            for seg in all_segments(obj):
+            root = wall_root(obj)
+            for seg in all_segments(root or obj):
                 seg.touch()
 
     def execute(self, obj):
@@ -184,12 +185,37 @@ class _Wall:
             chains = Part.getSortedClusters(edges)
         except Exception:
             chains = [[edge] for edge in edges]
+        root = obj.Wall
+        owners = _edgeOwners(root) if root is not None else {}
+        sk_edges = []
+        if owners:
+            for name in _sketchEdgeNames(sketch):
+                try:
+                    sk_edges.append((name, sketch.Shape.getElement(name)))
+                except Exception:
+                    continue
         solids = []
         for chain in chains:
+            miters = None
+            if owners:
+                try:
+                    miters = _miterEnds(obj, sketch, normal, chain,
+                                        sk_edges, owners, cfg)
+                except Exception:
+                    miters = None
             try:
                 face = chainFootprint(chain, cfg["Width"], cfg["Align"],
-                                      cfg["Offset"], normal)
+                                      cfg["Offset"], normal, miters)
             except Exception as exc:
+                if miters and (miters[0] or miters[1]):
+                    try:
+                        face = chainFootprint(chain, cfg["Width"],
+                                              cfg["Align"], cfg["Offset"],
+                                              normal)
+                        solids.append(face.extrude(normal * height))
+                        continue
+                    except Exception:
+                        pass
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: segment '%s': mitered chain build failed (%s); "
                     "building its edges separately\n" % (obj.Label, exc))
@@ -207,7 +233,6 @@ class _Wall:
         shape = solids.pop(0)
         for s in solids:
             shape = shape.fuse(s)
-        root = obj.Wall
         if root is not None:
             for win in _hostedOpenings(root):
                 sub = opening_volume(win, root)
@@ -392,7 +417,7 @@ def footprint(edge, width, align, offset, normal):
         return None
 
 
-def chainFootprint(edges, width, align, offset, normal):
+def chainFootprint(edges, width, align, offset, normal, miters=None):
     """The mitered wall footprint face for one connected chain of sketch
     edges, in global coords. Raises when the chain cannot be offset; the
     caller then falls back to per-edge footprints.
@@ -401,13 +426,22 @@ def chainFootprint(edges, width, align, offset, normal):
     distances are positive left of the sketch edges' travel directions,
     the same convention as the per-edge footprints — and the wall band is
     built between the two offset wires, so shared corners come out mitered
-    and closed loops build as one ring with a hole."""
+    and closed loops build as one ring with a hole.
+
+    miters is an optional (start_pair, end_pair); each pair is None for a
+    butt end or (point_d1, point_d2) — the endpoints the two offset wires
+    take at that chain end so that abutting segments share one seam line."""
     import Part
     wire = _chainWire(edges)
     poly = _chainPolyline(edges)
     d1, d2 = _chainOffsets(width, align, offset)
-    a = _offsetChainWire(wire, poly, d1, normal)
-    b = _offsetChainWire(wire, poly, d2, normal)
+    start_m, end_m = miters if miters else (None, None)
+    a = _offsetChainWire(wire, poly, d1, normal,
+                         start_pt=start_m[0] if start_m else None,
+                         end_pt=end_m[0] if end_m else None)
+    b = _offsetChainWire(wire, poly, d2, normal,
+                         start_pt=start_m[1] if start_m else None,
+                         end_pt=end_m[1] if end_m else None)
     if wire.isClosed():
         return _ringFace(a, b)
     return _bandFace(a, b)
@@ -426,6 +460,127 @@ def _chainOffsets(width, align, offset):
         return offset - width / 2.0, offset + width / 2.0
     side = -1.0 if align == "Right" else 1.0
     return side * offset, side * (offset + width)
+
+
+def _lineIntersect(p1, u, p2, v, normal):
+    """Intersection of two in-plane lines (point + direction Vectors), or
+    None when they are parallel."""
+    denom = u.cross(v).dot(normal)
+    if abs(denom) < 1e-12:
+        return None
+    t = (p2 - p1).cross(v).dot(normal) / denom
+    return p1 + u * t
+
+
+def _edgeOwners(root):
+    """Map each sketch edge name to the segment that effectively builds
+    it, using the same claim resolution as the root's report."""
+    sketch = getattr(root, "Base", None)
+    if sketch is None or not hasattr(sketch, "Shape"):
+        return {}
+    names = _sketchEdgeNames(sketch)
+    nodes = [_claimNode(n) for n in getattr(root, "Group", []) or []
+             if is_segment(n)]
+    if not nodes:
+        return {}
+    built, _warnings = model.resolve_claims(nodes, names)
+    owners = {}
+    for seg, claimed in built.items():
+        for name in claimed:
+            owners[name] = seg
+    return owners
+
+
+def _miterEnds(obj, sketch, normal, chain, sk_edges, owners, cfg):
+    """(start_pair, end_pair) miter seam points for a chain that abuts
+    other segments of the same wall; a pair is None for a butt end. Only
+    all-straight chains take miters, since arcs offset through
+    makeOffset2D cannot take replacement endpoints."""
+    if not all(type(e.Curve).__name__ in ("Line", "LineSegment")
+               for e in chain):
+        return None, None
+    try:
+        poly = _chainPolyline(chain)
+    except Exception:
+        return None, None
+    if poly[0].distanceToPoint(poly[-1]) <= 1e-3:
+        return None, None
+    return (_miterAt(obj, normal, chain, poly, True, sk_edges,
+                     owners, cfg),
+            _miterAt(obj, normal, chain, poly, False, sk_edges,
+                     owners, cfg))
+
+
+def _miterAt(obj, normal, chain, poly, at_start, sk_edges, owners,
+             cfg):
+    """The (point_d1, point_d2) seam pair for one open chain end, or None
+    for a butt end. Both abutting segments run the same construction from
+    their own side, so each pair of face lines meets in one shared point
+    and the union tiles the corner without gap or overlap."""
+    if at_start:
+        v = poly[0]
+        travel = (poly[1] - poly[0]).normalize()
+        a_in = Vector(travel)
+    else:
+        v = poly[-1]
+        travel = (poly[-1] - poly[-2]).normalize()
+        a_in = travel * -1
+    d1, d2 = _chainOffsets(cfg["Width"], cfg["Align"], cfg["Offset"])
+    if not d1 < 0 < d2:
+        return None
+    candidates = []
+    for name, edge in sk_edges:
+        if any(edge.isSame(c) for c in chain):
+            continue
+        if min(v.distanceToPoint(vx.Point)
+               for vx in edge.Vertexes) > 1e-7:
+            continue
+        candidates.append((name, edge))
+    if not candidates:
+        return None
+    others = {owners.get(name) for name, _e in candidates}
+    others.discard(None)
+    others.discard(obj)
+    if len(others) != 1:
+        return None
+    neighbor = others.pop()
+    neighbor_edges = [e for name, e in candidates
+                      if owners.get(name) is neighbor]
+    if len(neighbor_edges) != 1:
+        return None
+    edge = neighbor_edges[0]
+    dir_e = (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).normalize()
+    if (edge.Vertexes[0].Point - v).Length < 1e-7:
+        a_in_n = Vector(dir_e)
+    elif (edge.Vertexes[-1].Point - v).Length < 1e-7:
+        a_in_n = dir_e * -1
+    else:
+        return None
+    m = a_in + a_in_n
+    if m.Length < 1e-9:
+        return None
+    m.normalize()
+    ncfg = effectiveValues(neighbor)
+    e1, e2 = _chainOffsets(ncfg["Width"], ncfg["Align"], ncfg["Offset"])
+    if not e1 < 0 < e2:
+        return None
+    perp_m = normal.cross(travel)
+    perp_n = normal.cross(dir_e)
+    d_cm = d2 if perp_m.dot(m) > 0 else d1
+    d_cn = e2 if perp_n.dot(m) > 0 else e1
+    p_concave = _lineIntersect(v + perp_m * d_cm, travel,
+                               v + perp_n * d_cn, dir_e, normal)
+    d_cx_m = d1 if d_cm == d2 else d2
+    d_cx_n = e1 if d_cn == e2 else e2
+    p_convex = _lineIntersect(v + perp_m * d_cx_m, travel,
+                              v + perp_n * d_cx_n, dir_e, normal)
+    if p_concave is None or p_convex is None:
+        return None
+    if p_concave.distanceToPoint(p_convex) < 1e-9:
+        return None
+    p_d1 = p_concave if d_cm == d1 else p_convex
+    p_d2 = p_concave if d_cm == d2 else p_convex
+    return (p_d1, p_d2)
 
 
 def _edgePoints(edge):
@@ -469,15 +624,18 @@ def _chainPolyline(edges):
     return pts
 
 
-def _offsetChainWire(wire, poly, dist, normal):
+def _offsetChainWire(wire, poly, dist, normal, start_pt=None, end_pt=None):
     """Offset a chain wire inside its sketch plane; positive dist is left
-    of the chain's sketch travel direction."""
+    of the chain's sketch travel direction. start_pt/end_pt replace the
+    open ends' offset points when the chain abuts another segment (the
+    shared miter seam); they are only honored on the straight path."""
     import Part
     if dist == 0:
         return wire.copy()
     if all(type(e.Curve).__name__ in ("Line", "LineSegment")
            for e in wire.Edges):
-        return _offsetStraightWire(poly, dist, normal)
+        return _offsetStraightWire(poly, dist, normal,
+                                   start_pt=start_pt, end_pt=end_pt)
     if wire.isClosed():
         area = 0.0
         for i in range(len(poly)):
@@ -504,14 +662,17 @@ def _offsetIsLeft(poly, offset_wire, dist, normal):
     return near.sub(start).dot(left) * dist > -1e-9
 
 
-def _offsetStraightWire(pts, dist, normal):
+def _offsetStraightWire(pts, dist, normal, start_pt=None, end_pt=None):
     """Exact in-plane offset of a straight-chain polyline with mitered
     corners.
 
     makeOffset2D refuses straight-only wires (a straight chain does not
     define a unique plane), so the offset lines are built by hand and
     consecutive lines are intersected for the miters. Positive dist is
-    left of the chain's travel direction."""
+    left of the chain's travel direction. start_pt/end_pt replace the
+    first/last offset point (shared seam with an abutting segment); the
+    point must lie on the end offset line, which trims or extends the
+    end segment."""
     import Part
     closed = pts[0].distanceToPoint(pts[-1]) <= 1e-3
     pts = pts[:-1] if closed else list(pts)
@@ -521,7 +682,8 @@ def _offsetStraightWire(pts, dist, normal):
     count = n if closed else n - 1
     dirs = [(pts[(i + 1) % n] - pts[i]).normalize() for i in range(count)]
     perps = [normal.cross(d) for d in dirs]
-    q = [] if closed else [pts[0] + perps[0] * dist]
+    q = [] if closed else [start_pt if start_pt is not None
+                           else pts[0] + perps[0] * dist]
     for i in range(0 if closed else 1, n if closed else n - 1):
         u = dirs[(i - 1) % count]
         v = dirs[i % count]
@@ -535,7 +697,8 @@ def _offsetStraightWire(pts, dist, normal):
         t = (a2 - a1).cross(v).dot(normal) / denom
         q.append(a1 + u * t)
     if not closed:
-        q.append(pts[n - 1] + perps[-1] * dist)
+        q.append(end_pt if end_pt is not None
+                 else pts[n - 1] + perps[-1] * dist)
     if len(q) < (3 if closed else 2):
         raise ValueError("offset chain degenerated")
     edges = []

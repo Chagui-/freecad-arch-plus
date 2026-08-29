@@ -671,6 +671,122 @@ def _w17_bim_context_menu(doc):
             detail)
 
 
+def _segment_claims(seg):
+    out = []
+    for _link, subs in getattr(seg, "Edges", None) or []:
+        out.extend(subs)
+    return out
+
+
+def _w18_segment_miter(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 1000), (0, 1000), False),
+        ((0, 1000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge2"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall)
+    seg_new = [s for s in segs if _segment_claims(s) == ["Edge2"]][0]
+    seg_rest = [s for s in segs if s is not seg_new][0]
+    height = 2800.0
+    h.check("W18 split corner builds valid solids",
+            seg_new.Shape.isValid() and seg_rest.Shape.isValid())
+    h.check("W18 split segment volume is exact",
+            abs(seg_new.Shape.Volume - 300000.0 * height) < 1.0)
+    h.check("W18 rest volume is exact",
+            abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+    common = seg_new.Shape.common(seg_rest.Shape).Volume
+    h.check("W18 corner seam leaves no overlap", common < 1e-6,
+            detail="overlap volume %s" % common)
+    empty = 0
+    for gx in range(-4, 5):
+        for gy in range(-4, 5):
+            p = FreeCAD.Vector(1000 + gx * 25.0, gy * 25.0, height / 2.0)
+            if not (seg_new.Shape.isInside(p, 1e-7, True)
+                    or seg_rest.Shape.isInside(p, 1e-7, True)):
+                empty += 1
+    h.check("W18 corner region has no gap", empty == 0,
+            detail="%d empty grid points" % empty)
+
+
+def _w19_mixed_width_miter(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 1000), (0, 1000), False),
+        ((0, 1000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge2"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall)
+    seg_new = [s for s in segs if _segment_claims(s) == ["Edge2"]][0]
+    seg_rest = [s for s in segs if s is not seg_new][0]
+    seg_new.Width = 200
+    doc.recompute()
+    height = 2800.0
+    h.check("W19 narrowed segment volume is exact",
+            abs(seg_new.Shape.Volume - 200000.0 * height) < 1.0)
+    h.check("W19 rest area is invariant to the neighbor width",
+            abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+    common = seg_new.Shape.common(seg_rest.Shape).Volume
+    h.check("W19 mixed-width seam leaves no overlap", common < 1e-6,
+            detail="overlap volume %s" % common)
+    slant = (seg_new.Shape.isInside(FreeCAD.Vector(1060, -80, height / 2.0),
+                                    1e-7, True)
+             and seg_rest.Shape.isInside(FreeCAD.Vector(940, 80, height / 2.0),
+                                         1e-7, True)
+             and not seg_rest.Shape.isInside(
+                 FreeCAD.Vector(1060, -80, height / 2.0), 1e-7, True)
+             and not seg_new.Shape.isInside(
+                 FreeCAD.Vector(940, 80, height / 2.0), 1e-7, True))
+    h.check("W19 seam slant gives the wider segment the larger share",
+            slant)
+    seg_new.Width = 300
+    doc.recompute()
+    h.check("W19 width restore rebuilds both sides of the seam",
+            abs(seg_new.Shape.Volume - 300000.0 * height) < 1.0
+            and abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+
+
+def _w20_butt_fallbacks(doc):
+    sk = _line_sketch(doc, [((0, 0), (1000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    h.check("W20 open sketch end builds a butt-ended band",
+            rest.Shape.isValid()
+            and abs(rest.Shape.Volume - 300000.0 * 2800.0) < 1.0)
+    sk2 = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 0), (2000, -500), False),
+    ], name="TPlan")
+    wall2 = walls_object.makeWall(doc, sketch=sk2)
+    doc.recompute()
+    rest2 = wall2.Group[0]
+    walls_object.splitSegment(rest2, ["Edge2"])
+    walls_object.splitSegment(rest2, ["Edge3"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall2)
+    expected = sorted([300.0 * 1000.0 * 2800.0,
+                       300.0 * 1000.0 * 2800.0,
+                       300.0 * 1118.0339878225 * 2800.0])
+    got = sorted(s.Shape.Volume for s in segs)
+    ok = (len(segs) == 3
+          and all(s.Shape.isValid() for s in segs)
+          and all(abs(g - e) < 2.0 for g, e in zip(got, expected)))
+    h.check("W20 three segments at one vertex keep exact butt bands", ok,
+            detail="volumes %s" % [round(s.Shape.Volume, 1) for s in segs])
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -689,5 +805,8 @@ def run():
     _w15_split_gate(doc)
     _w16_split_ux(doc)
     _w17_bim_context_menu(doc)
+    _w18_segment_miter(doc)
+    _w19_mixed_width_miter(doc)
+    _w20_butt_fallbacks(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

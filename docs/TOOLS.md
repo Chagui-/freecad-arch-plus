@@ -148,6 +148,14 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   from the Edit Wall panel). New sketch edges land in the rest segment
   automatically; with no rest segment they stay unbuilt and a warning is
   printed to the Report view.
+- **Cross-segment corners** — where one segment's run ends and another's
+  begins, both segments extend or trim to the same seam line (each using
+  its own width, align and offset), so segment boundaries are mitered just
+  like corners within one segment: no gap and no overlap. With differing
+  widths the seam slants so the wider segment takes the larger share of the
+  corner; segment heights simply step at the seam plane. Open sketch ends,
+  curved boundary edges, and vertices where three or more segments meet
+  keep a straight butt joint.
 - **Hosted doors and windows** — ArchPlus doors and windows host on the wall
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
