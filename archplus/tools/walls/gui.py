@@ -55,6 +55,12 @@ class _ViewProviderWall:
     def attach(self, vobj):
         self.Object = vobj.Object
 
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
     def getIcon(self):
         return ICON
 
