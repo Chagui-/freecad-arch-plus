@@ -5,6 +5,13 @@
 - [x] Shipped — sketch-based segmented walls with inherited overrides, rest
   segment, hosted doors and windows, and interactive splitting (see
   [TOOLS.md](TOOLS.md#walls)).
+- [ ] Backlog — live measurements in the 3D view: on-select dimension
+  lines and a length label rendered beside the selected segment (Coin
+  overlay, dimTracker-style, no document objects; label tracks reflows).
+- [ ] Backlog — interactive in-view controls: endpoint handles that edit
+  the shared sketch (whole connected runs only; plane-projected drags,
+  min-length clamps, opening-embedding validation since hosted openings
+  do not follow the wall, one undo transaction per drag).
 
 ## Stairs
 
