@@ -895,76 +895,6 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
-    _HIGHLIGHT = FACE_HIGHLIGHT
-
-    def _addHighlight(self, vobj):
-        self._highlighted = addFaceHighlight(vobj)
-
-    def _removeHighlight(self, vobj):
-        self._highlighted = False
-        removeFaceHighlight(vobj)
-
-    def _watchSelection(self, vobj):
-        """Keep the edit highlight in step with the selection while the
-        panel is open: deselecting drops it, selecting the segment (or its
-        wall — 3D picks land on the root) restores it. The panel tears the
-        watcher down when it closes (its form's destroyed signal)."""
-        self._unwatchSelection()
-        try:
-            import FreeCADGui
-            obj = vobj.Object
-            watched = [obj, wall_root(obj) or obj]
-            proxy = self
-
-            class _Watcher:
-                def addSelection(self, *_args):
-                    self._sync()
-
-                def removeSelection(self, *_args):
-                    self._sync()
-
-                def clearSelection(self, *_args):
-                    self._sync()
-
-                def setSelection(self, *_args):
-                    self._sync()
-
-                def _sync(self):
-                    try:
-                        selected = any(
-                            FreeCADGui.Selection.isSelected(o)
-                            for o in watched)
-                        if selected and not getattr(proxy, "_highlighted",
-                                                    False):
-                            proxy._addHighlight(vobj)
-                        elif not selected and getattr(proxy, "_highlighted",
-                                                     False):
-                            proxy._removeHighlight(vobj)
-                    except Exception:
-                        pass
-
-            self._watcher = _Watcher()
-            FreeCADGui.Selection.addObserver(self._watcher)
-        except Exception:
-            self._watcher = None
-
-    def _unwatchSelection(self):
-        watcher = getattr(self, "_watcher", None)
-        if watcher is not None:
-            try:
-                import FreeCADGui
-                FreeCADGui.Selection.removeObserver(watcher)
-            except Exception:
-                pass
-        self._watcher = None
-
-    def updateData(self, obj, prop):
-        if prop == "Shape" and getattr(self, "_highlighted", False):
-            try:
-                self._addHighlight(self.Object.ViewObject)
-            except Exception:
-                pass
-
     def setEdit(self, vobj, mode=0):
         from archplus.tools.walls import gui
         obj = vobj.Object
@@ -972,9 +902,12 @@ class _ViewProviderWall:
             gui.showWallPanel(obj)
         else:
             gui.showSegmentPanel(obj)
-        self._addHighlight(vobj)
-        self._watchSelection(vobj)
         return True
+
+    def unsetEdit(self, vobj, mode=0):
+        import FreeCADGui
+        FreeCADGui.Control.closeDialog()
+        return False
 
     def _teardownEdit(self, vobj):
         """Drop the edit highlight and its selection watcher. Closing the

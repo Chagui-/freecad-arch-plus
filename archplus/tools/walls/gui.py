@@ -243,14 +243,12 @@ class WallPlusTaskPanel:
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
-        _endEditVisuals(self.obj)
         self.obj = None
         FreeCADGui.Control.closeDialog()
         return True
 
     def reject(self):
         self._timer.stop()
-        _endEditVisuals(self.obj)
         self.obj = None
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.abortTransaction()
@@ -276,28 +274,94 @@ class WallPlusCommand:
 
 
 def showWallPanel(obj):
-    panel = WallPlusTaskPanel(obj)
-    panel.form.destroyed.connect(lambda: _endEditVisuals(obj))
-    FreeCADGui.Control.showDialog(panel)
+    FreeCADGui.Control.showDialog(WallPlusTaskPanel(obj))
 
 
 def showSegmentPanel(obj):
-    panel = WallSegmentTaskPanel(obj)
-    panel.form.destroyed.connect(lambda: _endEditVisuals(obj))
-    FreeCADGui.Control.showDialog(panel)
+    FreeCADGui.Control.showDialog(WallSegmentTaskPanel(obj))
 
 
-def _endEditVisuals(obj):
-    """Drop the edit highlight and its selection watcher when a wall panel
-    closes. Button closes run the panel's accept/reject, but other close
-    paths (programmatic closeDialog, dialog teardown) do not — they all
-    delete the panel's form widget, whose destroyed signal calls this."""
+class _WallSelectionObserver:
+    """Native selection behavior for wall segments.
+
+    A tree click on a segment selects all of its faces, and a 3D pick of
+    wall geometry — which FreeCAD attributes to the wall root, the claim
+    parent — is redirected to the segment owning the picked face, so the
+    tree highlights the right item. Both actions run deferred on the event
+    loop and only while the triggering selection is still current."""
+
+    def addSelection(self, doc, obj, sub, pnt):
+        try:
+            from PySide import QtCore
+            QtCore.QTimer.singleShot(
+                0, lambda: self._run(doc, obj, sub, pnt))
+        except Exception:
+            pass
+
+    def removeSelection(self, *_args):
+        pass
+
+    def clearSelection(self, *_args):
+        pass
+
+    def setSelection(self, *_args):
+        pass
+
+    def _run(self, doc, obj, sub, pnt):
+        try:
+            import FreeCADGui
+            document = FreeCAD.getDocument(doc) if doc else None
+            target = document.getObject(obj) if document else None
+            if target is None:
+                return
+            if walls_object.is_segment(target) and not sub:
+                self._selectFaces(FreeCADGui, target)
+            elif walls_object.is_root(target) and sub.startswith("Face"):
+                self._redirect(FreeCADGui, target, sub, pnt)
+        except Exception:
+            pass
+
+    def _selectFaces(self, gui, seg):
+        shape = getattr(seg, "Shape", None)
+        if shape is None or shape.isNull() or not shape.Faces:
+            return
+        names = None
+        for sel in gui.Selection.getSelectionEx():
+            if sel.Object is seg:
+                names = sel.SubElementNames
+                break
+        if names is None or names:
+            return
+        for i in range(len(shape.Faces)):
+            gui.Selection.addSelection(seg, "Face%d" % (i + 1))
+
+    def _redirect(self, gui, root, sub, pnt):
+        still = False
+        for sel in gui.Selection.getSelectionEx():
+            if sel.Object is root and sub in (sel.SubElementNames or ()):
+                still = True
+                break
+        if not still:
+            return
+        point = _asVector(pnt)
+        resolved = walls_object.resolveRootFace(root, sub, point)
+        if resolved is None:
+            return
+        seg, _subs = resolved
+        gui.Selection.removeSelection(root, sub)
+        try:
+            gui.Selection.addSelection(seg, sub,
+                                       point.x, point.y, point.z)
+        except Exception:
+            gui.Selection.addSelection(seg, sub)
+
+
+_selobs = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)
+if _selobs is None:
+    _selobs = _WallSelectionObserver()
     try:
-        vobj = getattr(obj, "ViewObject", None)
-        teardown = getattr(getattr(vobj, "Proxy", None), "_teardownEdit",
-                           None)
-        if callable(teardown):
-            teardown(vobj)
+        FreeCADGui.Selection.addObserver(_selobs)
+        FreeCADGui._ArchPlusWallSelObs = _selobs
     except Exception:
         pass
 
@@ -457,14 +521,12 @@ class WallSegmentTaskPanel:
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
-        _endEditVisuals(self.obj)
         self.obj = None
         FreeCADGui.Control.closeDialog()
         return True
 
     def reject(self):
         self._timer.stop()
-        _endEditVisuals(self.obj)
         self.obj = None
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.abortTransaction()

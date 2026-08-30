@@ -842,95 +842,76 @@ def _w21_segment_panel_toggle(doc):
         panel.reject()
 
 
-def _w22_edit_highlight(doc):
-    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
-    wall = walls_object.makeWall(doc, sketch=sk)
-    doc.recompute()
-    seg = wall.Group[0]
-    vobj = seg.ViewObject
-    from pivy import coin
-    vobj.Proxy.setEdit(vobj)
-    try:
-        named = [ch for ch in (vobj.RootNode.getChildren() or [])
-                 if ch.getName() == "ArchPlusSegmentHighlight"]
-        coords = [ch for ch in (named[0].getChildren() if named else [])
-                  if isinstance(ch, coin.SoCoordinate3)]
-        h.check("W22 editing a segment highlights its faces",
-                len(named) == 1 and coords
-                and coords[0].point.getNum() > 0)
-        walls_object.effectiveValues(seg)
-        seg.Width = 200
-        doc.recompute()
-        named2 = [ch for ch in (vobj.RootNode.getChildren() or [])
-                  if ch.getName() == "ArchPlusSegmentHighlight"]
-        h.check("W22 the highlight follows shape changes",
-                len(named2) == 1
-                and named2[0] is not None
-                and [ch for ch in named2[0].getChildren()
-                     if isinstance(ch, coin.SoCoordinate3)][0]
-                .point.getNum() > 0)
-        seg.Width = 300
-        doc.recompute()
-    finally:
-        vobj.Proxy.unsetEdit(vobj)
-    named3 = [ch for ch in (vobj.RootNode.getChildren() or [])
-              if ch.getName() == "ArchPlusSegmentHighlight"]
-    h.check("W22 closing the edit removes the highlight", len(named3) == 0)
+def _pump():
+    from PySide import QtWidgets
+    for _ in range(20):
+        QtWidgets.QApplication.processEvents()
 
 
-def _w23_highlight_selection_lifecycle(doc):
+def _w22_tree_select_faces(doc):
     import FreeCADGui
     sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
     wall = walls_object.makeWall(doc, sketch=sk)
     doc.recompute()
     seg = wall.Group[0]
-    vobj = seg.ViewObject
-    from pivy import coin
-
-    def highlights():
-        return [ch for ch in (vobj.RootNode.getChildren() or [])
-                if ch.getName() == walls_object.FACE_HIGHLIGHT]
-
-    FreeCADGui.Selection.addSelection(seg)
-    vobj.Proxy.setEdit(vobj)
-    try:
-        h.check("W23 the edited segment starts highlighted",
-                len(highlights()) == 1)
-        FreeCADGui.Selection.clearSelection()
-        h.check("W23 deselecting the segment drops the edit highlight",
-                len(highlights()) == 0)
-        FreeCADGui.Selection.addSelection(seg)
-        h.check("W23 reselecting the segment restores the highlight",
-                len(highlights()) == 1)
-        FreeCADGui.Selection.clearSelection()
-        FreeCADGui.Selection.addSelection(wall)
-        h.check("W23 selecting the wall counts as selecting the segment",
-                len(highlights()) == 1)
-        ok = walls_object.addFaceHighlight(
-            seg.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
-            (0.95, 0.55, 0.10), 0.55)
-        previewed = [ch for ch in (vobj.RootNode.getChildren() or [])
-                     if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
-        h.check("W23 the preview overlay coexists with the edit highlight",
-                ok and len(previewed) == 1 and len(highlights()) == 1)
-        walls_object.removeFaceHighlight(
-            seg.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
-        previewed2 = [ch for ch in (vobj.RootNode.getChildren() or [])
-                      if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
-        h.check("W23 removing the preview leaves the edit highlight",
-                len(previewed2) == 0 and len(highlights()) == 1)
-    finally:
-        FreeCADGui.Selection.clearSelection()
-        if FreeCADGui.Control.activeDialog() is not None:
-            FreeCADGui.Control.closeDialog()
-        else:
-            vobj.Proxy.unsetEdit(vobj)
-    h.check("W23 closing the edit removes the highlight", len(highlights()) == 0)
     FreeCADGui.Selection.clearSelection()
+    _pump()
     FreeCADGui.Selection.addSelection(seg)
-    h.check("W23 selection changes after close do not resurrect it",
-            len(highlights()) == 0)
+    _pump()
+    sel = [s for s in FreeCADGui.Selection.getSelectionEx()
+           if s.Object is seg]
+    h.check("W22 a tree click on a segment selects all its faces",
+            len(sel) == 1
+            and len(sel[0].SubElementNames) == len(seg.Shape.Faces))
     FreeCADGui.Selection.clearSelection()
+    _pump()
+    sel2 = [s for s in FreeCADGui.Selection.getSelectionEx()
+            if s.Object is seg]
+    h.check("W22 deselecting clears the face selection", not sel2)
+
+
+def _w23_pick_redirect(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    a = walls_object.makeSegment(wall, name="a")
+    a.Edges = [(sk, ("Edge1",))]
+    a.Rest = False
+    b = walls_object.makeSegment(wall, name="b")
+    b.Edges = [(sk, ("Edge2",))]
+    b.Rest = False
+    doc.recompute()
+    p_a = a.Shape.getElement("Face1").CenterOfGravity
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      p_a.x, p_a.y, p_a.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W23 a 3D pick selects the owning segment, not the wall",
+            a in objs and "Face1" in objs[a] and wall not in objs)
+    h.check("W23 the redirected pick keeps exactly the picked face",
+            objs.get(a) == ["Face1"])
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W23 the redirect does not resurrect after deselection",
+            not FreeCADGui.Selection.getSelectionEx())
+    ok = walls_object.addFaceHighlight(
+        a.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
+        (0.95, 0.55, 0.10), 0.55)
+    present = [ch for ch in (a.ViewObject.RootNode.getChildren() or [])
+               if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
+    walls_object.removeFaceHighlight(
+        a.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
+    h.check("W23 the picker preview overlay still works",
+            ok and len(present) == 1)
 
 
 def run():
@@ -955,7 +936,7 @@ def run():
     _w19_mixed_width_miter(doc)
     _w20_butt_fallbacks(doc)
     _w21_segment_panel_toggle(doc)
-    _w22_edit_highlight(doc)
-    _w23_highlight_selection_lifecycle(doc)
+    _w22_tree_select_faces(doc)
+    _w23_pick_redirect(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

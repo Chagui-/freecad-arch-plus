@@ -316,3 +316,71 @@ def test_recorder_clear_document_only(monkeypatch):
     r.clearSelection("D")
     assert wg._lastPick("D", "Wall", "Face1") is None
     assert wg._lastPick("E", "Wall", "Face1") is not None
+
+
+def test_observer_expands_tree_click_to_all_faces():
+    obs = wg._WallSelectionObserver()
+    seg = _segment("a")
+    seg.Shape = types.SimpleNamespace(
+        isNull=lambda: False,
+        Faces=[object(), object(), object()])
+    added = []
+    gui = types.SimpleNamespace(
+        Selection=types.SimpleNamespace(
+            getSelectionEx=lambda: [types.SimpleNamespace(
+                Object=seg, SubElementNames=[])],
+            addSelection=lambda o, sub: added.append(sub)))
+    obs._selectFaces(gui, seg)
+    assert added == ["Face1", "Face2", "Face3"]
+
+
+def test_observer_skips_expansion_when_faces_already_selected():
+    obs = wg._WallSelectionObserver()
+    seg = _segment("a")
+    seg.Shape = types.SimpleNamespace(
+        isNull=lambda: False,
+        Faces=[object(), object()])
+    added = []
+    gui = types.SimpleNamespace(
+        Selection=types.SimpleNamespace(
+            getSelectionEx=lambda: [types.SimpleNamespace(
+                Object=seg, SubElementNames=["Face1"])],
+            addSelection=lambda o, sub: added.append(sub)))
+    obs._selectFaces(gui, seg)
+    assert added == []
+
+
+def test_observer_redirects_root_pick_to_owning_segment(monkeypatch):
+    obs = wg._WallSelectionObserver()
+    root = types.SimpleNamespace(Name="Wall", Label="Wall")
+    seg = _segment("a")
+    removed = []
+    added = []
+    gui = types.SimpleNamespace(
+        Selection=types.SimpleNamespace(
+            getSelectionEx=lambda: [types.SimpleNamespace(
+                Object=root, SubElementNames=["Face2"])],
+            removeSelection=lambda o, sub: removed.append((o, sub)),
+            addSelection=lambda o, sub, *pnt: added.append((o, sub, pnt))))
+    monkeypatch.setattr(walls_object, "resolveRootFace",
+                        lambda root_, sub, point: (seg, [sub]))
+    obs._redirect(gui, root, "Face2", (1.0, 2.0, 3.0))
+    assert removed == [(root, "Face2")]
+    assert len(added) == 1 and added[0][0] is seg and added[0][1] == "Face2"
+    assert tuple(round(v, 3) for v in added[0][2]) == (1.0, 2.0, 3.0)
+
+
+def test_observer_skips_redirect_for_stale_selection(monkeypatch):
+    obs = wg._WallSelectionObserver()
+    root = types.SimpleNamespace(Name="Wall", Label="Wall")
+    seg = _segment("a")
+    calls = []
+    gui = types.SimpleNamespace(
+        Selection=types.SimpleNamespace(
+            getSelectionEx=lambda: [],
+            removeSelection=lambda o, sub: calls.append("rm"),
+            addSelection=lambda o, sub, *pnt: calls.append("add")))
+    monkeypatch.setattr(walls_object, "resolveRootFace",
+                        lambda root_, sub, point: (seg, [sub]))
+    obs._redirect(gui, root, "Face2", (1.0, 2.0, 3.0))
+    assert calls == []

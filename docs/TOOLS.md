@@ -172,9 +172,12 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   row previews that segment in the 3D view; double-click chooses it.
   Splitting requires picked faces — running the command with no face picked
   prints a Report-view warning and changes nothing. Each clicked face moves
-  the run nearest to the click. While a segment's edit panel is open, its
-  faces carry a green highlight that follows the selection: deselecting
-  drops it, selecting the segment (or its wall) restores it.
+  the run nearest to the click.
+- **Native selection mapping** — clicking a segment in the tree selects all
+  of its faces, and clicking wall geometry in the 3D view selects the
+  segment that owns the picked face (not the wall root), so the tree always
+  highlights the right item. Both behave like any other FreeCAD selection:
+  clicking something else clears or replaces it.
 
 ### Edit Wall panel
 
