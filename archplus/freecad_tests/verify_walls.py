@@ -921,7 +921,10 @@ def _w23_highlight_selection_lifecycle(doc):
                 len(previewed2) == 0 and len(highlights()) == 1)
     finally:
         FreeCADGui.Selection.clearSelection()
-        vobj.Proxy.unsetEdit(vobj)
+        if FreeCADGui.Control.activeDialog() is not None:
+            FreeCADGui.Control.closeDialog()
+        else:
+            vobj.Proxy.unsetEdit(vobj)
     h.check("W23 closing the edit removes the highlight", len(highlights()) == 0)
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(seg)

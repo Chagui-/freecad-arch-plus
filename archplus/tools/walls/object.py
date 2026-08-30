@@ -907,7 +907,8 @@ class _ViewProviderWall:
     def _watchSelection(self, vobj):
         """Keep the edit highlight in step with the selection while the
         panel is open: deselecting drops it, selecting the segment (or its
-        wall — 3D picks land on the root) restores it."""
+        wall — 3D picks land on the root) restores it. The panel tears the
+        watcher down when it closes (its form's destroyed signal)."""
         self._unwatchSelection()
         try:
             import FreeCADGui
@@ -975,9 +976,15 @@ class _ViewProviderWall:
         self._watchSelection(vobj)
         return True
 
-    def unsetEdit(self, vobj, mode=0):
+    def _teardownEdit(self, vobj):
+        """Drop the edit highlight and its selection watcher. Closing the
+        task dialog alone does not end the object's edit session, so both
+        the panel and unsetEdit call this; it is safe to run twice."""
         self._unwatchSelection()
         self._removeHighlight(vobj)
+
+    def unsetEdit(self, vobj, mode=0):
+        self._teardownEdit(vobj)
         import FreeCADGui
         FreeCADGui.Control.closeDialog()
         return False

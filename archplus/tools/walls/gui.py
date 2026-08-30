@@ -243,12 +243,14 @@ class WallPlusTaskPanel:
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
+        _endEditVisuals(self.obj)
         self.obj = None
         FreeCADGui.Control.closeDialog()
         return True
 
     def reject(self):
         self._timer.stop()
+        _endEditVisuals(self.obj)
         self.obj = None
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.abortTransaction()
@@ -274,11 +276,30 @@ class WallPlusCommand:
 
 
 def showWallPanel(obj):
-    FreeCADGui.Control.showDialog(WallPlusTaskPanel(obj))
+    panel = WallPlusTaskPanel(obj)
+    panel.form.destroyed.connect(lambda: _endEditVisuals(obj))
+    FreeCADGui.Control.showDialog(panel)
 
 
 def showSegmentPanel(obj):
-    FreeCADGui.Control.showDialog(WallSegmentTaskPanel(obj))
+    panel = WallSegmentTaskPanel(obj)
+    panel.form.destroyed.connect(lambda: _endEditVisuals(obj))
+    FreeCADGui.Control.showDialog(panel)
+
+
+def _endEditVisuals(obj):
+    """Drop the edit highlight and its selection watcher when a wall panel
+    closes. Button closes run the panel's accept/reject, but other close
+    paths (programmatic closeDialog, dialog teardown) do not — they all
+    delete the panel's form widget, whose destroyed signal calls this."""
+    try:
+        vobj = getattr(obj, "ViewObject", None)
+        teardown = getattr(getattr(vobj, "Proxy", None), "_teardownEdit",
+                           None)
+        if callable(teardown):
+            teardown(vobj)
+    except Exception:
+        pass
 
 
 class WallSegmentTaskPanel:
@@ -436,12 +457,14 @@ class WallSegmentTaskPanel:
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
+        _endEditVisuals(self.obj)
         self.obj = None
         FreeCADGui.Control.closeDialog()
         return True
 
     def reject(self):
         self._timer.stop()
+        _endEditVisuals(self.obj)
         self.obj = None
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.abortTransaction()
