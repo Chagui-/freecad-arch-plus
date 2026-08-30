@@ -485,33 +485,42 @@ NEW_SEGMENT = object()
 
 
 class _PickPointRecorder:
-    """Selection observer keeping each selection member's last pick point.
+    """Selection observer keeping each picked face's last pick points.
 
     FreeCAD attributes a 3D pick of a claimed child's face to the top claim
     parent, so a clicked wall face arrives as a root selection carrying a
     segment-local face index. Resolving that face to its owning segment
     needs the face subname together with the 3D point, which only this
-    observer sees, so it records them as the selection changes."""
+    observer sees. Points are kept per (document, object, subname) as an
+    ordered list: two segments' faces can share one subname on the root
+    selection, and the k-th pick of a subname matches the k-th occurrence
+    of that subname in the selection."""
 
     def __init__(self):
         self.picks = {}
 
     def addSelection(self, doc, obj, sub, pnt):
         try:
-            self.picks[(doc, obj)] = (sub, _asVector(pnt))
+            key = (_name(doc), _name(obj), sub)
+            self.picks.setdefault(key, []).append(_asVector(pnt))
         except Exception:
             pass
 
     def removeSelection(self, doc, obj, sub):
         try:
-            self.picks.pop((doc, obj), None)
+            key = (_name(doc), _name(obj), sub)
+            picks = self.picks.get(key)
+            if picks:
+                picks.pop(0)
+            if picks is not None and not picks:
+                del self.picks[key]
         except Exception:
             pass
 
     def clearSelection(self, doc):
         try:
             keys = list(self.picks) if not doc else [
-                k for k in self.picks if k[0] == doc]
+                k for k in self.picks if k[0] == _name(doc)]
             for key in keys:
                 del self.picks[key]
         except Exception:
@@ -539,10 +548,14 @@ def _name(obj):
     return getattr(obj, "Name", obj)
 
 
-def _lastPick(doc, obj):
-    """The recorded (subname, pick point) for a selection member."""
+def _lastPick(doc, obj, sub, occurrence=0):
+    """The recorded pick point for a face of a selection member: the
+    occurrence-th pick of that subname, or None."""
     try:
-        return _recorder.picks.get((_name(doc), _name(obj)))
+        picks = _recorder.picks.get((_name(doc), _name(obj), sub))
+        if picks and occurrence < len(picks):
+            return picks[occurrence]
+        return None
     except Exception:
         return None
 
@@ -594,18 +607,23 @@ class WallSplitCommand:
     def Activated(self):
         doc = FreeCAD.ActiveDocument
         sources = []
+        had_faces = False
         for sel in FreeCADGui.Selection.getSelectionEx():
             obj = sel.Object
             if walls_object.is_segment(obj):
                 subs = self._pickedEdges(obj, sel)
                 if subs:
+                    had_faces = True
                     sources.append((obj, subs))
             elif walls_object.is_root(obj):
+                if sel.SubElementNames:
+                    had_faces = True
                 sources.extend(self._rootSources(doc, sel))
         if not sources:
-            FreeCAD.Console.PrintWarning(
-                "ArchPlus: Click one or more wall faces in the 3D view, "
-                "then choose Split / move segment\n")
+            if not had_faces:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: Click one or more wall faces in the 3D view, "
+                    "then choose Split / move segment\n")
             return
         roots = []
         for obj, _subs in sources:
@@ -634,17 +652,18 @@ class WallSplitCommand:
 
         Clicking a wall face selects the root (FreeCAD claims-children pick
         behavior) with a segment-local face index, so each picked face is
-        resolved to its owning segment through the recorded pick point and
-        then mapped to its claimed run like a direct segment pick."""
+        resolved to its owning segment through its own recorded pick point
+        and then mapped to its claimed run like a direct segment pick."""
         root = sel.Object
-        picked = _lastPick(getattr(root, "Document", None) or doc, root)
-        sub, point = picked if picked is not None else (None, None)
+        doc_key = getattr(root, "Document", None) or doc
         names = [n for n in (sel.SubElementNames or ())
                  if n.startswith("Face")]
-        if sub not in names:
-            point = None
         sources = []
+        seen = {}
         for name in names:
+            occurrence = seen.get(name, 0)
+            seen[name] = occurrence + 1
+            point = _lastPick(doc_key, root, name, occurrence)
             resolved = walls_object.resolveRootFace(root, name, point)
             if resolved is None:
                 FreeCAD.Console.PrintWarning(

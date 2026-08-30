@@ -621,6 +621,39 @@ def _w16_split_ux(doc):
                     - _expected_volume(300, 2800, [2000])) < 1e-3)
     FreeCADGui.Selection.clearSelection()
 
+    sk5 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ], name="SplitUX5")
+    wall5 = walls_object.makeWall(doc, sketch=sk5)
+    doc.recompute()
+    a5 = walls_object.makeSegment(wall5, name="a5")
+    a5.Edges = [(sk5, ("Edge1",))]
+    a5.Rest = False
+    b5 = walls_object.makeSegment(wall5, name="b5")
+    b5.Edges = [(sk5, ("Edge2",))]
+    b5.Rest = False
+    doc.recompute()
+    rest5 = wall5.Group[0]
+    p_a = a5.Shape.getElement("Face1").CenterOfGravity
+    p_b = b5.Shape.getElement("Face2").CenterOfGravity
+    FreeCADGui.Selection.addSelection(wall5, "Face1", p_a.x, p_a.y, p_a.z)
+    FreeCADGui.Selection.addSelection(wall5, "Face2", p_b.x, p_b.y, p_b.z)
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new5 = [o for o in wall5.Group
+            if o is not rest5 and o is not a5 and o is not b5]
+    h.check("W16 two root faces resolve to their own segments",
+            len(new5) == 2
+            and a5.Shape.Volume < 1e-3
+            and b5.Shape.Volume < 1e-3
+            and abs(sum(o.Shape.Volume for o in new5)
+                    - 2 * _expected_volume(300, 2800, [2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
 
 def _w17_bim_context_menu(doc):
     sk = _line_sketch(doc, [((0, 0), (4000, 0), False)], name="CtxMenu")

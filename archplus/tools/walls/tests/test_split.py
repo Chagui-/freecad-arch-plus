@@ -295,3 +295,38 @@ def test_activated_cancels_before_opening_a_transaction(monkeypatch):
     cmd.Activated()
     assert doc.calls == []
 
+
+
+def test_recorder_keeps_one_point_per_face_occurrence(monkeypatch):
+    r = wg._PickPointRecorder()
+    monkeypatch.setattr(wg, "_recorder", r)
+    r.addSelection("D", "Wall", "Face1", (1, 2, 3))
+    r.addSelection("D", "Wall", "Face1", (4, 5, 6))
+    r.addSelection("D", "Wall", "Face2", (7, 8, 9))
+    assert wg._lastPick("D", "Wall", "Face1", 0) is not None
+    assert wg._lastPick("D", "Wall", "Face1", 1) is not None
+    assert wg._lastPick("D", "Wall", "Face1", 2) is None
+    assert wg._lastPick("D", "Wall", "Face2", 0) is not None
+    assert wg._lastPick("D", "Wall", "Face9", 0) is None
+
+
+def test_recorder_remove_drops_first_occurrence(monkeypatch):
+    r = wg._PickPointRecorder()
+    monkeypatch.setattr(wg, "_recorder", r)
+    r.addSelection("D", "Wall", "Face1", (1, 2, 3))
+    r.addSelection("D", "Wall", "Face1", (4, 5, 6))
+    r.removeSelection("D", "Wall", "Face1")
+    assert wg._lastPick("D", "Wall", "Face1", 0) is not None
+    assert wg._lastPick("D", "Wall", "Face1", 1) is None
+    r.removeSelection("D", "Wall", "Face1")
+    assert wg._lastPick("D", "Wall", "Face1", 0) is None
+
+
+def test_recorder_clear_document_only(monkeypatch):
+    r = wg._PickPointRecorder()
+    monkeypatch.setattr(wg, "_recorder", r)
+    r.addSelection("D", "Wall", "Face1", (1, 2, 3))
+    r.addSelection("E", "Wall", "Face1", (4, 5, 6))
+    r.clearSelection("D")
+    assert wg._lastPick("D", "Wall", "Face1") is None
+    assert wg._lastPick("E", "Wall", "Face1") is not None
