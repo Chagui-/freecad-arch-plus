@@ -809,6 +809,42 @@ def _w21_segment_panel_toggle(doc):
         panel.reject()
 
 
+def _w22_edit_highlight(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+    from pivy import coin
+    vobj.Proxy.setEdit(vobj)
+    try:
+        named = [ch for ch in (vobj.RootNode.getChildren() or [])
+                 if ch.getName() == "ArchPlusSegmentHighlight"]
+        coords = [ch for ch in (named[0].getChildren() if named else [])
+                  if isinstance(ch, coin.SoCoordinate3)]
+        h.check("W22 editing a segment highlights its faces",
+                len(named) == 1 and coords
+                and coords[0].point.getNum() > 0)
+        walls_object.effectiveValues(seg)
+        seg.Width = 200
+        doc.recompute()
+        named2 = [ch for ch in (vobj.RootNode.getChildren() or [])
+                  if ch.getName() == "ArchPlusSegmentHighlight"]
+        h.check("W22 the highlight follows shape changes",
+                len(named2) == 1
+                and named2[0] is not None
+                and [ch for ch in named2[0].getChildren()
+                     if isinstance(ch, coin.SoCoordinate3)][0]
+                .point.getNum() > 0)
+        seg.Width = 300
+        doc.recompute()
+    finally:
+        vobj.Proxy.unsetEdit(vobj)
+    named3 = [ch for ch in (vobj.RootNode.getChildren() or [])
+              if ch.getName() == "ArchPlusSegmentHighlight"]
+    h.check("W22 closing the edit removes the highlight", len(named3) == 0)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -831,5 +867,6 @@ def run():
     _w19_mixed_width_miter(doc)
     _w20_butt_fallbacks(doc)
     _w21_segment_panel_toggle(doc)
+    _w22_edit_highlight(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

@@ -839,6 +839,60 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
+    _HIGHLIGHT = "ArchPlusSegmentHighlight"
+
+    def _addHighlight(self, vobj):
+        self._removeHighlight(vobj)
+        shape = getattr(getattr(vobj, "Object", None), "Shape", None)
+        if shape is None or shape.isNull() or not shape.Faces:
+            return
+        try:
+            from pivy import coin
+            verts, faces = shape.tessellate(0.5)
+            if not faces:
+                return
+            sep = coin.SoSeparator()
+            sep.setName(self._HIGHLIGHT)
+            offset = coin.SoPolygonOffset()
+            offset.factor.setValue(1.0)
+            offset.units.setValue(1.0)
+            mat = coin.SoMaterial()
+            mat.diffuseColor.setValue(0.15, 0.80, 0.35)
+            mat.transparency.setValue(0.45)
+            coords = coin.SoCoordinate3()
+            coords.point.setValues(0, len(verts),
+                                   [(p.x, p.y, p.z) for p in verts])
+            index = []
+            for f in faces:
+                index.extend([f[0], f[1], f[2], -1])
+            faceset = coin.SoIndexedFaceSet()
+            faceset.coordIndex.setValues(0, len(index), index)
+            sep.addChild(offset)
+            sep.addChild(mat)
+            sep.addChild(coords)
+            sep.addChild(faceset)
+            vobj.RootNode.addChild(sep)
+            self._highlighted = True
+        except Exception:
+            self._highlighted = False
+
+    def _removeHighlight(self, vobj):
+        self._highlighted = False
+        try:
+            root = vobj.RootNode
+            for child in list(root.getChildren() or []):
+                if child.getName() == self._HIGHLIGHT:
+                    root.removeChild(child)
+        except Exception:
+            pass
+
+    def updateData(self, obj, prop):
+        if prop == "Shape" and getattr(self, "_highlighted", False):
+            try:
+                self._addHighlight(self.Object.ViewObject)
+            except Exception:
+                pass
+
     def setEdit(self, vobj, mode=0):
         from archplus.tools.walls import gui
         obj = vobj.Object
@@ -846,9 +900,11 @@ class _ViewProviderWall:
             gui.showWallPanel(obj)
         else:
             gui.showSegmentPanel(obj)
+        self._addHighlight(vobj)
         return True
 
     def unsetEdit(self, vobj, mode=0):
+        self._removeHighlight(vobj)
         import FreeCADGui
         FreeCADGui.Control.closeDialog()
         return False
