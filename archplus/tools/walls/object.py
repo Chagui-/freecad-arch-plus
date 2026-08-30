@@ -298,29 +298,30 @@ def all_segments(root):
 
 
 def resolveRootFace(root, subname, point):
-    """The segment owning a root face selection, as (segment, [subname]).
+    """The segment owning a root face selection, as (segment, [localsub]).
 
     FreeCAD attributes a 3D pick of a claimed child's face to the top claim
-    parent, so a clicked wall face selects the root with a segment-local
-    face index while the root itself has no shape. Every segment whose
-    shape has that face is a candidate; with a pick point the nearest
-    candidate within 1 mm wins, and without one a unique candidate wins
-    while several are ambiguous."""
+    parent and indexes the face across the faces of ALL claimed children,
+    so the reported subname does not exist in any one segment. The pick
+    point therefore decides: the segment whose shape has a face within
+    1 mm of it wins, and that face's own local subname is returned.
+    Without a pick point the subname is matched per segment, where a
+    unique candidate wins and several are ambiguous."""
     import Part
-    segments = all_segments(root)
+    segments = [s for s in all_segments(root)
+                if _usableShape(s)]
     if not segments:
         return None
-    candidates = []
-    for seg in segments:
-        try:
-            candidates.append((seg, seg.Shape.getElement(subname)))
-        except Exception:
-            continue
-    if not candidates:
-        return None
     if point is None:
+        candidates = []
+        for seg in segments:
+            try:
+                seg.Shape.getElement(subname)
+            except Exception:
+                continue
+            candidates.append(seg)
         if len(candidates) == 1:
-            return (candidates[0][0], [subname])
+            return (candidates[0], [subname])
         return None
     try:
         vertex = Part.Vertex(point)
@@ -328,18 +329,30 @@ def resolveRootFace(root, subname, point):
         return None
     best = None
     best_dist = None
-    for seg, face in candidates:
-        try:
-            dist = vertex.distToShape(face)[0]
-        except Exception:
-            continue
-        if dist > 1.0:
-            continue
-        if best_dist is None or dist < best_dist:
-            best, best_dist = seg, dist
+    best_name = None
+    for seg in segments:
+        faces = seg.Shape.Faces
+        for i, face in enumerate(faces):
+            try:
+                dist = vertex.distToShape(face)[0]
+            except Exception:
+                continue
+            if dist > 1.0:
+                continue
+            if best_dist is None or dist < best_dist:
+                best, best_dist = seg, dist
+                best_name = "Face%d" % (i + 1)
     if best is None:
         return None
-    return (best, [subname])
+    return (best, [best_name])
+
+
+def _usableShape(obj):
+    shape = getattr(obj, "Shape", None)
+    try:
+        return shape is not None and not shape.isNull() and bool(shape.Faces)
+    except Exception:
+        return False
 
 
 def parent_group(obj):

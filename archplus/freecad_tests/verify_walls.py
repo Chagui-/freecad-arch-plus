@@ -603,7 +603,7 @@ def _w16_split_ux(doc):
     b4.Edges = [(sk4, ("Edge2",))]
     doc.recompute()
     rest4 = wall4.Group[0]
-    pnt = a4.Shape.getElement("Face1").CenterOfGravity
+    pnt = _facePoint(a4)
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(wall4, "Face1", pnt.x, pnt.y, pnt.z)
     h.check("W16 split command active with a picked root face", cmd.IsActive())
@@ -637,8 +637,8 @@ def _w16_split_ux(doc):
     b5.Rest = False
     doc.recompute()
     rest5 = wall5.Group[0]
-    p_a = a5.Shape.getElement("Face1").CenterOfGravity
-    p_b = b5.Shape.getElement("Face2").CenterOfGravity
+    p_a = _facePoint(a5)
+    p_b = _facePoint(b5)
     FreeCADGui.Selection.addSelection(wall5, "Face1", p_a.x, p_a.y, p_a.z)
     FreeCADGui.Selection.addSelection(wall5, "Face2", p_b.x, p_b.y, p_b.z)
     cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
@@ -702,6 +702,13 @@ def _w17_bim_context_menu(doc):
             and ("", ["ArchPlus_WallSplit"]) in recorded_sel
             and ("", ["ArchPlus_WallSplit"]) in recorded_empty,
             detail)
+
+
+def _facePoint(seg):
+    """An interior point of the segment's largest face: well away from
+    shared seams, where two segments' faces coincide and a pick point
+    cannot distinguish them."""
+    return max(seg.Shape.Faces, key=lambda f: f.Area).CenterOfGravity
 
 
 def _segment_claims(seg):
@@ -887,7 +894,7 @@ def _w23_pick_redirect(doc):
     b.Edges = [(sk, ("Edge2",))]
     b.Rest = False
     doc.recompute()
-    p_a = a.Shape.getElement("Face1").CenterOfGravity
+    p_a = _facePoint(a)
     FreeCADGui.Selection.clearSelection()
     _pump()
     FreeCADGui.Selection.addSelection(wall, "Face1",
@@ -896,22 +903,37 @@ def _w23_pick_redirect(doc):
     objs = {s.Object: list(s.SubElementNames)
             for s in FreeCADGui.Selection.getSelectionEx()}
     h.check("W23 a 3D pick selects the owning segment, not the wall",
-            a in objs and "Face1" in objs[a] and wall not in objs)
+            a in objs and objs[a] and wall not in objs)
     h.check("W23 the redirected pick keeps exactly the picked face",
-            objs.get(a) == ["Face1"])
+            a in objs and len(objs[a]) == 1)
+    ok = walls_object.addFaceHighlight(
+        b.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
+        (0.95, 0.55, 0.10), 0.55)
+    present = [ch for ch in (b.ViewObject.RootNode.getChildren() or [])
+               if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
+    walls_object.removeFaceHighlight(
+        b.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
+    h.check("W23 the picker preview overlay still works",
+            ok and len(present) == 1)
+    walls_object.splitSegment(a, ["Edge1"])
+    doc.recompute()
+    c = [o for o in walls_object.all_segments(wall)
+         if o is not a and o is not b and not o.Rest][0]
+    p_c = _facePoint(c)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face14",
+                                      p_c.x, p_c.y, p_c.z)
+    _pump()
+    objs2 = {s.Object: list(s.SubElementNames)
+             for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W23 an aggregate face index still redirects after a split",
+            c in objs2 and wall not in objs2
+            and objs2[c] and objs2[c][0].startswith("Face"))
     FreeCADGui.Selection.clearSelection()
     _pump()
     h.check("W23 the redirect does not resurrect after deselection",
             not FreeCADGui.Selection.getSelectionEx())
-    ok = walls_object.addFaceHighlight(
-        a.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
-        (0.95, 0.55, 0.10), 0.55)
-    present = [ch for ch in (a.ViewObject.RootNode.getChildren() or [])
-               if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
-    walls_object.removeFaceHighlight(
-        a.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
-    h.check("W23 the picker preview overlay still works",
-            ok and len(present) == 1)
 
 
 def run():

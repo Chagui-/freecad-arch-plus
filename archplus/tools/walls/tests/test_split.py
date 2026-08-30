@@ -44,6 +44,13 @@ class _FakeShape:
             raise KeyError(name)
         return self._faces[name]
 
+    def isNull(self):
+        return False
+
+    @property
+    def Faces(self):
+        return [self._faces[k] for k in sorted(self._faces)]
+
 
 class _FakeVertex:
     def __init__(self, pnt):

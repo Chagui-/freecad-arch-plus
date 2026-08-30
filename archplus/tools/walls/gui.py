@@ -347,13 +347,13 @@ class _WallSelectionObserver:
         resolved = walls_object.resolveRootFace(root, sub, point)
         if resolved is None:
             return
-        seg, _subs = resolved
+        seg, locals_ = resolved
         gui.Selection.removeSelection(root, sub)
         try:
-            gui.Selection.addSelection(seg, sub,
+            gui.Selection.addSelection(seg, locals_[0],
                                        point.x, point.y, point.z)
         except Exception:
-            gui.Selection.addSelection(seg, sub)
+            gui.Selection.addSelection(seg, locals_[0])
 
 
 _selobs = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)
@@ -755,8 +755,9 @@ class WallSplitCommand:
                     "ArchPlus: could not resolve face '%s' of '%s'; click "
                     "the face again\n" % (name, root.Label))
                 continue
-            segment, _subs = resolved
-            subs = self._pickedEdges(segment, _FaceSelection(segment, name,
+            segment, locals_ = resolved
+            subs = self._pickedEdges(segment, _FaceSelection(segment,
+                                                             locals_[0],
                                                              point))
             if subs:
                 sources.append((segment, subs))
