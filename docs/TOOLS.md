@@ -166,12 +166,15 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   face selects the wall itself — FreeCAD attributes picks of claimed children
   to the top claim parent — and the split resolves each clicked face to the
   segment owning it. Select the faces to move, right-click and choose it: a
-  small picker offers **<new segment>**, which splits the picked faces' runs
+  picker dialog offers **<new segment>**, which splits the picked faces' runs
   into a new sibling segment, or one of the wall's other top-level segments,
-  which the runs are moved into (rejoining that segment's chain). Splitting
-  requires picked faces — running the command with no face picked prints a
-  Report-view warning and changes nothing. Each clicked face moves the run
-  nearest to the click.
+  which the runs are moved into (rejoining that segment's chain). Hovering a
+  row previews that segment in the 3D view; double-click chooses it.
+  Splitting requires picked faces — running the command with no face picked
+  prints a Report-view warning and changes nothing. Each clicked face moves
+  the run nearest to the click. While a segment's edit panel is open, its
+  faces carry a green highlight that follows the selection: deselecting
+  drops it, selecting the segment (or its wall) restores it.
 
 ### Edit Wall panel
 

@@ -680,28 +680,116 @@ class WallSplitCommand:
     def _chooseTarget(self, sources):
         """The dialog choice for the picked faces: NEW_SEGMENT (split into
         a new sibling per source), an existing target segment, or None when
-        the dialog is cancelled. The dialog's item strings map one-to-one
-        to the options (repeated labels get a " (n)" suffix), so a choice
-        always binds to the exact segment it listed."""
+        the dialog is cancelled. Rows map one-to-one to the options
+        (repeated labels get a " (n)" suffix), so a choice always binds to
+        the exact segment it listed."""
         options = self._targetOptions(sources)
-        items = []
-        by_item = {}
+        rows = ["<new segment>"] + self._targetLabels(options)
+        segs = [NEW_SEGMENT] + list(options)
+        choice = self._runPicker(rows, segs)
         for seg in options:
-            item = seg.Label
+            try:
+                walls_object.removeFaceHighlight(
+                    seg.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
+            except Exception:
+                pass
+        return choice
+
+    def _targetLabels(self, options):
+        """Display labels for the target options; repeats get a " (n)"
+        suffix so every row stays distinguishable."""
+        labels = []
+        seen = set()
+        for seg in options:
+            label = seg.Label
             n = 2
-            while item in by_item:
-                item = "%s (%d)" % (seg.Label, n)
+            while label in seen:
+                label = "%s (%d)" % (seg.Label, n)
                 n += 1
-            by_item[item] = seg
-            items.append(item)
-        choice, ok = QtGui.QInputDialog.getItem(
-            None, "Split / move segment", "Move the selected faces to:",
-            ["<new segment>"] + items, 0, False)
-        if not ok:
-            return None
-        if choice == "<new segment>":
-            return NEW_SEGMENT
-        return by_item.get(choice)
+            seen.add(label)
+            labels.append(label)
+        return labels
+
+    def _runPicker(self, rows, segs):
+        """Modal picker over the target rows: NEW_SEGMENT, a segment, or
+        None when cancelled. Hovering a row previews that segment in the
+        3D view."""
+        from PySide import QtGui
+
+        class _Picker(QtGui.QDialog):
+            def __init__(self, parent=None):
+                QtGui.QDialog.__init__(self, parent)
+                self.setWindowTitle("Split / move segment")
+                self.choice = None
+                self._previewed = None
+                outer = QtGui.QVBoxLayout(self)
+                outer.addWidget(QtGui.QLabel("Move the selected faces to:"))
+                self.listw = QtGui.QListWidget()
+                self.listw.addItems(rows)
+                self.listw.setCurrentRow(0)
+                outer.addWidget(self.listw)
+                hint = QtGui.QLabel("Hover a segment to preview it in the "
+                                    "3D view; double-click to choose.")
+                hint.setWordWrap(True)
+                outer.addWidget(hint)
+                buttons = QtGui.QDialogButtonBox(
+                    QtGui.QDialogButtonBox.Ok
+                    | QtGui.QDialogButtonBox.Cancel)
+                outer.addWidget(buttons)
+                buttons.accepted.connect(self.accept)
+                buttons.rejected.connect(self.reject)
+                self.listw.itemDoubleClicked.connect(self.accept)
+                self.listw.currentRowChanged.connect(self._preview)
+                self.listw.itemEntered.connect(self._previewItem)
+
+            def _previewAt(self, row):
+                try:
+                    if self._previewed is not None:
+                        walls_object.removeFaceHighlight(
+                            self._previewed,
+                            walls_object.PREVIEW_HIGHLIGHT)
+                        self._previewed = None
+                    seg = segs[row]
+                    if seg is not NEW_SEGMENT:
+                        vobj = seg.ViewObject
+                        if walls_object.addFaceHighlight(
+                                vobj, walls_object.PREVIEW_HIGHLIGHT,
+                                (0.95, 0.55, 0.10), 0.55):
+                            self._previewed = vobj
+                except Exception:
+                    pass
+
+            def _preview(self, row):
+                self._previewAt(int(row))
+
+            def _previewItem(self, item):
+                self._previewAt(self.listw.row(item))
+
+            def accept(self):
+                self._clearPreview()
+                self.choice = segs[self.listw.currentRow()]
+                QtGui.QDialog.accept(self)
+
+            def reject(self):
+                self._clearPreview()
+                self.choice = None
+                QtGui.QDialog.reject(self)
+
+            def _clearPreview(self):
+                try:
+                    if self._previewed is not None:
+                        walls_object.removeFaceHighlight(
+                            self._previewed,
+                            walls_object.PREVIEW_HIGHLIGHT)
+                except Exception:
+                    pass
+                self._previewed = None
+
+        parent = (FreeCADGui.getMainWindow()
+                  if hasattr(FreeCADGui, "getMainWindow") else None)
+        dlg = _Picker(parent)
+        dlg.exec_()
+        return dlg.choice
 
     def _targetOptions(self, sources):
         """The wall's other top-level segments, excluding the sources and

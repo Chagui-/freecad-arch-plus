@@ -878,6 +878,58 @@ def _w22_edit_highlight(doc):
     h.check("W22 closing the edit removes the highlight", len(named3) == 0)
 
 
+def _w23_highlight_selection_lifecycle(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+    from pivy import coin
+
+    def highlights():
+        return [ch for ch in (vobj.RootNode.getChildren() or [])
+                if ch.getName() == walls_object.FACE_HIGHLIGHT]
+
+    FreeCADGui.Selection.addSelection(seg)
+    vobj.Proxy.setEdit(vobj)
+    try:
+        h.check("W23 the edited segment starts highlighted",
+                len(highlights()) == 1)
+        FreeCADGui.Selection.clearSelection()
+        h.check("W23 deselecting the segment drops the edit highlight",
+                len(highlights()) == 0)
+        FreeCADGui.Selection.addSelection(seg)
+        h.check("W23 reselecting the segment restores the highlight",
+                len(highlights()) == 1)
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(wall)
+        h.check("W23 selecting the wall counts as selecting the segment",
+                len(highlights()) == 1)
+        ok = walls_object.addFaceHighlight(
+            seg.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
+            (0.95, 0.55, 0.10), 0.55)
+        previewed = [ch for ch in (vobj.RootNode.getChildren() or [])
+                     if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
+        h.check("W23 the preview overlay coexists with the edit highlight",
+                ok and len(previewed) == 1 and len(highlights()) == 1)
+        walls_object.removeFaceHighlight(
+            seg.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
+        previewed2 = [ch for ch in (vobj.RootNode.getChildren() or [])
+                      if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
+        h.check("W23 removing the preview leaves the edit highlight",
+                len(previewed2) == 0 and len(highlights()) == 1)
+    finally:
+        FreeCADGui.Selection.clearSelection()
+        vobj.Proxy.unsetEdit(vobj)
+    h.check("W23 closing the edit removes the highlight", len(highlights()) == 0)
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg)
+    h.check("W23 selection changes after close do not resurrect it",
+            len(highlights()) == 0)
+    FreeCADGui.Selection.clearSelection()
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -901,5 +953,6 @@ def run():
     _w20_butt_fallbacks(doc)
     _w21_segment_panel_toggle(doc)
     _w22_edit_highlight(doc)
+    _w23_highlight_selection_lifecycle(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

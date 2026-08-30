@@ -814,6 +814,62 @@ def opening_volume(win, root):
     return getattr(win, "Shape", None)
 
 
+FACE_HIGHLIGHT = "ArchPlusSegmentHighlight"
+PREVIEW_HIGHLIGHT = "ArchPlusTargetPreview"
+
+
+def addFaceHighlight(vobj, name=FACE_HIGHLIGHT, color=(0.15, 0.80, 0.35),
+                     transparency=0.45):
+    """A translucent overlay of the object's tessellated faces on its view
+    provider, tracked by node name so several overlays can coexist. Added
+    to the scene graph only: never saved, never touches display
+    properties. Returns True when the overlay was built."""
+    removeFaceHighlight(vobj, name)
+    shape = getattr(getattr(vobj, "Object", None), "Shape", None)
+    if shape is None or shape.isNull() or not shape.Faces:
+        return False
+    try:
+        from pivy import coin
+        verts, faces = shape.tessellate(0.5)
+        if not faces:
+            return False
+        sep = coin.SoSeparator()
+        sep.setName(name)
+        offset = coin.SoPolygonOffset()
+        offset.factor.setValue(1.0)
+        offset.units.setValue(1.0)
+        mat = coin.SoMaterial()
+        mat.diffuseColor.setValue(*color)
+        mat.transparency.setValue(transparency)
+        coords = coin.SoCoordinate3()
+        coords.point.setValues(0, len(verts),
+                               [(p.x, p.y, p.z) for p in verts])
+        index = []
+        for f in faces:
+            index.extend([f[0], f[1], f[2], -1])
+        faceset = coin.SoIndexedFaceSet()
+        faceset.coordIndex.setValues(0, len(index), index)
+        sep.addChild(offset)
+        sep.addChild(mat)
+        sep.addChild(coords)
+        sep.addChild(faceset)
+        vobj.RootNode.addChild(sep)
+        return True
+    except Exception:
+        return False
+
+
+def removeFaceHighlight(vobj, name=FACE_HIGHLIGHT):
+    """Drop the named face overlay from a view provider, if present."""
+    try:
+        root = vobj.RootNode
+        for child in list(root.getChildren() or []):
+            if child.getName() == name:
+                root.removeChild(child)
+    except Exception:
+        pass
+
+
 class _ViewProviderWall:
     """View provider for both roles; defined here (not in gui.py) so every
     factory-built wall and segment carries it, headless imports included.
@@ -839,52 +895,67 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
-    _HIGHLIGHT = "ArchPlusSegmentHighlight"
+    _HIGHLIGHT = FACE_HIGHLIGHT
 
     def _addHighlight(self, vobj):
-        self._removeHighlight(vobj)
-        shape = getattr(getattr(vobj, "Object", None), "Shape", None)
-        if shape is None or shape.isNull() or not shape.Faces:
-            return
-        try:
-            from pivy import coin
-            verts, faces = shape.tessellate(0.5)
-            if not faces:
-                return
-            sep = coin.SoSeparator()
-            sep.setName(self._HIGHLIGHT)
-            offset = coin.SoPolygonOffset()
-            offset.factor.setValue(1.0)
-            offset.units.setValue(1.0)
-            mat = coin.SoMaterial()
-            mat.diffuseColor.setValue(0.15, 0.80, 0.35)
-            mat.transparency.setValue(0.45)
-            coords = coin.SoCoordinate3()
-            coords.point.setValues(0, len(verts),
-                                   [(p.x, p.y, p.z) for p in verts])
-            index = []
-            for f in faces:
-                index.extend([f[0], f[1], f[2], -1])
-            faceset = coin.SoIndexedFaceSet()
-            faceset.coordIndex.setValues(0, len(index), index)
-            sep.addChild(offset)
-            sep.addChild(mat)
-            sep.addChild(coords)
-            sep.addChild(faceset)
-            vobj.RootNode.addChild(sep)
-            self._highlighted = True
-        except Exception:
-            self._highlighted = False
+        self._highlighted = addFaceHighlight(vobj)
 
     def _removeHighlight(self, vobj):
         self._highlighted = False
+        removeFaceHighlight(vobj)
+
+    def _watchSelection(self, vobj):
+        """Keep the edit highlight in step with the selection while the
+        panel is open: deselecting drops it, selecting the segment (or its
+        wall — 3D picks land on the root) restores it."""
+        self._unwatchSelection()
         try:
-            root = vobj.RootNode
-            for child in list(root.getChildren() or []):
-                if child.getName() == self._HIGHLIGHT:
-                    root.removeChild(child)
+            import FreeCADGui
+            obj = vobj.Object
+            watched = [obj, wall_root(obj) or obj]
+            proxy = self
+
+            class _Watcher:
+                def addSelection(self, *_args):
+                    self._sync()
+
+                def removeSelection(self, *_args):
+                    self._sync()
+
+                def clearSelection(self, *_args):
+                    self._sync()
+
+                def setSelection(self, *_args):
+                    self._sync()
+
+                def _sync(self):
+                    try:
+                        selected = any(
+                            FreeCADGui.Selection.isSelected(o)
+                            for o in watched)
+                        if selected and not getattr(proxy, "_highlighted",
+                                                    False):
+                            proxy._addHighlight(vobj)
+                        elif not selected and getattr(proxy, "_highlighted",
+                                                     False):
+                            proxy._removeHighlight(vobj)
+                    except Exception:
+                        pass
+
+            self._watcher = _Watcher()
+            FreeCADGui.Selection.addObserver(self._watcher)
         except Exception:
-            pass
+            self._watcher = None
+
+    def _unwatchSelection(self):
+        watcher = getattr(self, "_watcher", None)
+        if watcher is not None:
+            try:
+                import FreeCADGui
+                FreeCADGui.Selection.removeObserver(watcher)
+            except Exception:
+                pass
+        self._watcher = None
 
     def updateData(self, obj, prop):
         if prop == "Shape" and getattr(self, "_highlighted", False):
@@ -901,9 +972,11 @@ class _ViewProviderWall:
         else:
             gui.showSegmentPanel(obj)
         self._addHighlight(vobj)
+        self._watchSelection(vobj)
         return True
 
     def unsetEdit(self, vobj, mode=0):
+        self._unwatchSelection()
         self._removeHighlight(vobj)
         import FreeCADGui
         FreeCADGui.Control.closeDialog()

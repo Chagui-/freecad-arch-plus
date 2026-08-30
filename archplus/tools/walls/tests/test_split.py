@@ -189,7 +189,17 @@ def test_target_options_exclude_sources_and_ancestors():
     assert cmd._targetOptions([(a, ("Edge1",))]) == []
 
 
-def test_choose_target_binds_the_choice_to_the_exact_option(monkeypatch):
+def test_target_labels_suffix_repeats():
+    cmd = wg.WallSplitCommand()
+    segs = []
+    for name in ("a", "b", "c"):
+        seg = _segment(name)
+        seg.Label = "Seg"
+        segs.append(seg)
+    assert cmd._targetLabels(segs) == ["Seg", "Seg (2)", "Seg (3)"]
+
+
+def test_choose_target_binds_rows_to_options(monkeypatch):
     cmd = wg.WallSplitCommand()
     a = _segment("a")
     a.Label = "Seg"
@@ -198,46 +208,22 @@ def test_choose_target_binds_the_choice_to_the_exact_option(monkeypatch):
     c = _segment("c")
     c.Label = "Other"
     cmd._targetOptions = lambda sources: [a, b, c]
-    monkeypatch.setattr(wg.QtGui, "QInputDialog", types.SimpleNamespace(
-        getItem=lambda parent, title, label, items, current, editable:
-        (None, False)), raising=False)
+    captured = {}
+
+    def picker(rows, segs):
+        captured["rows"] = list(rows)
+        captured["segs"] = list(segs)
+        return captured.get("return")
+
+    monkeypatch.setattr(cmd, "_runPicker", picker)
+    captured["return"] = None
     assert cmd._chooseTarget([(a, ("Edge1",))]) is None
-    monkeypatch.setattr(wg.QtGui, "QInputDialog", types.SimpleNamespace(
-        getItem=lambda parent, title, label, items, current, editable:
-        ("<new segment>", True)), raising=False)
+    captured["return"] = wg.NEW_SEGMENT
     assert cmd._chooseTarget([(a, ("Edge1",))]) is wg.NEW_SEGMENT
-    monkeypatch.setattr(wg.QtGui, "QInputDialog", types.SimpleNamespace(
-        getItem=lambda parent, title, label, items, current, editable:
-        ("Seg", True)), raising=False)
-    assert cmd._chooseTarget([(a, ("Edge1",))]) is a
-    monkeypatch.setattr(wg.QtGui, "QInputDialog", types.SimpleNamespace(
-        getItem=lambda parent, title, label, items, current, editable:
-        ("Seg (2)", True)), raising=False)
+    captured["return"] = b
     assert cmd._chooseTarget([(a, ("Edge1",))]) is b
-    monkeypatch.setattr(wg.QtGui, "QInputDialog", types.SimpleNamespace(
-        getItem=lambda parent, title, label, items, current, editable:
-        ("Other", True)), raising=False)
-    assert cmd._chooseTarget([(a, ("Edge1",))]) is c
-
-
-def test_choose_target_suffixes_repeated_labels(monkeypatch):
-    cmd = wg.WallSplitCommand()
-    a = _segment("a")
-    b = _segment("b")
-    c = _segment("c")
-    for seg in (a, b, c):
-        seg.Label = "Seg"
-    seen = {}
-
-    def getItem(parent, title, label, items, current, editable):
-        seen["items"] = list(items)
-        return ("<new segment>", True)
-
-    monkeypatch.setattr(wg.QtGui, "QInputDialog",
-                        types.SimpleNamespace(getItem=getItem), raising=False)
-    cmd._targetOptions = lambda sources: [a, b, c]
-    cmd._chooseTarget([(a, ("Edge1",))])
-    assert seen["items"] == ["<new segment>", "Seg", "Seg (2)", "Seg (3)"]
+    assert captured["rows"] == ["<new segment>", "Seg", "Seg (2)", "Other"]
+    assert captured["segs"] == [wg.NEW_SEGMENT, a, b, c]
 
 
 class _RecordingDoc:
