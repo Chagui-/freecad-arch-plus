@@ -1057,6 +1057,76 @@ def _w24_click_highlight(doc):
             not _overlayNodes(a))
 
 
+
+def _w25_selection_dims(doc):
+    import FreeCADGui
+    from pivy import coin
+    from archplus.tools.walls import dims
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+
+    def dim_nodes():
+        return [ch for ch in (vobj.RootNode.getChildren() or [])
+                if ch.getName() == dims.DIM_NODE]
+
+    def label_parts():
+        named = dim_nodes()
+        if not named:
+            return None, None
+
+        def flat(nodes):
+            out = []
+            for n in (nodes or []):
+                out.append(n)
+                out.extend(flat(n.getChildren()))
+            return out
+
+        # labels live in their own nested SoSeparator (identity translation)
+        kids = flat(named[0].getChildren())
+        texts = [ch for ch in kids if isinstance(ch, coin.SoText2)]
+        trans = [ch for ch in kids if isinstance(ch, coin.SoTranslation)]
+        if not texts or not trans:
+            return None, None
+        return str(texts[0].string[0]), trans[0].translation.getValue()[2]
+
+    expected = FreeCAD.Units.Quantity(4000.0, FreeCAD.Units.Length).UserString
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg)
+    _pump()
+    text, z = label_parts()
+    h.check("W25 selecting a segment draws the length dim",
+            len(dim_nodes()) == 1 and text == expected,
+            detail="text=%r" % text)
+    h.check("W25 the label rides above the wall top",
+            z is not None and abs(z - 2940.0) < 1e-6, detail="z=%r" % z)
+    coords = [ch for ch in (dim_nodes()[0].getChildren() if dim_nodes() else [])
+              if isinstance(ch, coin.SoCoordinate3)]
+    h.check("W25 the dim line and ticks carry points",
+            bool(coords) and coords[0].point.getNum() >= 6)
+    seg.Height = 2000
+    doc.recompute()
+    text, z = label_parts()
+    h.check("W25 the dim tracks reflows",
+            z is not None and abs(z - 2100.0) < 1e-6, detail="z=%r" % z)
+    seg.Height = 2800
+    doc.recompute()
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W25 deselecting removes the dim", len(dim_nodes()) == 0)
+    pnt = seg.Shape.getElement("Face1").CenterOfGravity
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      pnt.x, pnt.y, pnt.z)
+    _pump()
+    h.check("W25 a picked wall face dims its owning segment",
+            len(dim_nodes()) == 1)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W25 clearing drops it again", len(dim_nodes()) == 0)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1082,5 +1152,6 @@ def run():
     _w22_tree_select_faces(doc)
     _w23_pick_redirect(doc)
     _w24_click_highlight(doc)
+    _w25_selection_dims(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)
