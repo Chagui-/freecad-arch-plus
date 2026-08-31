@@ -175,8 +175,11 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   the run nearest to the click.
 - **Native selection mapping** — clicking a segment in the tree selects all
   of its faces, and clicking wall geometry in the 3D view selects the
-  segment that owns the picked face (not the wall root), so the tree always
-  highlights the right item. Both behave like any other FreeCAD selection:
+  segment that owns the picked face or edge (not the wall root), so the
+  tree always highlights the right item. FreeCAD's face tint is unreliable
+  for a selected group child, so every selected face of a segment is drawn
+  with a translucent green highlight overlay; edge selections keep the
+  native edge tint. Both behave like any other FreeCAD selection:
   clicking something else clears or replaces it.
 
 ### Edit Wall panel

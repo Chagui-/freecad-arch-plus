@@ -286,9 +286,16 @@ class _WallSelectionObserver:
 
     A tree click on a segment selects all of its faces, and a 3D pick of
     wall geometry — which FreeCAD attributes to the wall root, the claim
-    parent — is redirected to the segment owning the picked face, so the
-    tree highlights the right item. Both actions run deferred on the event
-    loop and only while the triggering selection is still current."""
+    parent — is redirected to the segment owning the picked point, so the
+    tree highlights the right item. Face and edge picks alike resolve by
+    point, never by the root's aggregate child index. FreeCAD's face tint
+    is unreliable for a selected group child, so every selected face of a
+    segment carries the highlight overlay; edge selections keep the
+    native edge tint and are not overlaid. All actions run deferred on
+    the event loop."""
+
+    def __init__(self):
+        self._lit = {}
 
     def addSelection(self, doc, obj, sub, pnt):
         try:
@@ -299,13 +306,20 @@ class _WallSelectionObserver:
             pass
 
     def removeSelection(self, *_args):
-        pass
+        self._deferSync()
 
     def clearSelection(self, *_args):
-        pass
+        self._deferSync()
 
     def setSelection(self, *_args):
-        pass
+        self._deferSync()
+
+    def _deferSync(self):
+        try:
+            from PySide import QtCore
+            QtCore.QTimer.singleShot(0, self._syncOverlaysSafe)
+        except Exception:
+            pass
 
     def _run(self, doc, obj, sub, pnt):
         try:
@@ -318,8 +332,15 @@ class _WallSelectionObserver:
                 self._selectFaces(FreeCADGui, target)
             elif walls_object.is_root(target) and sub.startswith("Face"):
                 self._redirect(FreeCADGui, target, sub, pnt)
+            elif walls_object.is_root(target) and sub.startswith("Edge"):
+                self._redirectEdge(FreeCADGui, target, sub, pnt)
         except Exception:
             pass
+        finally:
+            self._syncOverlaysSafe()
+
+    def _key(self, obj):
+        return (obj.Document.Name, obj.Name)
 
     def _selectFaces(self, gui, seg):
         shape = getattr(seg, "Shape", None)
@@ -354,6 +375,113 @@ class _WallSelectionObserver:
                                        point.x, point.y, point.z)
         except Exception:
             gui.Selection.addSelection(seg, locals_[0])
+
+    def _redirectEdge(self, gui, root, sub, pnt):
+        """The segment owning a rerouted edge pick. The point resolves the
+        segment through its faces, and the segment's own edge nearest the
+        point supplies the local subname: the root's reported edge index
+        spans all claimed children, so it need not exist on one segment."""
+        still = False
+        for sel in gui.Selection.getSelectionEx():
+            if sel.Object is root and sub in (sel.SubElementNames or ()):
+                still = True
+                break
+        if not still:
+            return
+        point = _asVector(pnt)
+        resolved = (walls_object.resolveRootFace(root, sub, point)
+                    if point is not None else None)
+        if resolved is None:
+            return
+        seg = resolved[0]
+        local = _nearestEdgeName(seg, point)
+        if local is None:
+            return
+        gui.Selection.removeSelection(root, sub)
+        try:
+            gui.Selection.addSelection(seg, local,
+                                       point.x, point.y, point.z)
+        except Exception:
+            gui.Selection.addSelection(seg, local)
+
+    def _syncOverlaysSafe(self):
+        try:
+            self._syncOverlays()
+        except Exception:
+            pass
+
+    def _syncOverlays(self):
+        """Draw the face overlay under every selected face of a segment —
+        FreeCAD's own tint is unreliable for a selected group child — and
+        drop overlays whose selection moved on. Edge selections keep the
+        native edge tint; the overlay is not stacked for them."""
+        import FreeCADGui
+        lit = {}
+        for sel in FreeCADGui.Selection.getSelectionEx():
+            obj = sel.Object
+            if not walls_object.is_segment(obj):
+                continue
+            subs = [s for s in (sel.SubElementNames or ())
+                    if s.startswith("Face")]
+            if not subs:
+                continue
+            key = self._key(obj)
+            sig = ",".join(sorted(subs))
+            if self._lit.get(key) == sig:
+                lit[key] = sig
+                continue
+            try:
+                if walls_object.addFaceHighlight(obj.ViewObject,
+                                                 subs=subs):
+                    lit[key] = sig
+            except Exception:
+                pass
+        for key in set(self._lit) - set(lit):
+            self._unlight(key)
+        self._lit = lit
+
+    def _unlight(self, key):
+        self._lit.pop(key, None)
+        try:
+            import FreeCAD
+            doc = FreeCAD.getDocument(key[0]) if key[0] else None
+            obj = doc.getObject(key[1]) if doc else None
+            if obj is None:
+                return
+            walls_object.removeFaceHighlight(
+                obj.ViewObject, walls_object.FACE_HIGHLIGHT)
+        except Exception:
+            pass
+
+    def refresh(self, obj):
+        """Re-light a lit overlay after the shape was rebuilt under it."""
+        try:
+            key = self._key(obj)
+            if key not in self._lit:
+                return
+            self._unlight(key)
+            self._syncOverlaysSafe()
+        except Exception:
+            pass
+
+
+def _nearestEdgeName(seg, point):
+    """The segment-local subname of the edge nearest the pick point."""
+    import Part
+    try:
+        vertex = Part.Vertex(point)
+    except Exception:
+        return None
+    best = None
+    best_dist = None
+    for i, edge in enumerate(seg.Shape.Edges):
+        try:
+            dist = vertex.distToShape(edge)[0]
+        except Exception:
+            continue
+        if best_dist is None or dist < best_dist:
+            best, best_dist = i, dist
+    return None if best is None else "Edge%d" % (best + 1)
 
 
 _selobs = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)

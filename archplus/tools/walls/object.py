@@ -832,15 +832,32 @@ PREVIEW_HIGHLIGHT = "ArchPlusTargetPreview"
 
 
 def addFaceHighlight(vobj, name=FACE_HIGHLIGHT, color=(0.15, 0.80, 0.35),
-                     transparency=0.45):
+                     transparency=0.45, subs=None):
     """A translucent overlay of the object's tessellated faces on its view
-    provider, tracked by node name so several overlays can coexist. Added
-    to the scene graph only: never saved, never touches display
-    properties. Returns True when the overlay was built."""
+    provider, tracked by node name so several overlays can coexist. With
+    `subs`, only those Face subelements are drawn. Added to the scene
+    graph only: never saved, never touches display properties. Returns
+    True when the overlay was built."""
     removeFaceHighlight(vobj, name)
-    shape = getattr(getattr(vobj, "Object", None), "Shape", None)
+    obj = getattr(vobj, "Object", None)
+    shape = getattr(obj, "Shape", None)
     if shape is None or shape.isNull() or not shape.Faces:
         return False
+    if subs is not None:
+        import Part
+        parts = []
+        for sub in subs:
+            if not sub.startswith("Face"):
+                continue
+            try:
+                part = shape.getElement(sub)
+            except Exception:
+                continue
+            if not part.isNull() and part.Faces:
+                parts.append(part)
+        if not parts:
+            return False
+        shape = Part.makeCompound(parts) if len(parts) > 1 else parts[0]
     try:
         from pivy import coin
         verts, faces = shape.tessellate(0.5)
@@ -908,6 +925,20 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
+    def updateData(self, obj, prop):
+        """Refresh the highlight overlay when the shape is rebuilt under a
+        live face or edge selection; the overlay keeps its old tessellation
+        otherwise."""
+        if prop != "Shape":
+            return
+        try:
+            import FreeCADGui
+            observer = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)
+            if observer is not None:
+                observer.refresh(obj)
+        except Exception:
+            pass
+
     def setEdit(self, vobj, mode=0):
         from archplus.tools.walls import gui
         obj = vobj.Object
@@ -918,19 +949,6 @@ class _ViewProviderWall:
         return True
 
     def unsetEdit(self, vobj, mode=0):
-        import FreeCADGui
-        FreeCADGui.Control.closeDialog()
-        return False
-
-    def _teardownEdit(self, vobj):
-        """Drop the edit highlight and its selection watcher. Closing the
-        task dialog alone does not end the object's edit session, so both
-        the panel and unsetEdit call this; it is safe to run twice."""
-        self._unwatchSelection()
-        self._removeHighlight(vobj)
-
-    def unsetEdit(self, vobj, mode=0):
-        self._teardownEdit(vobj)
         import FreeCADGui
         FreeCADGui.Control.closeDialog()
         return False

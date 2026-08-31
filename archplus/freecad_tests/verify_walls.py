@@ -936,6 +936,127 @@ def _w23_pick_redirect(doc):
             not FreeCADGui.Selection.getSelectionEx())
 
 
+def _overlayNodes(seg):
+    node = seg.ViewObject.RootNode
+    return [ch for ch in (node.getChildren() or [])
+            if ch.getName() == walls_object.FACE_HIGHLIGHT]
+
+
+def _overlayCoords(seg):
+    """Vertices drawn by the face highlight overlay (0 if absent)."""
+    for node in _overlayNodes(seg):
+        for ch in node.getChildren() or []:
+            if str(ch.getTypeId().getName()).endswith("Coordinate3"):
+                return ch.point.getNum()
+    return 0
+
+
+def _faceCoordCount(obj, subs):
+    import Part
+    faces = [obj.Shape.getElement(s) for s in subs]
+    shape = Part.makeCompound(faces) if len(faces) > 1 else faces[0]
+    return len(shape.tessellate(0.5)[0])
+
+
+def _w24_click_highlight(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    a = walls_object.makeSegment(wall, name="a")
+    a.Edges = [(sk, ("Edge1",))]
+    a.Rest = False
+    b = walls_object.makeSegment(wall, name="b")
+    b.Edges = [(sk, ("Edge2",))]
+    b.Rest = False
+    doc.recompute()
+
+    # FreeCAD's face tint is unreliable for a selected group child, so
+    # every selected face of a segment is drawn by the overlay — exactly
+    # the selected faces, nothing more.
+    p_a = _facePoint(a)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      p_a.x, p_a.y, p_a.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    picked = objs[a][0] if a in objs and objs[a] else None
+    h.check("W24 a face pick keeps the redirect to the owning segment",
+            picked is not None and wall not in objs)
+    h.check("W24 the picked face is drawn by the highlight overlay",
+            _overlayCoords(a) == _faceCoordCount(a, [picked]),
+            "overlay=%d expected=%d" % (_overlayCoords(a),
+                                        _faceCoordCount(a, [picked])))
+    h.check("W24 the unpicked segment stays unlit", not _overlayNodes(b))
+
+    # a second, ctrl-clicked face joins the overlay
+    other = "Face2" if picked != "Face2" else "Face1"
+    FreeCADGui.Selection.addSelection(a, other)
+    _pump()
+    h.check("W24 a second face joins the highlight overlay",
+            _overlayCoords(a) == _faceCoordCount(a, sorted([picked,
+                                                            other])),
+            "overlay=%d expected=%d"
+            % (_overlayCoords(a),
+               _faceCoordCount(a, sorted([picked, other]))))
+
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W24 deselecting drops the highlight overlay",
+            not _overlayNodes(a))
+
+    # Edge picks land on the owning segment with its local edge name and
+    # keep the native edge tint; no face overlay is stacked for them.
+    from archplus.tools.walls import gui as walls_gui
+    target = FreeCAD.Vector(1000, -150, 2800)
+    edges = list(a.Shape.Edges)
+    e = min(edges, key=lambda e: e.CenterOfGravity.sub(target).Length)
+    p_e = e.CenterOfGravity
+    h.check("W24 the test targets the top-front edge midpoint",
+            p_e.sub(target).Length < 1e-6 and e.Length > 1500)
+    h.check("W24 the nearest-edge resolver finds the picked edge",
+            walls_gui._nearestEdgeName(a, p_e)
+            == "Edge%d" % (edges.index(e) + 1))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Edge1",
+                                      p_e.x, p_e.y, p_e.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W24 an edge pick lands on the owning segment's edge",
+            a in objs and objs[a] and wall not in objs
+            and objs[a][0].startswith("Edge"))
+    h.check("W24 an edge pick carries no face overlay",
+            not _overlayNodes(a))
+
+    # A tree click selects every face; the overlay carries the full set
+    # because the native tint cannot be relied on for group children.
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(a)
+    _pump()
+    sel = [s for s in FreeCADGui.Selection.getSelectionEx()
+           if s.Object is a]
+    h.check("W24 a tree click still selects every face",
+            len(sel) == 1
+            and len(sel[0].SubElementNames) == len(a.Shape.Faces))
+    h.check("W24 the tree-click overlay covers every face",
+            _overlayCoords(a) == _faceCoordCount(
+                a, sorted(sel[0].SubElementNames)))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W24 clearing drops the tree-click overlay",
+            not _overlayNodes(a))
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -960,5 +1081,6 @@ def run():
     _w21_segment_panel_toggle(doc)
     _w22_tree_select_faces(doc)
     _w23_pick_redirect(doc)
+    _w24_click_highlight(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)
