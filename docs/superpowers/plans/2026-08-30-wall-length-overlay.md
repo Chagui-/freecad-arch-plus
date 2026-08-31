@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- **Run headless tests with:** `uv run --no-project --with pytest python -m pytest -q` from the repo root (system Python has no pytest; see TESTING.md). Baseline before any change: **425 passed**. Task 1 → 432, Task 2 → 436, Tasks 3–4 → 445. Any other count is a regression.
+- **Run headless tests with:** `uv run --no-project --with pytest python -m pytest -q` from the repo root (system Python has no pytest; see TESTING.md). Baseline before Task 1: **429 passed** (425 original + 4 from the selection-mapping tests that landed on the base branch); after Task 1: **436 passed** (current HEAD, 99c8b6b). Task 2 → 440, Tasks 3–4 → 449. Any other count is a regression.
+- **Base-branch adaptation (2026-08-30 rebase):** the base branch gained native selection mapping — `_WallSelectionObserver` (`_ArchPlusWallSelObs`, `gui.py`) redirects 3D picks to the owning segment and draws per-face highlight overlays; `_ViewProviderWall.updateData` was rewritten to call `observer.refresh(obj)`; `verify_walls.py` numbers its checks through W24 and provides a `_pump()` helper that flushes the observer's deferred QTimer events. Task 4 keeps the observer refresh; Task 5 numbers its check W25 and pumps after every selection change. The dim overlay's node (`ArchPlusSegmentDim`) is distinct from `ArchPlusSegmentHighlight`, so the overlays coexist.
 - **FreeCAD-session suite:** `"C:\Program Files\FreeCAD 1.1\bin\freecad.exe" archplus/freecad_tests/run_all.py` (Windows host; the workstation is WSL). Must report 0 failed checks after Task 5.
 - All lengths internally in **mm** (FreeCAD base unit).
 - **Python style:** match the surrounding code exactly — `%`-style formatting, no f-strings, no type hints. LGPL header on every new `.py` file: `# SPDX-License-Identifier: LGPL-2.1-or-later` + a `#`-comment block explaining the module's purpose, with `Copyright (c) 2026 Andres <andres@neltu.me>` where other files carry a copyright line (`model.py`-style headers without copyright are also fine — copy the neighbour file's shape).
@@ -33,7 +34,7 @@ archplus/tools/walls/
                             recorder registration
     tests/test_dims.py      NEW  headless tests (geometry, axis summaries,
                             selection mapping, overlay bookkeeping)
-archplus/freecad_tests/verify_walls.py    MODIFIED  _w24_selection_dims GUI check
+archplus/freecad_tests/verify_walls.py    MODIFIED  _w25_selection_dims GUI check
 docs/ROADMAP.md, docs/TOOLS.md            MODIFIED  docs
 ```
 
@@ -882,29 +883,37 @@ dims.install()
 - [ ] **Step 2: Wire the reflow hook in `object.py`**
 
 In `archplus/tools/walls/object.py`, replace `_ViewProviderWall.updateData`
-(whole method) with:
+(whole method — since the selection-mapping work landed on the base branch
+it delegates to the `_ArchPlusWallSelObs` observer; keep that delegation,
+add the dim refresh) with:
 
 ```python
     def updateData(self, obj, prop):
-        if prop == "Shape" and getattr(self, "_highlighted", False):
-            try:
-                self._addHighlight(self.Object.ViewObject)
-            except Exception:
-                pass
-        if prop == "Shape":
-            # The lazy import is required: dims imports this module at its
-            # own load time, so a module-level import here would cycle.
-            try:
-                from archplus.tools.walls import dims
-                dims.refresh(obj)
-            except Exception:
-                pass
+        """Refresh the highlight overlay when the shape is rebuilt under a
+        live face or edge selection; the overlay keeps its old tessellation
+        otherwise. The length dim overlay redraws the same way."""
+        if prop != "Shape":
+            return
+        try:
+            import FreeCADGui
+            observer = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)
+            if observer is not None:
+                observer.refresh(obj)
+        except Exception:
+            pass
+        # The lazy import is required: dims imports this module at its own
+        # load time, so a module-level import here would cycle.
+        try:
+            from archplus.tools.walls import dims
+            dims.refresh(obj)
+        except Exception:
+            pass
 ```
 
 - [ ] **Step 3: Run the full suite**
 
 Run: `uv run --no-project --with pytest python -m pytest -q`
-Expected: **445 passed** (wiring changes no headless behavior — `install()` fails silently under the fakes, `refresh()` no-ops because `_nodes` is empty)
+Expected: **449 passed** (wiring changes no headless behavior — `install()` fails silently under the fakes, `refresh()` no-ops because `_nodes` is empty)
 
 - [ ] **Step 4: Commit**
 
@@ -915,22 +924,22 @@ git commit -m "Wire the length overlay into selection and reflow"
 
 ---
 
-### Task 5: FreeCAD-session verification (W24)
+### Task 5: FreeCAD-session verification (W25)
 
 **Files:**
-- Modify: `archplus/freecad_tests/verify_walls.py` (add `_w24_selection_dims`, register it in `run()`)
+- Modify: `archplus/freecad_tests/verify_walls.py` (add `_w25_selection_dims`, register it in `run()`)
 
 **Interfaces:**
-- Consumes: `_line_sketch` helper, `h.check`, `walls_object`, `dims.DIM_NODE`.
-- Produces: W24 PASS/FAIL lines in the FreeCAD verification log.
+- Consumes: `_line_sketch`, `_pump` (flushes the selection observer's deferred QTimer events), `h.check`, `walls_object`, `dims.DIM_NODE`.
+- Produces: W25 PASS/FAIL lines in the FreeCAD verification log.
 
-- [ ] **Step 1: Write the W24 check**
+- [ ] **Step 1: Write the W25 check**
 
-Insert after `_w23_highlight_selection_lifecycle` in
+Insert after `_w24_click_highlight` in
 `archplus/freecad_tests/verify_walls.py`:
 
 ```python
-def _w24_selection_dims(doc):
+def _w25_selection_dims(doc):
     import FreeCADGui
     from pivy import coin
     from archplus.tools.walls import dims
@@ -959,42 +968,49 @@ def _w24_selection_dims(doc):
     expected = FreeCAD.Units.Quantity(4000.0, FreeCAD.Units.Length).UserString
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(seg)
+    _pump()
     text, z = label_parts()
-    h.check("W24 selecting a segment draws the length dim",
+    h.check("W25 selecting a segment draws the length dim",
             len(dim_nodes()) == 1 and text == expected,
             detail="text=%r" % text)
-    h.check("W24 the label rides above the wall top",
+    h.check("W25 the label rides above the wall top",
             z is not None and abs(z - 2940.0) < 1e-6, detail="z=%r" % z)
     coords = [ch for ch in (dim_nodes()[0].getChildren() if dim_nodes() else [])
               if isinstance(ch, coin.SoCoordinate3)]
-    h.check("W24 the dim line and ticks carry points",
+    h.check("W25 the dim line and ticks carry points",
             bool(coords) and coords[0].point.getNum() >= 6)
     seg.Height = 2000
     doc.recompute()
     text, z = label_parts()
-    h.check("W24 the dim tracks reflows",
+    h.check("W25 the dim tracks reflows",
             z is not None and abs(z - 2100.0) < 1e-6, detail="z=%r" % z)
     seg.Height = 2800
     doc.recompute()
     FreeCADGui.Selection.clearSelection()
-    h.check("W24 deselecting removes the dim", len(dim_nodes()) == 0)
+    _pump()
+    h.check("W25 deselecting removes the dim", len(dim_nodes()) == 0)
     pnt = seg.Shape.getElement("Face1").CenterOfGravity
     FreeCADGui.Selection.addSelection(wall, "Face1",
                                       pnt.x, pnt.y, pnt.z)
-    h.check("W24 a picked wall face dims its owning segment",
+    _pump()
+    h.check("W25 a picked wall face dims its owning segment",
             len(dim_nodes()) == 1)
     FreeCADGui.Selection.clearSelection()
-    h.check("W24 clearing drops it again", len(dim_nodes()) == 0)
+    _pump()
+    h.check("W25 clearing drops it again", len(dim_nodes()) == 0)
 ```
 
 (The 2940/2100 expectations: lift = height + max(100, 5 % height); the
 `Quantity` comparison keeps the label check unit-schema-proof. The root
-pick mirrors W16's proven `addSelection(wall, "Face1", x, y, z)` pattern.)
+pick mirrors W16's proven `addSelection(wall, "Face1", x, y, z)` pattern;
+the base branch's deferred redirect then rewires it to the segment — the
+dim survives both routes. `_pump()` flushes the observer's deferred
+events so the selection state is settled before each check.)
 
 - [ ] **Step 2: Register the check**
 
-In `verify_walls.py`'s `run()`, add `_w24_selection_dims(doc)` directly
-after `_w23_highlight_selection_lifecycle(doc)` (and before the
+In `verify_walls.py`'s `run()`, add `_w25_selection_dims(doc)` directly
+after `_w24_click_highlight(doc)` (and before the
 `doc = h.fresh_doc()` / `_w7_reload(doc)` lines).
 
 - [ ] **Step 3: Run the FreeCAD session suite**
