@@ -70,3 +70,52 @@ def test_format_length_falls_back_to_millimetres():
     # The conftest fake Units make Quantity() return None, which forces the
     # plain millimetre fallback — exactly the path this test pins.
     assert dims.format_length(2450.0) == "2450 mm"
+
+
+# --- chain summaries (Task 2) -----------------------------------------------
+
+def _segment(name="Segments"):
+    return types.SimpleNamespace(
+        Name=name, Label=name, Group=[], InList=[], Wall=None,
+        Proxy=types.SimpleNamespace(Type="WallSegment"))
+
+
+_STRAIGHT = [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(4000, 0, 0)]
+
+
+def test_axis_dims_sums_chain_lengths(monkeypatch):
+    chains = [(_STRAIGHT, FreeCAD.Vector(0, 0, 1), 2800.0)]
+    monkeypatch.setattr(walls_object, "segmentAxisPolylines",
+                        lambda seg: chains)
+    assert dims.axis_dims(_segment()) == [
+        ([(0.0, 0.0, 0.0), (4000.0, 0.0, 0.0)], 4000.0)]
+
+
+def test_axis_dims_skips_degenerate_chains(monkeypatch):
+    chains = [([FreeCAD.Vector(0, 0, 0)], FreeCAD.Vector(0, 0, 1), 2800.0)]
+    monkeypatch.setattr(walls_object, "segmentAxisPolylines",
+                        lambda seg: chains)
+    assert dims.axis_dims(_segment()) == []
+
+
+def test_dim_chains_build_label_and_geometry(monkeypatch):
+    chains = [(_STRAIGHT, FreeCAD.Vector(0, 0, 1), 2800.0)]
+    monkeypatch.setattr(walls_object, "segmentAxisPolylines",
+                        lambda seg: chains)
+    line, ticks, label_pt, text = dims._dimChains(_segment())[0]
+    assert line == [(0.0, 0.0, 2940.0), (4000.0, 0.0, 2940.0)]
+    assert label_pt == (2000.0, 0.0, 2940.0)
+    assert text == "4000 mm"  # the fake Units force the fallback format
+    assert len(ticks) == 2
+
+
+def test_dim_chains_skip_undrawable_chains(monkeypatch):
+    chains = [(_STRAIGHT, FreeCAD.Vector(0, 0, 1), 2800.0)]
+    monkeypatch.setattr(walls_object, "segmentAxisPolylines",
+                        lambda seg: chains)
+
+    def boom(*_args):
+        raise ValueError("doubled back")
+
+    monkeypatch.setattr(dims, "_dimGeometry", boom)
+    assert dims._dimChains(_segment()) == []

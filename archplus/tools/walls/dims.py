@@ -11,6 +11,8 @@
 # so pytest drives them headlessly; FreeCAD and pivy are imported lazily
 # inside functions.
 
+from archplus.tools.walls import object as walls_object
+
 # Node name convention: ArchPlusSegmentHighlight, ArchPlusTargetPreview.
 DIM_NODE = "ArchPlusSegmentDim"
 
@@ -119,3 +121,34 @@ def format_length(mm):
                                       FreeCAD.Units.Length).UserString
     except Exception:
         return "%.0f mm" % mm
+
+
+def axis_dims(segment):
+    """Per-chain (points, length_mm) summaries for a segment, plain data.
+    Degenerate chains (fewer than two points, zero length) are skipped."""
+    out = []
+    for pts, _normal, _height in walls_object.segmentAxisPolylines(segment):
+        plain = [(p.x, p.y, p.z) for p in pts]
+        length = polyline_length(plain)
+        if len(plain) >= 2 and length > 1e-9:
+            out.append((plain, length))
+    return out
+
+
+def _dimChains(segment):
+    """Per-chain overlay geometry for a segment: (line, ticks, label_pt,
+    text) with plain tuples, ready for the Coin builder. Chains with no
+    direction (doubled back) are skipped."""
+    out = []
+    for pts, normal, height in walls_object.segmentAxisPolylines(segment):
+        plain = [(p.x, p.y, p.z) for p in pts]
+        length = polyline_length(plain)
+        if len(plain) < 2 or length <= 1e-9:
+            continue
+        try:
+            line, ticks, label_pt = _dimGeometry(
+                plain, (normal.x, normal.y, normal.z), height)
+        except Exception:
+            continue
+        out.append((line, ticks, label_pt, format_length(length)))
+    return out

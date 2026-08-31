@@ -347,6 +347,54 @@ def resolveRootFace(root, subname, point):
     return (best, [best_name])
 
 
+def claimedEdges(obj):
+    """The sketch subnames the segment effectively builds: its claims minus
+    its descendants'. Public wrapper over the proxy's claim resolution so
+    sibling modules (the dim overlay) need no proxy internals."""
+    proxy = getattr(obj, "Proxy", None)
+    if not hasattr(proxy, "_claimedEdges"):
+        return []
+    return proxy._claimedEdges(obj)
+
+
+def segmentAxisPolylines(obj):
+    """The segment's axis polylines in world coordinates, one per claimed
+    chain — the read-only twin of _buildSegment's chain phase. Returns
+    [(points, normal, height)]: points are FreeCAD Vectors along the chain,
+    normal the sketch's global normal, height the effective wall height in
+    mm. Chains that cannot be traversed (doubled back) are skipped."""
+    import Part
+    sketch = obj.Base
+    if sketch is None or not hasattr(sketch, "Shape"):
+        return []
+    subnames = claimedEdges(obj)
+    if not subnames:
+        return []
+    cfg = effectiveValues(obj)
+    if cfg["Height"] <= 0:
+        return []
+    normal = sketch.getGlobalPlacement().Rotation.multVec(Vector(0, 0, 1))
+    edges = []
+    for sub in subnames:
+        try:
+            edges.append(sketch.Shape.getElement(sub))
+        except Exception:
+            continue
+    if not edges:
+        return []
+    try:
+        chains = Part.getSortedClusters(edges)
+    except Exception:
+        chains = [[edge] for edge in edges]
+    out = []
+    for chain in chains:
+        try:
+            out.append((_chainPolyline(chain), normal, cfg["Height"]))
+        except Exception:
+            continue
+    return out
+
+
 def _usableShape(obj):
     shape = getattr(obj, "Shape", None)
     try:
