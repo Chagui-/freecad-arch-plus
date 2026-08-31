@@ -976,7 +976,7 @@ class _ViewProviderWall:
     def updateData(self, obj, prop):
         """Refresh the highlight overlay when the shape is rebuilt under a
         live face or edge selection; the overlay keeps its old tessellation
-        otherwise."""
+        otherwise. The length dim overlay redraws the same way."""
         if prop != "Shape":
             return
         try:
@@ -984,6 +984,13 @@ class _ViewProviderWall:
             observer = getattr(FreeCADGui, "_ArchPlusWallSelObs", None)
             if observer is not None:
                 observer.refresh(obj)
+        except Exception:
+            pass
+        # The lazy import is required: dims imports this module at its own
+        # load time, so a module-level import here would cycle.
+        try:
+            from archplus.tools.walls import dims
+            dims.refresh(obj)
         except Exception:
             pass
 

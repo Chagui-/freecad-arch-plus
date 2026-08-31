@@ -18,6 +18,7 @@ from PySide import QtCore, QtGui
 from archplus.common import widgets
 from archplus.tools.walls import object as walls_object
 from archplus.tools.walls import model
+from archplus.tools.walls import dims
 
 _DIR = os.path.dirname(__file__)
 ICON = os.path.join(_DIR, "resources", "icons", "WallPlus.svg")
@@ -781,6 +782,7 @@ if _recorder is None:
         FreeCADGui._ArchPlusPickRecorder = _recorder
     except Exception:
         pass
+dims.install()
 
 
 def wall_segment_selected():
