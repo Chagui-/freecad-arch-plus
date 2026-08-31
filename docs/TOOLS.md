@@ -181,6 +181,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   with a translucent green highlight overlay; edge selections keep the
   native edge tint. Both behave like any other FreeCAD selection:
   clicking something else clears or replaces it.
+- **On-select length dimension** — selecting a wall segment, or clicking
+  its face in the 3D view, draws a dimension line above the wall's top
+  edge with oblique end ticks and the segment's length; deselecting
+  removes it. Multi-selection dims every picked segment.
 
 ### Edit Wall panel
 

@@ -5,9 +5,10 @@
 - [x] Shipped — sketch-based segmented walls with inherited overrides, rest
   segment, hosted doors and windows, and interactive splitting (see
   [TOOLS.md](TOOLS.md#walls)).
-- [ ] Backlog — live measurements in the 3D view: on-select dimension
-  lines and a length label rendered beside the selected segment (Coin
-  overlay, dimTracker-style, no document objects; label tracks reflows).
+- [x] Shipped — on-select length dimensions in the 3D view: a dimension
+  line with oblique end ticks and a length label drawn above the selected
+  segment (Coin overlay, no document objects; tracks reflows; see
+  [TOOLS.md](TOOLS.md#walls)).
 - [ ] Backlog — interactive in-view controls: endpoint handles that edit
   the shared sketch (whole connected runs only; plane-projected drags,
   min-length clamps, opening-embedding validation since hosted openings
