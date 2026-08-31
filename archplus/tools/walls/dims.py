@@ -171,17 +171,17 @@ def _projectPt(p, seg):
     return (projected.x, projected.y, projected.z)
 
 
-def _faceRunScope(seg, face_name, point):
-    """The run indices one picked face belongs to: the click point
+def _faceRunScope(seg, face_name):
+    """The run indices one picked face belongs to: the face's centroid
     projected onto the sketch plane and matched to the nearest run
-    within one effective wall width — the split command's mapping —
-    falling back to the face centroid when no point was recorded.
-    Returns a (possibly empty) set of run indices."""
-    if point is None:
-        try:
-            point = seg.Shape.getElement(face_name).CenterOfGravity
-        except Exception:
-            return set()
+    within one effective wall width — the split command's mapping. The
+    face centroid is used instead of the click point because FreeCAD
+    fabricates PickedPoints for API-driven face selections. Returns a
+    (possibly empty) set of run indices."""
+    try:
+        point = seg.Shape.getElement(face_name).CenterOfGravity
+    except Exception:
+        return set()
     tol = walls_object.effectiveValues(seg)["Width"]
     projected = [[_projectPt(p, seg) for p in pts]
                  for pts, _normal, _height
@@ -307,7 +307,7 @@ def _dimScopes():
                 seg = resolved[0]
                 local = resolved[1][0] if resolved[1] else name
                 _mergeScope(scopes, order, seg,
-                            _faceRunScope(seg, local, point))
+                            _faceRunScope(seg, local))
     return [(seg, scopes[_key(seg)]) for seg in order]
 
 
@@ -318,13 +318,10 @@ def _selectionScope(seg, sel):
     names = list(getattr(sel, "SubElementNames", None) or ())
     if not any(n.startswith("Face") for n in names):
         return None
-    points = list(getattr(sel, "PickedPoints", None) or ())
-    paired = points if len(points) == len(names) else [None] * len(names)
     scope = set()
-    for i, name in enumerate(names):
-        if not name.startswith("Face"):
-            continue
-        scope |= _faceRunScope(seg, name, paired[i])
+    for name in names:
+        if name.startswith("Face"):
+            scope |= _faceRunScope(seg, name)
     return scope
 
 

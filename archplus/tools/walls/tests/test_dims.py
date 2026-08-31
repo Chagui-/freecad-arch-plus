@@ -74,10 +74,28 @@ def test_format_length_falls_back_to_millimetres():
 
 # --- run summaries -----------------------------------------------------------
 
+class _FakeShape:
+    """getElement() stand-in returning faces with set centroids."""
+
+    def __init__(self, faces):
+        self._faces = faces
+
+    def getElement(self, name):
+        return self._faces[name]
+
+
 def _segment(name="Segments"):
     return types.SimpleNamespace(
         Name=name, Label=name, Group=[], InList=[], Wall=None,
         Base=None,
+        Shape=_FakeShape({
+            "Face1": types.SimpleNamespace(
+                CenterOfGravity=FreeCAD.Vector(1000.0, -150.0, 1400.0)),
+            "Face2": types.SimpleNamespace(
+                CenterOfGravity=FreeCAD.Vector(-150.0, 1000.0, 1400.0)),
+            "Face3": types.SimpleNamespace(
+                CenterOfGravity=FreeCAD.Vector(1000.0, 1000.0, 1400.0)),
+        }),
         Proxy=types.SimpleNamespace(Type="WallSegment"))
 
 
@@ -176,44 +194,38 @@ def test_dim_scopes_direct_segment_without_faces(monkeypatch):
     assert dims._dimScopes() == [(a, None)]
 
 
-def test_dim_scopes_maps_picked_faces_to_runs(monkeypatch):
+def test_dim_scopes_maps_selected_faces_to_runs(monkeypatch):
     a = _segment("a")
     _with_runs(monkeypatch)
-    sel = _sel(a, ("Face3",), (FreeCAD.Vector(2000.0, -100.0, 1400.0),))
     monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
-        getSelectionEx=lambda: [sel]))
-    # the click sits 100 mm off the first run's baseline, 2000 mm off the
-    # second's — inside the 300 mm wall width of run 0 only.
-    assert dims._dimScopes() == [(a, {0})]
+        getSelectionEx=lambda: [_sel(a, ("Face1", "Face2"))]))
+    # Face1's centroid sits 150 mm off run 0's baseline, Face2's 150 mm
+    # off run 1's — inside the 300 mm wall width of their own runs only.
+    assert dims._dimScopes() == [(a, {0, 1})]
 
 
 def test_dim_scopes_unmatched_faces_scope_nothing(monkeypatch):
     a = _segment("a")
     _with_runs(monkeypatch)
-    sel = _sel(a, ("Face3",), (FreeCAD.Vector(20000.0, -100.0, 1400.0),))
     monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
-        getSelectionEx=lambda: [sel]))
+        getSelectionEx=lambda: [_sel(a, ("Face3",))]))
+    # Face3's centroid is 1000 mm off both runs — beyond the wall width.
     assert dims._dimScopes() == [(a, set())]
 
 
-def test_dim_scopes_unions_scopes_across_faces(monkeypatch):
+def test_dim_scopes_unions_scopes_across_members(monkeypatch):
     a = _segment("a")
     _with_runs(monkeypatch)
-    sel = _sel(a, ("Face1", "Face2"),
-               (FreeCAD.Vector(2000.0, -100.0, 1400.0),    # on run 0
-                FreeCAD.Vector(-100.0, 1500.0, 1400.0)))   # on run 1
     monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
-        getSelectionEx=lambda: [sel]))
+        getSelectionEx=lambda: [_sel(a, ("Face1",)), _sel(a, ("Face2",))]))
     assert dims._dimScopes() == [(a, {0, 1})]
 
 
 def test_dim_scopes_none_scope_absorbs(monkeypatch):
     a = _segment("a")
     _with_runs(monkeypatch)
-    plain = _sel(a)
-    picked = _sel(a, ("Face1",), (FreeCAD.Vector(2000.0, -100.0, 1400.0),))
     monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
-        getSelectionEx=lambda: [plain, picked]))
+        getSelectionEx=lambda: [_sel(a), _sel(a, ("Face1",))]))
     assert dims._dimScopes() == [(a, None)]
 
 
@@ -226,21 +238,21 @@ def test_dim_scopes_resolves_root_face_picks(monkeypatch):
     picks = []
 
     def fake_resolve(obj, name, point):
-        seen.append((name, (point.x, point.y, point.z)))
+        coords = ((point.x, point.y, point.z)
+                  if point is not None else None)
+        seen.append((name, coords))
         return {"Face1": (a, ["Face1"]), "Face2": (b, ["Face2"])}[name]
 
     def fake_pick(doc, obj, sub, occurrence=0):
         picks.append((sub, occurrence))
-        return FreeCAD.Vector(2000.0, -100.0, 1400.0)
+        return None
 
     monkeypatch.setattr(walls_object, "resolveRootFace", fake_resolve)
     monkeypatch.setattr(walls_gui, "_lastPick", fake_pick)
     monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
         getSelectionEx=lambda: [_sel(root, ("Face1", "Face1", "Face2"))]))
-    assert dims._dimScopes() == [(a, {0}), (b, {0})]
-    assert seen == [("Face1", (2000.0, -100.0, 1400.0)),
-                    ("Face1", (2000.0, -100.0, 1400.0)),
-                    ("Face2", (2000.0, -100.0, 1400.0))]
+    assert dims._dimScopes() == [(a, {0}), (b, {1})]
+    assert seen == [("Face1", None), ("Face1", None), ("Face2", None)]
     assert picks == [("Face1", 0), ("Face1", 1), ("Face2", 0)]
 
 
