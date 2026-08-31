@@ -357,12 +357,14 @@ def claimedEdges(obj):
     return proxy._claimedEdges(obj)
 
 
-def segmentAxisPolylines(obj):
-    """The segment's axis polylines in world coordinates, one per claimed
-    chain — the read-only twin of _buildSegment's chain phase. Returns
-    [(points, normal, height)]: points are FreeCAD Vectors along the chain,
-    normal the sketch's global normal, height the effective wall height in
-    mm. Chains that cannot be traversed (doubled back) are skipped."""
+def segmentEdgeRuns(obj):
+    """The segment's wall runs as plain data — one run per maximal
+    straight sequence of claimed sketch edges, curved edges solo — the
+    unit the built wall's side faces show. Returns [(points, normal,
+    height)]: points are (x, y, z) tuples along the run in world
+    coordinates, normal the sketch's global normal as a tuple, height
+    the effective wall height in mm. Chains that cannot be traversed
+    (doubled back) are skipped."""
     import Part
     sketch = obj.Base
     if sketch is None or not hasattr(sketch, "Shape"):
@@ -389,7 +391,9 @@ def segmentAxisPolylines(obj):
     out = []
     for chain in chains:
         try:
-            out.append((_chainPolyline(chain), normal, cfg["Height"]))
+            for pts in model.chain_runs(_chainLinks(chain)):
+                out.append((pts, (normal.x, normal.y, normal.z),
+                            cfg["Height"]))
         except Exception:
             continue
     return out
@@ -680,60 +684,29 @@ def _edgePoints(edge):
     return pts
 
 
+def _chainLinks(edges):
+    """[(points, is_line)] plain-data links for one chain's usable edges,
+    points as (x, y, z) tuples in the edge's own travel direction."""
+    links = []
+    for edge in edges:
+        if edge.Length >= 1e-9:
+            links.append(([(p.x, p.y, p.z) for p in _edgePoints(edge)],
+                          type(edge.Curve).__name__ in ("Line",
+                                                        "LineSegment")))
+    return links
+
+
 def _chainPolyline(edges):
     """Discretized points along the chain, each edge taken in its own
     sketch travel direction; raises when the edge directions do not
     traverse the chain head-to-tail, since a doubled-back chain cannot
     take one uniform offset side."""
-    remaining = []
-    for edge in edges:
-        if edge.Length >= 1e-9:
-            remaining.append(_edgePoints(edge))
-    if not remaining:
-        raise ValueError("chain has no usable edges")
-    pts = list(remaining.pop(0))
-    while remaining:
-        for i, ev in enumerate(remaining):
-            if ev[0].distanceToPoint(pts[-1]) <= 1e-3:
-                pts.extend(ev[1:])
-                remaining.pop(i)
-                break
-        else:
-            break
-    while remaining:
-        for i, ev in enumerate(remaining):
-            if ev[-1].distanceToPoint(pts[0]) <= 1e-3:
-                pts = ev[:-1] + pts
-                remaining.pop(i)
-                break
-        else:
-            raise ValueError("chain edges do not follow one travel direction")
-    return pts
-
-
-def _offsetChainWire(wire, poly, dist, normal, start_pt=None, end_pt=None):
-    """Offset a chain wire inside its sketch plane; positive dist is left
-    of the chain's sketch travel direction. start_pt/end_pt replace the
-    open ends' offset points when the chain abuts another segment (the
-    shared miter seam); they are only honored on the straight path."""
-    import Part
-    if dist == 0:
-        return wire.copy()
-    if all(type(e.Curve).__name__ in ("Line", "LineSegment")
-           for e in wire.Edges):
-        return _offsetStraightWire(poly, dist, normal,
-                                   start_pt=start_pt, end_pt=end_pt)
-    if wire.isClosed():
-        area = 0.0
-        for i in range(len(poly)):
-            area += poly[i].cross(poly[(i + 1) % len(poly)]).dot(normal)
-        return wire.makeOffset2D(-dist if area > 0 else dist, 2, False, False)
-    result = wire.makeOffset2D(-dist, 2, False, True)
-    if not _offsetIsLeft(poly, result, dist, normal):
-        result = wire.makeOffset2D(dist, 2, False, True)
-        if not _offsetIsLeft(poly, result, dist, normal):
-            raise ValueError("wire offset landed on the wrong side")
-    return result
+    pts = []
+    for run in model.chain_runs(_chainLinks(edges)):
+        if pts:
+            run = run[1:]  # drop the duplicated joint between runs
+        pts.extend(run)
+    return [FreeCAD.Vector(x, y, z) for x, y, z in pts]
 
 
 def _offsetIsLeft(poly, offset_wire, dist, normal):

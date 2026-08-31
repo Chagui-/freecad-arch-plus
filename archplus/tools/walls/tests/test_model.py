@@ -3,6 +3,8 @@
 # Pure wall-model tests: config inheritance, claim resolution, edge matching.
 # model.py must stay importable without FreeCAD.
 
+import pytest
+
 from archplus.tools.walls import model
 
 
@@ -172,3 +174,84 @@ def test_match_edge_respects_tolerance():
 
 def test_match_edge_empty_inputs():
     assert model.match_edge([], (0.0, 0.0, 0.0)) is None
+
+
+# --- chain_runs --------------------------------------------------------------
+
+def test_chain_runs_splits_a_square_into_four_runs():
+    links = [
+        ([(0, 0, 0), (2000, 0, 0)], True),
+        ([(2000, 0, 0), (2000, 2000, 0)], True),
+        ([(2000, 2000, 0), (0, 2000, 0)], True),
+        ([(0, 2000, 0), (0, 0, 0)], True),
+    ]
+    runs = model.chain_runs(links)
+    assert len(runs) == 4
+    assert runs[0] == [(0.0, 0.0, 0.0), (2000.0, 0.0, 0.0)]
+    assert runs[1] == [(2000.0, 0.0, 0.0), (2000.0, 2000.0, 0.0)]
+    assert runs[2] == [(2000.0, 2000.0, 0.0), (0.0, 2000.0, 0.0)]
+    assert runs[3] == [(0.0, 2000.0, 0.0), (0.0, 0.0, 0.0)]
+
+
+def test_chain_runs_merges_collinear_edges_into_one_run():
+    links = [
+        ([(0, 0, 0), (1000, 0, 0)], True),
+        ([(1000, 0, 0), (2500, 0, 0)], True),
+        ([(2500, 0, 0), (4000, 0, 0)], True),
+    ]
+    assert model.chain_runs(links) == [
+        [(0, 0, 0), (1000, 0, 0), (2500, 0, 0), (4000, 0, 0)]]
+
+
+def test_chain_runs_orders_unordered_and_reversed_links():
+    links = [
+        ([(4000, 3000, 0), (4000, 0, 0)], True),   # stored end-to-start
+        ([(0, 0, 0), (1000, 0, 0)], True),
+        ([(2500, 0, 0), (4000, 0, 0)], True),
+        ([(1000, 0, 0), (2500, 0, 0)], True),
+    ]
+    runs = model.chain_runs(links)
+    assert runs == [
+        [(0, 0, 0), (1000, 0, 0), (2500, 0, 0), (4000, 0, 0)],
+        [(4000, 0, 0), (4000, 3000, 0)],
+    ]
+
+
+def test_chain_runs_keeps_arcs_solo():
+    arc = [(0.0, 0.0, 0.0), (500.0, 500.0, 0.0), (1000.0, 0.0, 0.0)]
+    links = [
+        ([(-1000, 0, 0), (0, 0, 0)], True),
+        (arc, False),
+        ([(1000, 0, 0), (2000, 0, 0)], True),
+    ]
+    runs = model.chain_runs(links)
+    assert len(runs) == 3
+    assert runs[1] == arc
+
+
+def test_chain_runs_splits_at_direction_changes_only():
+    links = [
+        ([(0, 0, 0), (1000, 0, 0)], True),
+        ([(1000, 0, 0), (1000, 800, 0)], True),
+        ([(1000, 800, 0), (1800, 800, 0)], True),
+    ]
+    runs = model.chain_runs(links)
+    assert runs == [
+        [(0, 0, 0), (1000, 0, 0)],
+        [(1000, 0, 0), (1000, 800, 0)],
+        [(1000, 800, 0), (1800, 800, 0)],
+    ]
+
+
+def test_chain_runs_rejects_unorderable_links():
+    links = [
+        ([(0, 0, 0), (1000, 0, 0)], True),
+        ([(5000, 5000, 0), (6000, 5000, 0)], True),
+    ]
+    with pytest.raises(ValueError):
+        model.chain_runs(links)
+
+
+def test_chain_runs_rejects_empty_links():
+    with pytest.raises(ValueError):
+        model.chain_runs([])

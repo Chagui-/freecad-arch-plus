@@ -3,14 +3,15 @@
 #
 # On-select length dimensions for wall segments
 # (docs/superpowers/specs/2026-08-30-wall-length-overlay-design.md):
-# selecting a segment draws a Coin overlay above its top edge — a dimension
-# line along the segment's axis, oblique end ticks and a screen-facing
-# length label. No document objects are created; the overlay lives in the
-# segment's view provider under a tracked node name, like the edit
-# highlight. The geometry and selection mapping here work on plain tuples
-# so pytest drives them headlessly; FreeCAD and pivy are imported lazily
-# inside functions.
+# selecting a wall face draws a Coin overlay above that face's wall run —
+# a dimension line along the run, oblique end ticks and a screen-facing
+# length label; selecting the whole segment dims every run. No document
+# objects are created; the overlay lives in the segment's view provider
+# under a tracked node name, like the edit highlight. The geometry and
+# selection mapping here work on plain tuples so pytest drives them
+# headlessly; FreeCAD and pivy are imported lazily inside functions.
 
+from archplus.tools.walls import model
 from archplus.tools.walls import object as walls_object
 
 # Node name convention: ArchPlusSegmentHighlight, ArchPlusTargetPreview.
@@ -123,38 +124,73 @@ def format_length(mm):
         return "%.0f mm" % mm
 
 
-def axis_dims(segment):
-    """Per-chain (points, length_mm) summaries for a segment, plain data.
-    Degenerate chains (fewer than two points, zero length) are skipped."""
+def run_dims(segment, scope=None):
+    """Per-run (points, length_mm) summaries for a segment, plain data.
+    scope is None for every run, else the set of run indices to include.
+    Degenerate runs (fewer than two points, zero length) are skipped."""
     out = []
-    for pts, _normal, _height in walls_object.segmentAxisPolylines(segment):
-        plain = [(p.x, p.y, p.z) for p in pts]
-        length = polyline_length(plain)
-        if len(plain) >= 2 and length > 1e-9:
-            out.append((plain, length))
+    for index, (pts, _normal, _height) in enumerate(
+            walls_object.segmentEdgeRuns(segment)):
+        if scope is not None and index not in scope:
+            continue
+        length = polyline_length(pts)
+        if len(pts) >= 2 and length > 1e-9:
+            out.append((pts, length))
     return out
 
 
-def _dimChains(segment):
-    """Per-chain overlay geometry for a segment: (line, ticks, label_pt,
-    text) with plain tuples, ready for the Coin builder. Chains with no
-    direction (doubled back) are skipped."""
+def _dimRuns(segment, scope=None):
+    """Per-run overlay geometry for a segment: (line, ticks, label_pt,
+    text) with plain tuples, ready for the Coin builder. Runs with no
+    direction are skipped."""
     out = []
-    for pts, normal, height in walls_object.segmentAxisPolylines(segment):
-        plain = [(p.x, p.y, p.z) for p in pts]
-        length = polyline_length(plain)
-        if len(plain) < 2 or length <= 1e-9:
+    for index, (pts, normal, height) in enumerate(
+            walls_object.segmentEdgeRuns(segment)):
+        if scope is not None and index not in scope:
+            continue
+        length = polyline_length(pts)
+        if len(pts) < 2 or length <= 1e-9:
             continue
         try:
-            line, ticks, label_pt = _dimGeometry(
-                plain, (normal.x, normal.y, normal.z), height)
+            line, ticks, label_pt = _dimGeometry(pts, normal, height)
         except Exception:
             continue
         out.append((line, ticks, label_pt, format_length(length)))
     return out
 
 
-_nodes = {}      # (doc name, object name) -> dimmed segment
+def _projectPt(p, seg):
+    """The world point projected onto the segment sketch's plane, as a
+    plain tuple (the split command's projection). Accepts a plain tuple
+    or a Vector."""
+    import FreeCAD
+    from archplus.tools.walls import gui as walls_gui
+    coords = (p.x, p.y, p.z) if hasattr(p, "x") else (p[0], p[1], p[2])
+    projected = walls_gui._projectToSketchPlane(FreeCAD.Vector(*coords),
+                                                seg.Base)
+    return (projected.x, projected.y, projected.z)
+
+
+def _faceRunScope(seg, face_name, point):
+    """The run indices one picked face belongs to: the click point
+    projected onto the sketch plane and matched to the nearest run
+    within one effective wall width — the split command's mapping —
+    falling back to the face centroid when no point was recorded.
+    Returns a (possibly empty) set of run indices."""
+    if point is None:
+        try:
+            point = seg.Shape.getElement(face_name).CenterOfGravity
+        except Exception:
+            return set()
+    tol = walls_object.effectiveValues(seg)["Width"]
+    projected = [[_projectPt(p, seg) for p in pts]
+                 for pts, _normal, _height
+                 in walls_object.segmentEdgeRuns(seg)]
+    index = model.match_edge(projected, _projectPt(point, seg), tol)
+    return set() if index is None else {index}
+
+
+_nodes = {}      # (doc name, object name) -> (dimmed segment, run scope)
 _observer = None
 
 
@@ -164,8 +200,8 @@ def _key(obj):
 
 def _buildNode(chains):
     """The Coin overlay node for one segment: a dimension line and end
-    ticks per chain plus one screen-facing label per chain. chains is what
-    _dimChains returns. Labels are wrapped in their own SoSeparator so each
+    ticks per run plus one screen-facing label per run. chains is what
+    _dimRuns returns. Labels are wrapped in their own SoSeparator so each
     SoTranslation is applied from an identity state."""
     from pivy import coin
     sep = coin.SoSeparator()
@@ -213,14 +249,14 @@ def _buildNode(chains):
     return sep
 
 
-def addDim(segment):
-    """Draw the length dim overlay on the segment's view provider. True
-    when a node was added."""
+def addDim(segment, scope=None):
+    """Draw the length dim overlay for the segment's scoped runs on its
+    view provider. True when a node was added."""
     try:
         vobj = getattr(segment, "ViewObject", None)
         if vobj is None or getattr(vobj, "RootNode", None) is None:
             return False
-        chains = _dimChains(segment)
+        chains = _dimRuns(segment, scope)
         if not chains:
             return False
         walls_object.removeFaceHighlight(vobj, DIM_NODE)
@@ -239,25 +275,23 @@ def removeDim(segment):
         pass
 
 
-def _dimTargets():
-    """The segments the current selection implies dims for, deduplicated,
-    in first-appearance order. Direct segment members dim themselves; a
-    wall root with picked faces dims each face's owning segment (resolved
-    through its own recorded pick point, like the split command); a tree-
-    selected root with no faces implies nothing — spraying every segment
-    with dimensions is noise. gui is imported lazily: gui.py imports this
-    module at load time."""
+def _dimScopes():
+    """The (segment, scope) pairs the current selection implies dims for,
+    in first-appearance order. scope is None for every run of the
+    segment, else the set of run indices the selected faces map to. A
+    wall root with picked faces resolves each to its owning segment
+    (pick-point occurrence counting, like the split command); a tree-
+    selected root with no faces implies nothing. gui is imported lazily:
+    gui.py imports this module at load time."""
     import FreeCADGui
     from archplus.tools.walls import gui as walls_gui
-    out = []
-    seen = set()
+    scopes = {}
+    order = []
     for sel in FreeCADGui.Selection.getSelectionEx():
         obj = getattr(sel, "Object", None)
         if walls_object.is_segment(obj):
-            k = _key(obj)
-            if k not in seen:
-                seen.add(k)
-                out.append(obj)
+            _mergeScope(scopes, order, obj,
+                        _selectionScope(obj, sel))
         elif walls_object.is_root(obj):
             counts = {}
             for name in (getattr(sel, "SubElementNames", None) or ()):
@@ -271,41 +305,77 @@ def _dimTargets():
                 if resolved is None:
                     continue
                 seg = resolved[0]
-                k = _key(seg)
-                if k not in seen:
-                    seen.add(k)
-                    out.append(seg)
-    return out
+                local = resolved[1][0] if resolved[1] else name
+                _mergeScope(scopes, order, seg,
+                            _faceRunScope(seg, local, point))
+    return [(seg, scopes[_key(seg)]) for seg in order]
+
+
+def _selectionScope(seg, sel):
+    """The run scope one direct segment selection member implies: None
+    (every run) when it names no faces, else the union of the runs its
+    picked faces map to."""
+    names = list(getattr(sel, "SubElementNames", None) or ())
+    if not any(n.startswith("Face") for n in names):
+        return None
+    points = list(getattr(sel, "PickedPoints", None) or ())
+    paired = points if len(points) == len(names) else [None] * len(names)
+    scope = set()
+    for i, name in enumerate(names):
+        if not name.startswith("Face"):
+            continue
+        scope |= _faceRunScope(seg, name, paired[i])
+    return scope
+
+
+def _mergeScope(scopes, order, seg, scope):
+    """Union a member's scope into the segment's entry; None (every run)
+    absorbs any scope."""
+    key = _key(seg)
+    if key not in scopes:
+        scopes[key] = scope
+        order.append(seg)
+    elif scopes[key] is None or scope is None:
+        scopes[key] = None
+    else:
+        scopes[key] = scopes[key] | scope
 
 
 def sync():
     """Recompute the dimmed set from the current selection and diff it
-    against the drawn overlays. Never raises: selection events must not
-    break the session."""
+    against the drawn overlays; a scope change redraws. Never raises:
+    selection events must not break the session."""
     try:
         want = {}
-        for seg in _dimTargets():
-            want[_key(seg)] = seg
+        for seg, scope in _dimScopes():
+            want[_key(seg)] = (seg, scope)
         for key in list(_nodes):
             if key not in want:
-                removeDim(_nodes.pop(key))
-        for key, seg in want.items():
-            if key not in _nodes and addDim(seg):
-                _nodes[key] = seg
+                seg, _scope = _nodes.pop(key)
+                removeDim(seg)
+                continue
+            seg, scope = want[key]
+            if _nodes[key][1] != scope:
+                removeDim(seg)
+                _nodes.pop(key)
+        for key, (seg, scope) in want.items():
+            if key not in _nodes and addDim(seg, scope):
+                _nodes[key] = (seg, scope)
     except Exception:
         pass
 
 
 def refresh(segment):
-    """Redraw the segment's dim overlay after its shape changed. No-op
-    when the segment is not currently dimmed."""
+    """Redraw the segment's dim overlay after its shape changed, keeping
+    its run scope. No-op when the segment is not currently dimmed."""
     try:
         key = _key(segment)
         if key not in _nodes:
             return
+        _seg, scope = _nodes[key]
         removeDim(segment)
-        if addDim(segment):
-            _nodes[key] = segment
+        if addDim(segment, scope):
+            _nodes[key] = (segment, scope)
         else:
             _nodes.pop(key, None)
     except Exception:

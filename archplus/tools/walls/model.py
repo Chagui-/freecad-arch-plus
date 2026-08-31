@@ -183,3 +183,97 @@ def _iter_claims(nodes):
         yield n, n.claimed
         for node, subs in _iter_claims(n.children):
             yield node, subs
+
+
+def _sub3(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _point_dist(a, b):
+    d = _sub3(a, b)
+    return (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) ** 0.5
+
+
+def _unit3(a):
+    length = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) ** 0.5
+    if length < 1e-12:
+        return None
+    return (a[0] / length, a[1] / length, a[2] / length)
+
+
+def _continues_straight(pts, next_pts):
+    """True when next_pts continues pts as the same straight run: the
+    next link is a straight edge pointing the same way and lying on one
+    line with pts."""
+    a0, a1 = pts[0], pts[-1]
+    b0, b1 = next_pts[0], next_pts[-1]
+    d = _unit3(_sub3(a1, a0))
+    e = _unit3(_sub3(b1, b0))
+    if d is None or e is None:
+        return False
+    cx = d[1] * e[2] - d[2] * e[1]
+    cy = d[2] * e[0] - d[0] * e[2]
+    cz = d[0] * e[1] - d[1] * e[0]
+    if (cx * cx + cy * cy + cz * cz) ** 0.5 > 1e-9:
+        return False
+    if d[0] * e[0] + d[1] * e[1] + d[2] * e[2] <= 0:
+        return False
+    return _point_seg_dist(b0, a0, a1) < 1e-6
+
+
+def _orderLinks(links, reverse_seed):
+    """Order one chain's links head-to-tail, keeping every points list in
+    its stored travel direction; raises ValueError on unorderable
+    leftovers. Mirrors the offset machinery's traversal: forward from the
+    seed, then backward from the head."""
+    first = links.pop(0)
+    seed = list(reversed(first[0])) if reverse_seed else list(first[0])
+    ordered = [(seed, first[1])]
+    while links:
+        for i, (pts, is_line) in enumerate(links):
+            if _point_dist(pts[0], ordered[-1][0][-1]) <= 1e-3:
+                ordered.append((list(pts), is_line))
+                links.pop(i)
+                break
+        else:
+            break
+    while links:
+        for i, (pts, is_line) in enumerate(links):
+            if _point_dist(pts[-1], ordered[0][0][0]) <= 1e-3:
+                ordered.insert(0, (list(pts), is_line))
+                links.pop(i)
+                break
+        else:
+            raise ValueError("chain edges do not follow one travel direction")
+    return ordered
+
+
+def chain_runs(links):
+    """Split one connected edge chain into wall runs: maximal sequences
+    of consecutive collinear straight edges; every curved edge is its
+    own run — the unit the built wall's side faces show.
+
+    links is [(points, is_line)] for the chain's usable edges, points a
+    list of (x, y, z) tuples in the edge's own travel direction, in any
+    order. Raises ValueError when the links do not traverse one
+    head-to-tail chain (the same rule as the offset machinery's
+    polyline). Returns run polylines: a list of point lists in traversal
+    order, joints deduplicated within a run."""
+    if not links:
+        raise ValueError("chain has no usable edges")
+    try:
+        ordered = _orderLinks(list(links), False)
+    except ValueError:
+        # The seed link may be stored tail-first relative to the chain;
+        # retry with it flipped before giving up.
+        ordered = _orderLinks(list(links), True)
+    runs = []
+    kinds = []  # True while the run consists of straight links only
+    for pts, is_line in ordered:
+        if runs and kinds[-1] and is_line and _continues_straight(runs[-1],
+                                                                  pts):
+            runs[-1].extend(pts[1:])
+        else:
+            runs.append(list(pts))
+            kinds.append(is_line)
+    return runs
