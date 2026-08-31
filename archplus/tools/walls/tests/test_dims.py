@@ -26,24 +26,26 @@ def test_polyline_length_sums_segments():
     assert dims.polyline_length(pts) == pytest.approx(1500.0)
 
 
-def test_dim_lift_clears_the_top_edge():
-    # 5 % of the height once that beats the 100 mm floor.
-    assert dims.dim_lift(2800.0) == pytest.approx(2940.0)
-    # the 100 mm floor for low walls.
-    assert dims.dim_lift(1000.0) == pytest.approx(1100.0)
+def test_dim_lift_hugs_the_top_edge():
+    # a fixed 20 mm clearance above the top edge, no percentage growth
+    assert dims.dim_lift(2800.0) == pytest.approx(2820.0)
+    assert dims.dim_lift(1000.0) == pytest.approx(1020.0)
 
 
 def test_dim_geometry_raises_a_straight_run():
-    line, ticks, label = dims._dimGeometry([(0, 0, 0), (4000, 0, 0)], UP,
-                                           2800.0)
-    assert line == [(0.0, 0.0, 2940.0), (4000.0, 0.0, 2940.0)]
-    assert label == (2000.0, 0.0, 2940.0)
+    line, ticks, label_pt, label_dir, label_up = dims._dimGeometry(
+        [(0, 0, 0), (4000, 0, 0)], UP, 2800.0)
+    assert line == [(0.0, 0.0, 2820.0), (4000.0, 0.0, 2820.0)]
+    assert label_pt == (2000.0, 0.0, 2820.0)
+    # the label frame reads along the run, up-vector across it
+    assert label_dir == pytest.approx((1.0, 0.0, 0.0))
+    assert label_up == pytest.approx((0.0, 1.0, 0.0))
     assert len(ticks) == 2
 
 
 def test_dim_geometry_ticks_cross_the_ends_at_45_degrees():
-    line, ticks, _label = dims._dimGeometry([(0, 0, 0), (4000, 0, 0)], UP,
-                                            2800.0)
+    line, ticks, _pt, _dir, _up = dims._dimGeometry(
+        [(0, 0, 0), (4000, 0, 0)], UP, 2800.0)
     for (a, b), end in zip(ticks, line):
         mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0)
         assert mid == pytest.approx(end)
@@ -52,12 +54,12 @@ def test_dim_geometry_ticks_cross_the_ends_at_45_degrees():
 
 
 def test_dim_geometry_follows_an_l_run():
-    line, ticks, label = dims._dimGeometry(
+    line, ticks, label_pt, _dir, _up = dims._dimGeometry(
         [(0, 0, 0), (4000, 0, 0), (4000, 3000, 0)], UP, 2800.0)
     assert len(line) == 3
-    assert line[2] == (4000.0, 3000.0, 2940.0)
+    assert line[2] == (4000.0, 3000.0, 2820.0)
     # total 7000, so the arc-length midpoint sits at 3500 on the first leg.
-    assert label == (3500.0, 0.0, 2940.0)
+    assert label_pt == (3500.0, 0.0, 2820.0)
     assert len(ticks) == 2
 
 
@@ -129,9 +131,9 @@ def test_run_dims_scope_picks_runs(monkeypatch):
 def test_dim_runs_build_label_and_geometry(monkeypatch):
     monkeypatch.setattr(walls_object, "segmentEdgeRuns",
                         lambda seg: _RUNS[:1])
-    line, ticks, label_pt, text = dims._dimRuns(_segment())[0]
-    assert line == [(0.0, 0.0, 2940.0), (4000.0, 0.0, 2940.0)]
-    assert label_pt == (2000.0, 0.0, 2940.0)
+    line, ticks, label_pt, _dir, _up, text = dims._dimRuns(_segment())[0]
+    assert line == [(0.0, 0.0, 2820.0), (4000.0, 0.0, 2820.0)]
+    assert label_pt == (2000.0, 0.0, 2820.0)
     assert text == "4000 mm"  # the fake Units force the fallback format
     assert len(ticks) == 2
 

@@ -18,11 +18,10 @@ from archplus.tools.walls import object as walls_object
 DIM_NODE = "ArchPlusSegmentDim"
 
 _DIM_COLOR = (1.0, 0.85, 0.2)   # warm yellow, distinct from the green highlight
-_FONT_SIZE = 18                 # SoText2 renders at a constant on-screen size
+_FONT_SIZE = 160.0              # SoText3 object-space size (mm)
 _LINE_WIDTH = 2.0
 _TICK = 60.0                    # mm, oblique end tick
-_MARGIN = 100.0                 # mm above the top edge, minimum
-_MARGIN_RATIO = 0.05
+_MARGIN = 20.0                  # mm above the top edge — hugs the wall
 
 
 def _sub(a, b):
@@ -62,8 +61,9 @@ def _raise(p, normal, lift):
 
 def dim_lift(height):
     """Height of the dimension plane above the segment's base: the wall's
-    top edge plus a margin (at least 100 mm, otherwise 5 % of the height)."""
-    return height + max(_MARGIN, height * _MARGIN_RATIO)
+    top edge plus a small fixed clearance, so the dimension hugs the
+    wall."""
+    return height + _MARGIN
 
 
 def polyline_length(pts):
@@ -88,12 +88,27 @@ def _midpoint(pts):
     return pts[-1]
 
 
+def _midTangent(pts):
+    """The unit direction of the polyline segment containing the
+    arc-length midpoint."""
+    half = polyline_length(pts) / 2.0
+    acc = 0.0
+    for a, b in zip(pts, pts[1:]):
+        d = _dist(a, b)
+        if d > 1e-12 and acc + d >= half:
+            return _norm(_sub(b, a))
+        acc += d
+    return _norm(_sub(pts[-1], pts[0]))
+
+
 def _dimGeometry(pts, normal, height, tick=_TICK):
-    """Dimension geometry for one chain: the axis polyline raised to the
+    """Dimension geometry for one run: the axis polyline raised to the
     dimension plane, an oblique tick crossing each end (45 degrees to the
-    line, centred on the end) and the label anchor at the arc-length
-    midpoint. pts and normal are plain (x, y, z) tuples; raises ValueError
-    when the chain has no direction."""
+    line, centred on the end), the label anchor at the arc-length
+    midpoint and the label frame (direction along the run, up-vector
+    across it) so the label reads along the wall. pts and normal are
+    plain (x, y, z) tuples; raises ValueError when the run has no
+    direction."""
     if len(pts) < 2:
         raise ValueError("chain has no direction")
     lift = dim_lift(height)
@@ -110,7 +125,9 @@ def _dimGeometry(pts, normal, height, tick=_TICK):
         end = line[i]
         ticks.append([_sub(end, _mul(u, tick / 2.0)),
                       _add(end, _mul(u, tick / 2.0))])
-    return line, ticks, _midpoint(line)
+    label_dir = _midTangent(line)
+    label_up = _norm(_cross(normal, label_dir)) if label_dir else None
+    return line, ticks, _midpoint(line), label_dir, label_up
 
 
 def format_length(mm):
@@ -152,10 +169,12 @@ def _dimRuns(segment, scope=None):
         if len(pts) < 2 or length <= 1e-9:
             continue
         try:
-            line, ticks, label_pt = _dimGeometry(pts, normal, height)
+            line, ticks, label_pt, label_dir, label_up = _dimGeometry(
+                pts, normal, height)
         except Exception:
             continue
-        out.append((line, ticks, label_pt, format_length(length)))
+        out.append((line, ticks, label_pt, label_dir, label_up,
+                    format_length(length)))
     return out
 
 
@@ -200,9 +219,10 @@ def _key(obj):
 
 def _buildNode(chains):
     """The Coin overlay node for one segment: a dimension line and end
-    ticks per run plus one screen-facing label per run. chains is what
-    _dimRuns returns. Labels are wrapped in their own SoSeparator so each
-    SoTranslation is applied from an identity state."""
+    ticks per run plus one run-aligned label per run. chains is what
+    _dimRuns returns. Each label is an SoText3 lying in the dimension
+    plane, rotated to read along the run, wrapped in its own SoSeparator
+    so its matrix applies from an identity state."""
     from pivy import coin
     sep = coin.SoSeparator()
     sep.setName(DIM_NODE)
@@ -220,7 +240,7 @@ def _buildNode(chains):
         points.append(b)
         index.extend([i, i + 1, -1])
 
-    for line, ticks, _pt, _text in chains:
+    for line, ticks, _pt, _dir, _up, _text in chains:
         for a, b in zip(line, line[1:]):
             segment(a, b)
         for tick in ticks:
@@ -236,15 +256,25 @@ def _buildNode(chains):
     sep.addChild(coords)
     sep.addChild(lineset)
     sep.addChild(font)
-    for _line, _ticks, pt, text in chains:
+    for _line, _ticks, anchor, d, up, text in chains:
+        yv = up if up is not None else (0.0, 1.0, 0.0)
+        dv = d if d is not None else (1.0, 0.0, 0.0)
+        nv = _cross(dv, yv)
+        base = _add(anchor, _mul(yv, _FONT_SIZE * 0.4))
+        m = coin.SbMatrix()
+        m.setValue(((dv[0], yv[0], nv[0], 0.0),
+                    (dv[1], yv[1], nv[1], 0.0),
+                    (dv[2], yv[2], nv[2], 0.0),
+                    (base[0], base[1], base[2], 1.0)))
         label = coin.SoSeparator()
-        tr = coin.SoTranslation()
-        tr.translation.setValue(pt)
-        t2 = coin.SoText2()
-        t2.string.setValue(text)
-        t2.justification.setValue(coin.SoText2.CENTER)
-        label.addChild(tr)
-        label.addChild(t2)
+        mt = coin.SoMatrixTransform()
+        mt.matrix.setValue(m)
+        t3 = coin.SoText3()
+        t3.string.setValue(text)
+        t3.justification.setValue(coin.SoText3.CENTER)
+        t3.parts.setValue(coin.SoText3.FRONT | coin.SoText3.BACK)
+        label.addChild(mt)
+        label.addChild(t3)
         sep.addChild(label)
     return sep
 

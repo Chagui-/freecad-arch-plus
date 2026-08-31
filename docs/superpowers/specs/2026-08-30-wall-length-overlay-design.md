@@ -57,7 +57,9 @@ tree — draws above the wall's top edge:
   a closed square wall therefore shows four runs, not its perimeter —
 - short oblique ticks at both run ends,
 - a screen-facing label at the midpoint with the run length in the user's
-  unit scheme (e.g. `2450 mm`), via `SoText2` (constant on-screen size).
+  unit scheme (e.g. `2450 mm`), via `SoText3` lying in the dimension plane
+  and rotated to read along the run — aligned with the wall, not the
+  viewport.
 
 Deselect removes the overlay. Multi-selection dims every selected segment.
 **Selection scoping:** picking specific faces dims only the runs those
@@ -69,8 +71,8 @@ The dim line and label render in a warm yellow distinct from the green edit
 highlight, stay depth-tested so other geometry occludes them correctly, and
 coexist with the highlight node (separate named separators).
 
-The dimension floats in a plane `normal * (height + max(100, 5% height))`
-above the segment's base — clear of the top face, no z-fighting.
+The dimension floats in a plane `normal * (height + 20 mm)` above the
+segment's base — hugging the top face, no z-fighting at that clearance.
 
 **Measured length** = the run's axis polyline length (the sketch geometry
 the user draws and edits). Seam-miter extensions at segment joints are join
@@ -91,7 +93,7 @@ importable headlessly, FreeCAD/pivy imported lazily inside functions.
 - Coin builder: writes one `SoSeparator` named `"ArchPlusSegmentDim"`
   (naming convention: `ArchPlusSegmentHighlight`, `ArchPlusTargetPreview`)
   into the segment's `RootNode` — `SoDrawStyle` width 2, `SoBaseColor`,
-  `SoCoordinate3`/`SoLineSet` for line and ticks, `SoFont`/`SoText2` for the
+  `SoCoordinate3`/`SoLineSet` for line and ticks, `SoFont`/`SoText3` for the
   label. Label text = `FreeCAD.Units.Quantity(len, Units.Length).UserString`,
   falling back to `"%.0f mm"` (stairs precedent).
 - `_SelectionDims` selection observer + `install()`.
