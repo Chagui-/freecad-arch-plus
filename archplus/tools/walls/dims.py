@@ -152,3 +152,192 @@ def _dimChains(segment):
             continue
         out.append((line, ticks, label_pt, format_length(length)))
     return out
+
+
+_nodes = {}      # (doc name, object name) -> dimmed segment
+_observer = None
+
+
+def _key(obj):
+    return (getattr(getattr(obj, "Document", None), "Name", ""), obj.Name)
+
+
+def _buildNode(chains):
+    """The Coin overlay node for one segment: a dimension line and end
+    ticks per chain plus one screen-facing label per chain. chains is what
+    _dimChains returns. Labels are wrapped in their own SoSeparator so each
+    SoTranslation is applied from an identity state."""
+    from pivy import coin
+    sep = coin.SoSeparator()
+    sep.setName(DIM_NODE)
+    style = coin.SoDrawStyle()
+    style.lineWidth.setValue(_LINE_WIDTH)
+    mat = coin.SoMaterial()
+    mat.diffuseColor.setValue(*_DIM_COLOR)
+    coords = coin.SoCoordinate3()
+    points = []
+    index = []
+
+    def segment(a, b):
+        i = len(points)
+        points.append(a)
+        points.append(b)
+        index.extend([i, i + 1, -1])
+
+    for line, ticks, _pt, _text in chains:
+        for a, b in zip(line, line[1:]):
+            segment(a, b)
+        for tick in ticks:
+            segment(tick[0], tick[1])
+    coords.point.setValues(0, len(points), points)
+    lineset = coin.SoIndexedLineSet()
+    lineset.coordIndex.setValues(0, len(index), index)
+    font = coin.SoFont()
+    font.name.setValue("Sans")
+    font.size.setValue(_FONT_SIZE)
+    sep.addChild(style)
+    sep.addChild(mat)
+    sep.addChild(coords)
+    sep.addChild(lineset)
+    sep.addChild(font)
+    for _line, _ticks, pt, text in chains:
+        label = coin.SoSeparator()
+        tr = coin.SoTranslation()
+        tr.translation.setValue(pt)
+        t2 = coin.SoText2()
+        t2.string.setValue(text)
+        t2.justification.setValue(coin.SoText2.CENTER)
+        label.addChild(tr)
+        label.addChild(t2)
+        sep.addChild(label)
+    return sep
+
+
+def addDim(segment):
+    """Draw the length dim overlay on the segment's view provider. True
+    when a node was added."""
+    try:
+        vobj = getattr(segment, "ViewObject", None)
+        if vobj is None or getattr(vobj, "RootNode", None) is None:
+            return False
+        chains = _dimChains(segment)
+        if not chains:
+            return False
+        walls_object.removeFaceHighlight(vobj, DIM_NODE)
+        vobj.RootNode.addChild(_buildNode(chains))
+        return True
+    except Exception:
+        return False
+
+
+def removeDim(segment):
+    """Drop the segment's length dim overlay node, if present."""
+    try:
+        walls_object.removeFaceHighlight(getattr(segment, "ViewObject", None),
+                                         DIM_NODE)
+    except Exception:
+        pass
+
+
+def _dimTargets():
+    """The segments the current selection implies dims for, deduplicated,
+    in first-appearance order. Direct segment members dim themselves; a
+    wall root with picked faces dims each face's owning segment (resolved
+    through its own recorded pick point, like the split command); a tree-
+    selected root with no faces implies nothing — spraying every segment
+    with dimensions is noise. gui is imported lazily: gui.py imports this
+    module at load time."""
+    import FreeCADGui
+    from archplus.tools.walls import gui as walls_gui
+    out = []
+    seen = set()
+    for sel in FreeCADGui.Selection.getSelectionEx():
+        obj = getattr(sel, "Object", None)
+        if walls_object.is_segment(obj):
+            k = _key(obj)
+            if k not in seen:
+                seen.add(k)
+                out.append(obj)
+        elif walls_object.is_root(obj):
+            counts = {}
+            for name in (getattr(sel, "SubElementNames", None) or ()):
+                if not name.startswith("Face"):
+                    continue
+                occurrence = counts.get(name, 0)
+                counts[name] = occurrence + 1
+                point = walls_gui._lastPick(getattr(obj, "Document", None),
+                                            obj, name, occurrence)
+                resolved = walls_object.resolveRootFace(obj, name, point)
+                if resolved is None:
+                    continue
+                seg = resolved[0]
+                k = _key(seg)
+                if k not in seen:
+                    seen.add(k)
+                    out.append(seg)
+    return out
+
+
+def sync():
+    """Recompute the dimmed set from the current selection and diff it
+    against the drawn overlays. Never raises: selection events must not
+    break the session."""
+    try:
+        want = {}
+        for seg in _dimTargets():
+            want[_key(seg)] = seg
+        for key in list(_nodes):
+            if key not in want:
+                removeDim(_nodes.pop(key))
+        for key, seg in want.items():
+            if key not in _nodes and addDim(seg):
+                _nodes[key] = seg
+    except Exception:
+        pass
+
+
+def refresh(segment):
+    """Redraw the segment's dim overlay after its shape changed. No-op
+    when the segment is not currently dimmed."""
+    try:
+        key = _key(segment)
+        if key not in _nodes:
+            return
+        removeDim(segment)
+        if addDim(segment):
+            _nodes[key] = segment
+        else:
+            _nodes.pop(key, None)
+    except Exception:
+        pass
+
+
+class _SelectionDims:
+    """Selection observer redrawing the length dims on every selection
+    change."""
+
+    def addSelection(self, *_args):
+        sync()
+
+    def removeSelection(self, *_args):
+        sync()
+
+    def clearSelection(self, *_args):
+        sync()
+
+    def setSelection(self, *_args):
+        sync()
+
+
+def install():
+    """Register the selection observer once (gui.py import time, like the
+    pick-point recorder)."""
+    global _observer
+    if _observer is not None:
+        return
+    try:
+        import FreeCADGui
+        _observer = _SelectionDims()
+        FreeCADGui.Selection.addObserver(_observer)
+    except Exception:
+        _observer = None

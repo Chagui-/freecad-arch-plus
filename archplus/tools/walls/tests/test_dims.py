@@ -119,3 +119,147 @@ def test_dim_chains_skip_undrawable_chains(monkeypatch):
 
     monkeypatch.setattr(dims, "_dimGeometry", boom)
     assert dims._dimChains(_segment()) == []
+
+
+# --- selection mapping and bookkeeping (Task 3) ------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_overlay_state():
+    dims._nodes.clear()
+    yield
+    dims._nodes.clear()
+
+
+def _root(*segments):
+    root = types.SimpleNamespace(
+        Name="Wall", Label="Wall",
+        Proxy=types.SimpleNamespace(Type="Wall"),
+        Group=list(segments), InList=[])
+    for seg in segments:
+        seg.Wall = root
+        seg.InList = [root]
+    return root
+
+
+def _sel(obj, subs=()):
+    return types.SimpleNamespace(Object=obj, SubElementNames=tuple(subs))
+
+
+def test_dim_targets_direct_segments(monkeypatch):
+    a = _segment("a")
+    monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(a)]))
+    assert dims._dimTargets() == [a]
+
+
+def test_dim_targets_resolves_root_face_picks(monkeypatch):
+    a = _segment("a")
+    b = _segment("b")
+    root = _root(a, b)
+    seen = []
+
+    def fake_resolve(obj, name, point):
+        seen.append((name, point))
+        return {"Face1": (a, ["Face1"]), "Face2": (b, ["Face2"])}[name]
+
+    monkeypatch.setattr(walls_object, "resolveRootFace", fake_resolve)
+    monkeypatch.setattr(walls_gui, "_lastPick",
+                        lambda doc, obj, sub, occurrence=0: (sub, occurrence))
+    monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(root, ("Face1", "Face1", "Face2"))]))
+    assert [s.Name for s in dims._dimTargets()] == ["a", "b"]
+    assert seen == [("Face1", ("Face1", 0)), ("Face1", ("Face1", 1)),
+                    ("Face2", ("Face2", 0))]
+
+
+def test_dim_targets_ignores_tree_roots_and_foreign_objects(monkeypatch):
+    root = _root(_segment("a"))
+    box = types.SimpleNamespace(
+        Name="Box", Label="Box", Proxy=types.SimpleNamespace(Type="Part"))
+    monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(root), _sel(box)]))
+    assert dims._dimTargets() == []
+
+
+def test_dim_targets_deduplicates_and_keeps_order(monkeypatch):
+    a = _segment("a")
+    b = _segment("b")
+    root = _root(a, b)
+    monkeypatch.setattr(
+        walls_object, "resolveRootFace",
+        lambda obj, name, point: {"Face1": (a, ["Face1"]),
+                                  "Face2": (b, ["Face2"])}[name])
+    monkeypatch.setattr(walls_gui, "_lastPick",
+                        lambda doc, obj, sub, occurrence=0: None)
+    monkeypatch.setattr(FreeCADGui, "Selection", types.SimpleNamespace(
+        getSelectionEx=lambda: [_sel(a), _sel(b),
+                                _sel(root, ("Face1", "Face2"))]))
+    assert [s.Name for s in dims._dimTargets()] == ["a", "b"]
+
+
+def test_sync_draws_and_clears_with_selection(monkeypatch):
+    a = _segment("a")
+    b = _segment("b")
+    drawn, cleared = [], []
+    monkeypatch.setattr(dims, "_dimTargets", lambda: [a])
+    monkeypatch.setattr(dims, "addDim", lambda seg: drawn.append(seg) or True)
+    monkeypatch.setattr(dims, "removeDim", lambda seg: cleared.append(seg))
+    dims.sync()
+    assert drawn == [a]
+    assert list(dims._nodes.values()) == [a]
+    monkeypatch.setattr(dims, "_dimTargets", lambda: [b])
+    dims.sync()
+    assert cleared == [a]
+    assert [s.Name for s in dims._nodes.values()] == ["b"]
+    monkeypatch.setattr(dims, "_dimTargets", lambda: [])
+    dims.sync()
+    assert cleared == [a, b]
+    assert dims._nodes == {}
+
+
+def test_sync_skips_targets_that_cannot_draw(monkeypatch):
+    a = _segment("a")
+    monkeypatch.setattr(dims, "_dimTargets", lambda: [a])
+    monkeypatch.setattr(dims, "addDim", lambda seg: False)
+    monkeypatch.setattr(dims, "removeDim", lambda seg: None)
+    dims.sync()
+    assert dims._nodes == {}
+
+
+def test_sync_survives_target_errors(monkeypatch):
+    def boom():
+        raise RuntimeError("no selection")
+
+    monkeypatch.setattr(dims, "_dimTargets", boom)
+    dims.sync()  # must not raise
+    assert dims._nodes == {}
+
+
+def test_refresh_redraws_only_dimmed_segments(monkeypatch):
+    a = _segment("a")
+    b = _segment("b")
+    calls = []
+    monkeypatch.setattr(dims, "removeDim", lambda seg: calls.append(("rm", seg)))
+
+    def fake_add(seg):
+        calls.append(("add", seg))
+        return True
+
+    monkeypatch.setattr(dims, "addDim", fake_add)
+    dims._nodes[dims._key(a)] = a
+    dims.refresh(a)
+    assert calls == [("rm", a), ("add", a)]
+    assert dims._nodes == {dims._key(a): a}
+    calls.clear()
+    dims.refresh(b)
+    assert calls == []
+
+
+def test_refresh_drops_segments_that_stop_drawing(monkeypatch):
+    a = _segment("a")
+    dims._nodes[dims._key(a)] = a
+    monkeypatch.setattr(dims, "removeDim", lambda seg: None)
+    monkeypatch.setattr(dims, "addDim", lambda seg: False)
+    dims.refresh(a)
+    assert dims._nodes == {}
