@@ -1,6 +1,8 @@
 # ArchPlus Wall: on-select length dimension overlay
 
-Status: approved design, not yet implemented
+Status: approved design, implemented (amended 2026-08-30 — dimensions
+are per wall run and scoped by the selected faces, not per edge chain;
+see §3 and §5)
 
 ## 1. Problem
 
@@ -50,13 +52,19 @@ edit-highlight lifecycle).
 Selecting a segment — clicking its face in the 3D view, or picking it in the
 tree — draws above the wall's top edge:
 
-- a dimension line parallel to the segment's axis (one per sketch-edge
-  chain, matching how `_buildSegment` clusters claimed edges),
-- short oblique ticks at both chain ends,
-- a screen-facing label at the midpoint with the chain length in the user's
+- a dimension line parallel to the wall run's axis — one per **wall run**,
+  a maximal straight sequence of claimed sketch edges (curved edges solo);
+  a closed square wall therefore shows four runs, not its perimeter —
+- short oblique ticks at both run ends,
+- a screen-facing label at the midpoint with the run length in the user's
   unit scheme (e.g. `2450 mm`), via `SoText2` (constant on-screen size).
 
 Deselect removes the overlay. Multi-selection dims every selected segment.
+**Selection scoping:** picking specific faces dims only the runs those
+faces belong to (each face's centroid projected onto the sketch plane and
+matched to the nearest run within one wall width — the split command's
+mapping); selecting the whole segment dims every run. Top/bottom faces
+spanning corners match nothing and contribute no run.
 The dim line and label render in a warm yellow distinct from the green edit
 highlight, stay depth-tested so other geometry occludes them correctly, and
 coexist with the highlight node (separate named separators).
@@ -64,7 +72,7 @@ coexist with the highlight node (separate named separators).
 The dimension floats in a plane `normal * (height + max(100, 5% height))`
 above the segment's base — clear of the top face, no z-fighting.
 
-**Measured length** = the chain's axis polyline length (the sketch geometry
+**Measured length** = the run's axis polyline length (the sketch geometry
 the user draws and edits). Seam-miter extensions at segment joints are join
 artifacts, not wall length, and are excluded.
 
@@ -73,12 +81,13 @@ artifacts, not wall length, and are excluded.
 New `archplus/tools/walls/dims.py`, structured like `model.py`: pure logic
 importable headlessly, FreeCAD/pivy imported lazily inside functions.
 
-- `axis_dims(segment)` → per-chain `(polyline points, length_mm)` by
+- `segmentEdgeRuns(segment)` → per-run `(points, normal, height)` by
   clustering the segment's claimed edges exactly like `_buildSegment`
-  (`Part.getSortedClusters` + `_chainPolyline`), with the sketch's global
-  transform already baked into the edge points.
+  (`Part.getSortedClusters`) and splitting each chain into wall runs
+  (`model.chain_runs`), with the sketch's global transform already baked
+  into the edge points.
 - `_dimGeometry(polyline, normal, height)` → tick ends, line endpoints, and
-  the label anchor for one chain (pure; the pytest target).
+  the label anchor for one run (pure; the pytest target).
 - Coin builder: writes one `SoSeparator` named `"ArchPlusSegmentDim"`
   (naming convention: `ArchPlusSegmentHighlight`, `ArchPlusTargetPreview`)
   into the segment's `RootNode` — `SoDrawStyle` width 2, `SoBaseColor`,
@@ -101,8 +110,9 @@ event the observer recomputes the desired dimmed set from
 
 | selection member | result |
 |---|---|
-| wall segment | dim it |
-| wall root with `FaceN` submembers | dim each face's owning segment (pick-point resolution) |
+| wall segment without named faces | dim every run |
+| wall segment with `FaceN` submembers | dim the runs those faces map to (centroid matching) |
+| wall root with `FaceN` submembers | dim each face's owning segment and run (pick-point resolution) |
 | wall root in the tree (no faces) | dim nothing — spraying every segment with dimensions is noise |
 | anything else | ignored |
 
@@ -117,8 +127,8 @@ bookkeeping trivial: no per-object state beyond the current node map.
 - Unresolvable root face (`resolveRootFace` returns `None`): skip silently.
   The split command warns because a command action failed; a passive overlay
   must not spam the Report view.
-- Degenerate geometry (zero-length chains, doubled-back chains where
-  `_chainPolyline` raises): no dim for that chain; other chains still dim.
+- Degenerate geometry (zero-length runs, doubled-back chains where
+  `model.chain_runs` raises): no dim for that run; other runs still dim.
 - Segment deleted while dimmed (undo, tree delete): removal wrapped in
   `try/except`; the node map prunes on the next diff.
 

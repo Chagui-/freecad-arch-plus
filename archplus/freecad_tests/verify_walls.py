@@ -1127,6 +1127,73 @@ def _w25_selection_dims(doc):
     h.check("W25 clearing drops it again", len(dim_nodes()) == 0)
 
 
+def _w26_square_wall_dims(doc):
+    """The reported regression: a closed square wall is one chain, so the
+    old dim drew the perimeter. Whole-select must dim each side (one run
+    per face); picking one face must dim only that side."""
+    import FreeCADGui
+    from pivy import coin
+    from archplus.tools.walls import dims
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+
+    def dim_node():
+        named = [ch for ch in (vobj.RootNode.getChildren() or [])
+                 if ch.getName() == dims.DIM_NODE]
+        return named[0] if named else None
+
+    def labels():
+        node = dim_node()
+        if node is None:
+            return []
+        out = []
+        for label in node.getChildren() or []:
+            for ch in label.getChildren() or []:
+                if isinstance(ch, coin.SoText2):
+                    out.append(str(ch.string[0]))
+        return out
+
+    expected = FreeCAD.Units.Quantity(2000.0,
+                                      FreeCAD.Units.Length).UserString
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg)
+    _pump()
+    texts = labels()
+    h.check("W26 a square wall dims every run when fully selected",
+            len(texts) == 4 and all(t == expected for t in texts),
+            detail="labels=%r" % texts)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W26 deselecting clears the square's dims", dim_node() is None)
+    # one side's face pick dims only that side: the face nearest the
+    # target point is that side's own outer/inner face
+    target = FreeCAD.Vector(1000.0, -150.0, 1400.0)  # on the side's face
+    best, best_dist = None, None
+    for i in range(1, len(seg.Shape.Faces) + 1):
+        cog = seg.Shape.getElement("Face%d" % i).CenterOfGravity
+        dist = cog.distanceToPoint(target)
+        if best_dist is None or dist < best_dist:
+            best, best_dist = i, dist
+    FreeCADGui.Selection.addSelection(wall, "Face%d" % best,
+                                      target.x, target.y, target.z)
+    _pump()
+    texts = labels()
+    h.check("W26 a picked face dims only its own run",
+            len(texts) == 1 and texts == [expected],
+            detail="labels=%r" % texts)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W26 clearing drops the single dim", dim_node() is None)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1153,5 +1220,6 @@ def run():
     _w23_pick_redirect(doc)
     _w24_click_highlight(doc)
     _w25_selection_dims(doc)
+    _w26_square_wall_dims(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)

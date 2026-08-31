@@ -7,7 +7,8 @@
   [TOOLS.md](TOOLS.md#walls)).
 - [x] Shipped — on-select length dimensions in the 3D view: a dimension
   line with oblique end ticks and a length label drawn above the selected
-  segment (Coin overlay, no document objects; tracks reflows; see
+  face's wall run (one per run when the whole segment is selected; Coin
+  overlay, no document objects; tracks reflows; see
   [TOOLS.md](TOOLS.md#walls)).
 - [ ] Backlog — interactive in-view controls: endpoint handles that edit
   the shared sketch (whole connected runs only; plane-projected drags,

@@ -709,6 +709,31 @@ def _chainPolyline(edges):
     return [FreeCAD.Vector(x, y, z) for x, y, z in pts]
 
 
+def _offsetChainWire(wire, poly, dist, normal, start_pt=None, end_pt=None):
+    """Offset a chain wire inside its sketch plane; positive dist is left
+    of the chain's sketch travel direction. start_pt/end_pt replace the
+    open ends' offset points when the chain abuts another segment (the
+    shared miter seam); they are only honored on the straight path."""
+    import Part
+    if dist == 0:
+        return wire.copy()
+    if all(type(e.Curve).__name__ in ("Line", "LineSegment")
+           for e in wire.Edges):
+        return _offsetStraightWire(poly, dist, normal,
+                                   start_pt=start_pt, end_pt=end_pt)
+    if wire.isClosed():
+        area = 0.0
+        for i in range(len(poly)):
+            area += poly[i].cross(poly[(i + 1) % len(poly)]).dot(normal)
+        return wire.makeOffset2D(-dist if area > 0 else dist, 2, False, False)
+    result = wire.makeOffset2D(-dist, 2, False, True)
+    if not _offsetIsLeft(poly, result, dist, normal):
+        result = wire.makeOffset2D(dist, 2, False, True)
+        if not _offsetIsLeft(poly, result, dist, normal):
+            raise ValueError("wire offset landed on the wrong side")
+    return result
+
+
 def _offsetIsLeft(poly, offset_wire, dist, normal):
     """True when offset_wire sits dist left of the poly's travel at its
     start."""
