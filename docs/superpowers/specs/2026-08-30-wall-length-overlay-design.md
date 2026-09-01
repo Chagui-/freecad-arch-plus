@@ -56,10 +56,21 @@ tree — draws above the wall's top edge:
   a maximal straight sequence of claimed sketch edges (curved edges solo);
   a closed square wall therefore shows four runs, not its perimeter —
 - short oblique ticks at both run ends,
-- a screen-facing label at the midpoint with the run length in the user's
+- a label at the midpoint with the run length in the user's
   unit scheme (e.g. `2450 mm`), via `SoText3` lying in the dimension plane
   and rotated to read along the run — aligned with the wall, not the
-  viewport.
+  viewport. The line is cut short of the label — a gap of the label's
+  estimated half width plus pad on each side of the anchor — because
+  text and line share the dimension plane: an in-plane offset alone
+  collapses onto the line on screen for some camera angles (reported as
+  the label struck through on all four runs of a square wall), while
+  the parametric gap hides the line from the label's screen footprint
+  in every view. The label carries no across-line offset: any offset
+  projects onto the line's screen direction at oblique views and reads
+  as the label sitting off the wall's centre (reported as off-centre
+  labels from top and iso views). Runs too short for a full-size gap
+  shrink the label — clamped to half size — so the line keeps visible
+  stubs instead of the gap swallowing it.
 
 Deselect removes the overlay. Multi-selection dims every selected segment.
 **Selection scoping:** picking specific faces dims only the runs those

@@ -4,8 +4,10 @@
 # On-select length dimensions for wall segments
 # (docs/superpowers/specs/2026-08-30-wall-length-overlay-design.md):
 # selecting a wall face draws a Coin overlay above that face's wall run —
-# a dimension line along the run, oblique end ticks and a screen-facing
-# length label; selecting the whole segment dims every run. No document
+# a dimension line along the run, oblique end ticks and a length label
+# reading along the run — with the line cut short of the label so the
+# two never share screen space; selecting the whole segment dims every
+# run. No document
 # objects are created; the overlay lives in the segment's view provider
 # under a tracked node name, like the edit highlight. The geometry and
 # selection mapping here work on plain tuples so pytest drives them
@@ -20,6 +22,9 @@ DIM_NODE = "ArchPlusSegmentDim"
 _DIM_COLOR = (1.0, 0.85, 0.2)   # warm yellow, distinct from the green highlight
 _FONT_SIZE = 160.0              # SoText3 object-space size (mm)
 _LINE_WIDTH = 2.0
+_GAP_PAD = 0.2 * _FONT_SIZE     # mm of bare line on each side of the label gap
+_MIN_STUB = 45.0                # mm of line kept past the gap on short runs
+_MIN_SCALE = 0.5                # label never shrinks below half size
 _TICK = 60.0                    # mm, oblique end tick
 _MARGIN = 20.0                  # mm above the top edge — hugs the wall
 
@@ -86,6 +91,47 @@ def _midpoint(pts):
             return _add(a, _mul(_sub(b, a), (half - acc) / d))
         acc += d
     return pts[-1]
+
+
+def _arcCut(pts, gap_start, gap_end):
+    """The polyline pieces outside the arc-length range
+    [gap_start, gap_end]. Cut points are interpolated on their segment;
+    pieces that would keep fewer than two points are dropped."""
+    out, cur, inside = [], [pts[0]], gap_start <= 0.0
+    s = 0.0
+    for a, b in zip(pts, pts[1:]):
+        seg = _dist(a, b)
+        s2 = s + seg
+        if seg > 0.0:
+            for cut, opens in ((gap_start, True), (gap_end, False)):
+                if s < cut < s2:
+                    p = _add(a, _mul(_sub(b, a), (cut - s) / seg))
+                    if opens:
+                        cur.append(p)
+                        if len(cur) >= 2:
+                            out.append(cur)
+                        cur = [p]
+                        inside = True
+                    else:
+                        cur = [p]
+                        inside = False
+        if not inside:
+            cur.append(b)
+        s = s2
+    if not inside and len(cur) >= 2:
+        out.append(cur)
+    return out
+
+
+def _gappedLine(line, half):
+    """The dimension line split around the label: the polyline pieces
+    outside half the label's rendered width on each side of the
+    arc-length midpoint — empty when the gap swallows the whole run.
+    Text and line share the dimension plane, so the gap keeps the line
+    out of the label's screen footprint from every view."""
+    mid = polyline_length(line) / 2.0
+    return _arcCut(line, mid - half, mid + half)
+
 
 
 def _midTangent(pts):
@@ -217,12 +263,100 @@ def _key(obj):
     return (getattr(getattr(obj, "Document", None), "Name", ""), obj.Name)
 
 
+def _labelHalf(text, scale=1.0):
+    """Half the label's rendered width at the given font scale plus a
+    pad — the room the line leaves on each side of the label anchor.
+    Coin's bounding-box action on SoText3 is unreliable in this build
+    (and has wedged the GUI), so the width is estimated from the
+    character count against the sans face's ~0.6 em average glyph
+    advance."""
+    return scale * 0.34 * len(text) * _FONT_SIZE + _GAP_PAD
+
+
+def _labelScale(length, text):
+    """Font scale for a label on a run of `length`: 1.0 while the full-
+    size gap leaves visible line stubs, else shrunk — clamped to
+    _MIN_SCALE — so a short wall keeps its line instead of the gap
+    swallowing it."""
+    text_half = _labelHalf(text) - _GAP_PAD
+    room = length / 2.0 - _MIN_STUB - _GAP_PAD
+    if room >= text_half:
+        return 1.0
+    return max(_MIN_SCALE, room / text_half)
+
+
+def _labelNode(coin, text, scale):
+    """One label separator on an identity frame: per-label SoFont,
+    identity SoMatrixTransform, centred SoText3. Returns the separator
+    and its transform so _buildNode can place it after measuring."""
+    label = coin.SoSeparator()
+    font = coin.SoFont()
+    font.name.setValue("Sans")
+    font.size.setValue(_FONT_SIZE * scale)
+    mt = coin.SoMatrixTransform()
+    ident = coin.SbMatrix()
+    ident.setValue(((1.0, 0.0, 0.0, 0.0),
+                    (0.0, 1.0, 0.0, 0.0),
+                    (0.0, 0.0, 1.0, 0.0),
+                    (0.0, 0.0, 0.0, 1.0)))
+    mt.matrix.setValue(ident)
+    t3 = coin.SoText3()
+    t3.string.setValue(text)
+    t3.justification.setValue(coin.SoText3.CENTER)
+    t3.parts.setValue(coin.SoText3.FRONT | coin.SoText3.BACK)
+    label.addChild(font)
+    label.addChild(mt)
+    label.addChild(t3)
+    return label, mt
+
+
+def _labelBox(coin, sep, label):
+    """The label's ink box on its identity frame — (xmin, xmax, ymin,
+    ymax), measured, not assumed: this Coin build hangs glyphs below
+    the baseline for some frame orientations and above it for others,
+    so no constant describes where the ink sits relative to the
+    anchor."""
+    path = coin.SoPath()
+    path.setHead(sep)
+    path.append(label)
+    act = coin.SoGetBoundingBoxAction(coin.SbViewportRegion(8, 8))
+    act.apply(path)
+    bb = act.getBoundingBox()
+    mn, mx = bb.getMin(), bb.getMax()
+    return mn[0], mx[0], mn[1], mx[1]
+
+
+def _labelCacheKey(text, scale):
+    return (text, round(scale, 4))
+
+
+_LABEL_BOXES = {}
+
+
+def _labelExtents(coin, sep, label, text, scale):
+    """(along_centre, across_centre, along_half) of the label's ink on
+    its identity frame, cached per text and scale."""
+    key = _labelCacheKey(text, scale)
+    if key not in _LABEL_BOXES:
+        xmin, xmax, ymin, ymax = _labelBox(coin, sep, label)
+        _LABEL_BOXES[key] = ((xmin + xmax) / 2.0, (ymin + ymax) / 2.0,
+                             (xmax - xmin) / 2.0)
+    return _LABEL_BOXES[key]
+
+
 def _buildNode(chains):
     """The Coin overlay node for one segment: a dimension line and end
     ticks per run plus one run-aligned label per run. chains is what
-    _dimRuns returns. Each label is an SoText3 lying in the dimension
-    plane, rotated to read along the run, wrapped in its own SoSeparator
-    so its matrix applies from an identity state."""
+    _dimRuns returns. The line is cut short of the label's measured
+    half width — text and line share the dimension plane, so the gap
+    keeps the line out of the label's screen footprint from every
+    view. Each label is built on an identity frame, its ink box is
+    measured, and it is placed so the measured ink centre lands exactly
+    on the run's midpoint: this Coin build hangs glyphs below the
+    baseline for some frame orientations and above it for others, so
+    placement follows measurement, never constants. Runs too short for
+    a full-size label shrink it (to _MIN_SCALE) so the line keeps
+    visible stubs."""
     from pivy import coin
     sep = coin.SoSeparator()
     sep.setName(DIM_NODE)
@@ -231,6 +365,21 @@ def _buildNode(chains):
     mat = coin.SoMaterial()
     mat.diffuseColor.setValue(*_DIM_COLOR)
     coords = coin.SoCoordinate3()
+
+    # Labels first: the line gap needs each label's measured width, and
+    # the measurement runs on an identity frame inside the live graph.
+    placed = []
+    halfs = []
+    vp = coin.SbViewportRegion(8, 8)
+    for _line, _ticks, anchor, d, up, text in chains:
+        scale = _labelScale(polyline_length(_line), text)
+        label, mt = _labelNode(coin, text, scale)
+        sep.addChild(label)
+        along_c, across_c, along_half = _labelExtents(
+            coin, sep, label, text, scale)
+        halfs.append(along_half + _GAP_PAD)
+        placed.append((label, mt, anchor, d, up, along_c, across_c))
+
     points = []
     index = []
 
@@ -240,42 +389,57 @@ def _buildNode(chains):
         points.append(b)
         index.extend([i, i + 1, -1])
 
-    for line, ticks, _pt, _dir, _up, _text in chains:
-        for a, b in zip(line, line[1:]):
-            segment(a, b)
+    for (line, ticks, _pt, _dir, _up, _text), half in zip(chains, halfs):
+        for piece in _gappedLine(line, half):
+            for a, b in zip(piece, piece[1:]):
+                segment(a, b)
         for tick in ticks:
             segment(tick[0], tick[1])
     coords.point.setValues(0, len(points), points)
     lineset = coin.SoIndexedLineSet()
     lineset.coordIndex.setValues(0, len(index), index)
-    font = coin.SoFont()
-    font.name.setValue("Sans")
-    font.size.setValue(_FONT_SIZE)
-    sep.addChild(style)
-    sep.addChild(mat)
     sep.addChild(coords)
     sep.addChild(lineset)
-    sep.addChild(font)
-    for _line, _ticks, anchor, d, up, text in chains:
+
+    # First guess: compensate the identity-frame ink centre. This Coin
+    # build then hangs the glyphs on the opposite side of the baseline
+    # once the label's matrix rotates it, so re-measure every placed
+    # label in world space and shift the exact residual — the ink
+    # centre lands on the anchor whatever the glyph convention is.
+
+    def _frame(d, up):
         yv = up if up is not None else (0.0, 1.0, 0.0)
         dv = d if d is not None else (1.0, 0.0, 0.0)
-        nv = _cross(dv, yv)
-        base = _add(anchor, _mul(yv, _FONT_SIZE * 0.4))
+        return dv, yv, _cross(dv, yv)
+
+    def _matrix(dv, yv, nv, base):
         m = coin.SbMatrix()
         m.setValue(((dv[0], yv[0], nv[0], 0.0),
                     (dv[1], yv[1], nv[1], 0.0),
                     (dv[2], yv[2], nv[2], 0.0),
                     (base[0], base[1], base[2], 1.0)))
-        label = coin.SoSeparator()
-        mt = coin.SoMatrixTransform()
-        mt.matrix.setValue(m)
-        t3 = coin.SoText3()
-        t3.string.setValue(text)
-        t3.justification.setValue(coin.SoText3.CENTER)
-        t3.parts.setValue(coin.SoText3.FRONT | coin.SoText3.BACK)
-        label.addChild(mt)
-        label.addChild(t3)
-        sep.addChild(label)
+        return m
+
+    vp = coin.SbViewportRegion(8, 8)
+    for i, (label, mt, anchor, d, up, along_c, across_c) in enumerate(placed):
+        dv, yv, nv = _frame(d, up)
+        base = _sub(anchor, _add(_mul(dv, along_c), _mul(yv, across_c)))
+        mt.matrix.setValue(_matrix(dv, yv, nv, base))
+        placed[i] = (label, mt, anchor, dv, yv, nv, base)
+
+    for i, (label, mt, anchor, dv, yv, nv, base) in enumerate(placed):
+        path = coin.SoPath()
+        path.setHead(sep)
+        path.append(label)
+        for _attempt in range(4):
+            act = coin.SoGetBoundingBoxAction(vp)
+            act.apply(path)
+            cx, cy, cz = act.getBoundingBox().getCenter().getValue()
+            dx, dy, dz = anchor[0] - cx, anchor[1] - cy, anchor[2] - cz
+            if dx * dx + dy * dy + dz * dz < 1.0:
+                break
+            base = (base[0] + dx, base[1] + dy, base[2] + dz)
+            mt.matrix.setValue(_matrix(dv, yv, nv, base))
     return sep
 
 

@@ -149,6 +149,46 @@ def test_dim_runs_skip_undrawable_runs(monkeypatch):
     assert dims._dimRuns(_segment()) == []
 
 
+# --- label gap ---------------------------------------------------------------
+
+def test_gapped_line_splits_a_straight_run_around_the_label():
+    line = [(0.0, 0.0, 2820.0), (4000.0, 0.0, 2820.0)]
+    pieces = dims._gappedLine(line, 500.0)
+    assert [len(p) for p in pieces] == [2, 2]
+    assert pieces[0][0] == pytest.approx((0.0, 0.0, 2820.0))
+    assert pieces[0][1] == pytest.approx((1500.0, 0.0, 2820.0))
+    assert pieces[1][0] == pytest.approx((2500.0, 0.0, 2820.0))
+    assert pieces[1][1] == pytest.approx((4000.0, 0.0, 2820.0))
+
+
+def test_gapped_line_cuts_an_l_run_at_the_arc_length_midpoint():
+    line = [(0.0, 0.0, 2820.0), (4000.0, 0.0, 2820.0), (4000.0, 3000.0, 2820.0)]
+    pieces = dims._gappedLine(line, 300.0)
+    # the 7000 mm run's midpoint sits at 3500 mm, on the first leg
+    assert len(pieces) == 2
+    assert pieces[0][1] == pytest.approx((3200.0, 0.0, 2820.0))
+    assert pieces[1][0] == pytest.approx((3800.0, 0.0, 2820.0))
+    assert pieces[1][-1] == pytest.approx((4000.0, 3000.0, 2820.0))
+
+
+def test_gapped_line_yields_nothing_when_the_label_swallows_the_run():
+    line = [(0.0, 0.0, 2820.0), (600.0, 0.0, 2820.0)]
+    assert dims._gappedLine(line, 500.0) == []
+
+
+def test_label_scale_is_full_size_when_the_label_fits():
+    assert dims._labelScale(4000.0, "4000 mm") == 1.0
+
+
+def test_label_scale_shrinks_on_short_runs():
+    scale = dims._labelScale(800.0, "1000 mm")
+    assert 0.5 < scale < 1.0
+
+
+def test_label_scale_floors_at_half_size():
+    assert dims._labelScale(300.0, "300 mm") == dims._MIN_SCALE
+
+
 # --- selection mapping and bookkeeping ---------------------------------------
 
 @pytest.fixture(autouse=True)
