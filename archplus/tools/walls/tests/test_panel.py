@@ -40,7 +40,7 @@ def _panel(cls, obj):
     p.width = FakeNum(); p.height = FakeNum()
     p.align = FakeCombo(["Center", "Left", "Right"])
     p.offset = FakeNum(); p.tag = _FakeLine()
-    p.sketch = _FakeDataCombo(); p.rest = _FakeDataCombo()
+    p.sketch = _FakeDataCombo(); p.fallback = _FakeDataCombo()
     return p
 
 

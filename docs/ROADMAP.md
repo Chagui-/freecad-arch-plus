@@ -2,9 +2,9 @@
 
 ## Walls
 
-- [x] Shipped — sketch-based segmented walls with inherited overrides, rest
-  segment, hosted doors and windows, and interactive splitting (see
-  [TOOLS.md](TOOLS.md#walls)).
+- [x] Shipped — sketch-based segmented walls with inherited overrides,
+  fallback segment, hosted doors and windows, and interactive splitting
+  (see [TOOLS.md](TOOLS.md#walls)).
 - [x] Shipped — on-select length dimensions in the 3D view: a dimension
   line with oblique end ticks and a length label drawn above the selected
   face's wall run (one per run when the whole segment is selected; Coin

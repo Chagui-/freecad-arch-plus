@@ -143,11 +143,11 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   override. Width and height are overridden with a checkbox (unchecked =
   inherit; the panel pre-fills the field with the inherited value), align
   with an **Inherit** option in its combo.
-- **Rest segment** — an optional segment that auto-claims every sketch edge no
-  other segment claims (at most one per wall, a direct child of the wall, set
-  from the Edit Wall panel). New sketch edges land in the rest segment
-  automatically; with no rest segment they stay unbuilt and a warning is
-  printed to the Report view.
+- **Fallback segment** — an optional segment that auto-claims every sketch
+  edge no other segment claims (at most one per wall, a direct child of the
+  wall, set from the Edit Wall panel). New sketch edges land in the fallback
+  segment automatically; with no fallback segment they stay unbuilt and a
+  warning is printed to the Report view.
 - **Cross-segment corners** — where one segment's run ends and another's
   begins, both segments extend or trim to the same seam line (each using
   its own width, align and offset), so segment boundaries are mitered just
@@ -192,8 +192,8 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 - **Dimensions** — width, height, align (center/left/right) and offset, each
   with a reference diagram. These are the wall defaults; segments follow them
   unless they override.
-- **Sketch & claims** — the base sketch, which segment (if any) is the rest
-  segment, and a live count of claimed vs. unclaimed sketch edges.
+- **Sketch & claims** — the base sketch, which segment (if any) is the
+  fallback segment, and a live count of claimed vs. unclaimed sketch edges.
 - **Metadata** — tag / mark.
 
 ### Edit Segment panel

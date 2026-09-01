@@ -177,21 +177,21 @@ def test_target_options_exclude_sources_and_ancestors():
         Name="Wall", Label="Wall",
         Proxy=types.SimpleNamespace(Type="Wall"),
         Group=[], InList=[])
-    rest = _segment("Segments")
+    fallback = _segment("Segments")
     a = _segment("a")
     b = _segment("b")
-    root.Group = [rest, a, b]
-    for seg in (rest, a, b):
+    root.Group = [fallback, a, b]
+    for seg in (fallback, a, b):
         seg.Wall = root
         seg.InList = [root]
     options = cmd._targetOptions([(a, ("Edge1",))])
-    assert rest in options and b in options and a not in options
+    assert fallback in options and b in options and a not in options
     nested = _segment("nested")
     nested.Wall = root
     a.Group = [nested]
     nested.InList = [a]
     options = cmd._targetOptions([(nested, ("Edge1",))])
-    assert rest in options and b in options and a not in options
+    assert fallback in options and b in options and a not in options
     root.Group = [a]
     assert cmd._targetOptions([(a, ("Edge1",))]) == []
 

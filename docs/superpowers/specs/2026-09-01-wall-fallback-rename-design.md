@@ -55,6 +55,13 @@ def onDocumentRestored(self, obj):
   restore path has the partslib precedent (`partslib/object.py:248`).
 - Documents saved after the rename carry no `Rest`, so the block is a no-op.
 - Re-running `setProperties` on restore is idempotent by construction.
+- No rebuild is needed or attempted: a saved document keeps its computed
+  shapes verbatim, and a `Rest = True` segment's shape built under the old
+  code is identical to what `Fallback = True` builds under the new code.
+  Documents saved mid-recompute are touched in the file and FreeCAD
+  recomputes them on open as usual. (A synthetic document whose saved shape
+  is empty keeps an empty shape — no real pre-rename document is in that
+  state; the live FreeCAD check caught the distinction.)
 
 ## Internal renames (no behavior change)
 
@@ -71,9 +78,11 @@ def onDocumentRestored(self, obj):
   kwarg → `fallback=`, `vals["rest"]`, the `_loadFromObject` local.
 - `tests/test_model.py`: names (`test_rest_*` → `test_fallback_*`), locals,
   and the assertion `"one rest" in w` → `"one fallback" in w`;
-  `tests/test_panel.py` `p.rest` → `p.fallback`.
+  `tests/test_panel.py` `p.rest` → `p.fallback`;
+  `tests/test_split.py` `rest` local → `fallback`.
 - `freecad_tests/verify_walls.py`: `seg.Rest`, the `.Rest = False` calls,
-  `rest3`/`rest5` locals, check name "W1 rest child defaults".
+  `rest3`/`rest5` locals, check name "W1 rest child defaults", plus a new
+  W27 migration check (see Testing).
 
 ## Docs
 

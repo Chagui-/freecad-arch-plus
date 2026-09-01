@@ -40,9 +40,10 @@ def _w1_creation(doc):
     h.check("W1 root type and single child",
             wall.Proxy.Type == "Wall" and len(wall.Group) == 1)
     seg = wall.Group[0]
-    h.check("W1 rest child defaults",
-            seg.Proxy.Type == "WallSegment" and seg.Rest and seg.Wall is wall)
-    h.check("W1 rest child builds 2 edges, construction excluded",
+    h.check("W1 fallback child defaults",
+            seg.Proxy.Type == "WallSegment" and seg.Fallback
+            and seg.Wall is wall)
+    h.check("W1 fallback child builds 2 edges, construction excluded",
             abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
     return wall, sk
 
@@ -56,14 +57,16 @@ def _w2_inheritance(doc):
     doc.recompute()
     wall.Width = "400 mm"
     doc.recompute()
-    rest = wall.Group[0]
-    h.check("W2 root width change reaches the rest child",
-            abs(rest.Shape.Volume - _expected_volume(400, 2800, [4000, 4000])) < 1e-3)
+    fallback = wall.Group[0]
+    h.check("W2 root width change reaches the fallback child",
+            abs(fallback.Shape.Volume
+                - _expected_volume(400, 2800, [4000, 4000])) < 1e-3)
     ext = walls_object.makeSegment(wall, name="exterior")
     ext.Edges = [(sk, ("Edge2",))]
     doc.recompute()
-    h.check("W2 explicit claim removed from rest",
-            abs(rest.Shape.Volume - _expected_volume(400, 2800, [4000])) < 1e-3)
+    h.check("W2 explicit claim removed from the fallback",
+            abs(fallback.Shape.Volume
+                - _expected_volume(400, 2800, [4000])) < 1e-3)
     h.check("W2 new sibling builds its claim",
             abs(ext.Shape.Volume - _expected_volume(400, 2800, [4000])) < 1e-3)
     short = walls_object.makeSegment(ext, name="short")
@@ -557,20 +560,20 @@ def _w16_split_ux(doc):
     ], name="SplitUX3")
     wall3 = walls_object.makeWall(doc, sketch=sk3)
     doc.recompute()
-    rest3 = wall3.Group[0]
+    fallback3 = wall3.Group[0]
     d = walls_object.makeSegment(wall3, name="d")
     d.Edges = [(sk3, ("Edge2",))]
     doc.recompute()
     FreeCADGui.Selection.clearSelection()
-    FreeCADGui.Selection.addSelection(rest3, "Face1", 500.0, 0.0, 0.0)
+    FreeCADGui.Selection.addSelection(fallback3, "Face1", 500.0, 0.0, 0.0)
     cmd._chooseTarget = lambda sources: d
     cmd.Activated()
     doc.recompute()
-    h.check("W16 moving out of a rest source frees only the moved run",
+    h.check("W16 moving out of a fallback source frees only the moved run",
             abs(d.Shape.Volume
                 - _expected_volume(300, 2800, [2000, 2000])) < 1e-3
-            and rest3.Shape.Volume < 1e-3
-            and rest3.Rest)
+            and fallback3.Shape.Volume < 1e-3
+            and fallback3.Fallback)
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(b, "Face1", 2500.0, 0.0, 0.0)
     FreeCADGui.Selection.addSelection(d, "Face1", 500.0, 0.0, 0.0)
@@ -598,11 +601,11 @@ def _w16_split_ux(doc):
     doc.recompute()
     a4 = walls_object.makeSegment(wall4, name="a4")
     a4.Edges = [(sk4, ("Edge1",))]
-    a4.Rest = False
+    a4.Fallback = False
     b4 = walls_object.makeSegment(wall4, name="b4")
     b4.Edges = [(sk4, ("Edge2",))]
     doc.recompute()
-    rest4 = wall4.Group[0]
+    fallback4 = wall4.Group[0]
     pnt = _facePoint(a4)
     FreeCADGui.Selection.clearSelection()
     FreeCADGui.Selection.addSelection(wall4, "Face1", pnt.x, pnt.y, pnt.z)
@@ -611,7 +614,7 @@ def _w16_split_ux(doc):
     cmd.Activated()
     doc.recompute()
     new4 = [o for o in wall4.Group
-            if o is not rest4 and o is not a4 and o is not b4]
+            if o is not fallback4 and o is not a4 and o is not b4]
     h.check("W16 root-face pick resolves to the owning segment and splits",
             len(new4) == 1
             and abs(new4[0].Shape.Volume
@@ -631,12 +634,12 @@ def _w16_split_ux(doc):
     doc.recompute()
     a5 = walls_object.makeSegment(wall5, name="a5")
     a5.Edges = [(sk5, ("Edge1",))]
-    a5.Rest = False
+    a5.Fallback = False
     b5 = walls_object.makeSegment(wall5, name="b5")
     b5.Edges = [(sk5, ("Edge2",))]
-    b5.Rest = False
+    b5.Fallback = False
     doc.recompute()
-    rest5 = wall5.Group[0]
+    fallback5 = wall5.Group[0]
     p_a = _facePoint(a5)
     p_b = _facePoint(b5)
     FreeCADGui.Selection.addSelection(wall5, "Face1", p_a.x, p_a.y, p_a.z)
@@ -645,7 +648,7 @@ def _w16_split_ux(doc):
     cmd.Activated()
     doc.recompute()
     new5 = [o for o in wall5.Group
-            if o is not rest5 and o is not a5 and o is not b5]
+            if o is not fallback5 and o is not a5 and o is not b5]
     h.check("W16 two root faces resolve to their own segments",
             len(new5) == 2
             and a5.Shape.Volume < 1e-3
@@ -889,10 +892,10 @@ def _w23_pick_redirect(doc):
     doc.recompute()
     a = walls_object.makeSegment(wall, name="a")
     a.Edges = [(sk, ("Edge1",))]
-    a.Rest = False
+    a.Fallback = False
     b = walls_object.makeSegment(wall, name="b")
     b.Edges = [(sk, ("Edge2",))]
-    b.Rest = False
+    b.Fallback = False
     doc.recompute()
     p_a = _facePoint(a)
     FreeCADGui.Selection.clearSelection()
@@ -918,7 +921,7 @@ def _w23_pick_redirect(doc):
     walls_object.splitSegment(a, ["Edge1"])
     doc.recompute()
     c = [o for o in walls_object.all_segments(wall)
-         if o is not a and o is not b and not o.Rest][0]
+         if o is not a and o is not b and not o.Fallback][0]
     p_c = _facePoint(c)
     FreeCADGui.Selection.clearSelection()
     _pump()
@@ -970,10 +973,10 @@ def _w24_click_highlight(doc):
     doc.recompute()
     a = walls_object.makeSegment(wall, name="a")
     a.Edges = [(sk, ("Edge1",))]
-    a.Rest = False
+    a.Fallback = False
     b = walls_object.makeSegment(wall, name="b")
     b.Edges = [(sk, ("Edge2",))]
-    b.Rest = False
+    b.Fallback = False
     doc.recompute()
 
     # FreeCAD's face tint is unreliable for a selected group child, so
@@ -1194,6 +1197,42 @@ def _w26_square_wall_dims(doc):
     h.check("W26 clearing drops the single dim", dim_node() is None)
 
 
+def _w27_fallback_migration(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    seg.Fallback = False
+    seg.addProperty("App::PropertyBool", "Rest", "Wall",
+                    "Claim every sketch edge no other segment claims "
+                    "(one per wall)")
+    seg.Rest = True
+    seg.removeProperty("Fallback")
+    doc.recompute()
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(),
+                        "archplus_walls_migration.FCStd")
+    if os.path.exists(path):
+        os.remove(path)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    doc2 = FreeCAD.openDocument(path)
+    doc2.recompute()
+    wall2 = doc2.getObject("Wall")
+    seg2 = wall2.Group[0] if wall2 is not None and wall2.Group else None
+    # Only the flag move is asserted: a synthetic pre-rename document saved by
+    # new code carries an empty (never-built) shape, and migration deliberately
+    # preserves saved shapes — a real pre-rename document keeps its volume.
+    h.check("W27 pre-rename Rest flag migrates to Fallback on restore",
+            seg2 is not None
+            and seg2.Fallback
+            and "Rest" not in seg2.PropertiesList)
+    FreeCAD.closeDocument(doc2.Name)
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1223,3 +1262,5 @@ def run():
     _w26_square_wall_dims(doc)
     doc = h.fresh_doc()
     _w7_reload(doc)
+    doc = h.fresh_doc()
+    _w27_fallback_migration(doc)

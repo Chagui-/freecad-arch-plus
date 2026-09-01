@@ -8,8 +8,8 @@ import pytest
 from archplus.tools.walls import model
 
 
-def _node(key, claimed=(), rest=False, children=()):
-    n = model.ClaimNode(key, claimed, rest=rest)
+def _node(key, claimed=(), fallback=False, children=()):
+    n = model.ClaimNode(key, claimed, fallback=fallback)
     n.children = list(children)
     return n
 
@@ -50,28 +50,28 @@ def test_config_offset_comes_from_the_root_dict():
 EDGES = ["Edge1", "Edge2", "Edge3", "Edge4"]
 
 
-def test_rest_child_claims_everything_unclaimed():
-    rest = _node("rest", rest=True)
-    built, warnings = model.resolve_claims([rest], EDGES)
-    assert built[rest.node] == frozenset(EDGES)
+def test_fallback_child_claims_everything_unclaimed():
+    fallback = _node("fallback", fallback=True)
+    built, warnings = model.resolve_claims([fallback], EDGES)
+    assert built[fallback.node] == frozenset(EDGES)
     assert warnings == []
 
 
-def test_explicit_claim_beats_rest():
-    rest = _node("rest", rest=True)
+def test_explicit_claim_beats_fallback():
+    fallback = _node("fallback", fallback=True)
     ext = _node("ext", ("Edge1",))
-    built, warnings = model.resolve_claims([rest, ext], EDGES)
+    built, warnings = model.resolve_claims([fallback, ext], EDGES)
     assert built[ext.node] == frozenset(["Edge1"])
-    assert built[rest.node] == frozenset(["Edge2", "Edge3", "Edge4"])
+    assert built[fallback.node] == frozenset(["Edge2", "Edge3", "Edge4"])
 
 
 def test_group_excludes_descendant_claims():
-    rest = _node("rest", rest=True)
+    fallback = _node("fallback", fallback=True)
     short = _node("short", ("Edge2",))
-    rest.children.append(short)
-    built, warnings = model.resolve_claims([rest], EDGES)
+    fallback.children.append(short)
+    built, warnings = model.resolve_claims([fallback], EDGES)
     assert built[short.node] == frozenset(["Edge2"])
-    assert built[rest.node] == frozenset(["Edge1", "Edge3", "Edge4"])
+    assert built[fallback.node] == frozenset(["Edge1", "Edge3", "Edge4"])
 
 
 def test_conflicting_claims_build_nowhere_with_warning():
@@ -83,43 +83,43 @@ def test_conflicting_claims_build_nowhere_with_warning():
     assert any("Edge1" in w for w in warnings)
 
 
-def test_rest_child_builds_nothing_on_conflicted_edges():
-    rest = _node("rest", rest=True)
+def test_fallback_child_builds_nothing_on_conflicted_edges():
+    fallback = _node("fallback", fallback=True)
     a = _node("a", ("Edge1",))
     b = _node("b", ("Edge1",))
-    built, warnings = model.resolve_claims([rest, a, b], EDGES)
+    built, warnings = model.resolve_claims([fallback, a, b], EDGES)
     assert built[a.node] == frozenset()
     assert built[b.node] == frozenset()
-    assert "Edge1" not in built[rest.node]
+    assert "Edge1" not in built[fallback.node]
     assert any("Edge1" in w for w in warnings)
 
 
-def test_two_rest_children_warns_and_keeps_first():
-    r1 = _node("r1", rest=True)
-    r2 = _node("r2", rest=True)
+def test_two_fallback_children_warns_and_keeps_first():
+    r1 = _node("r1", fallback=True)
+    r2 = _node("r2", fallback=True)
     built, warnings = model.resolve_claims([r1, r2], EDGES)
     assert built[r1.node] == frozenset(EDGES)
     assert built[r2.node] == frozenset()
-    assert any("one rest" in w for w in warnings)
+    assert any("one fallback" in w for w in warnings)
 
 
-def test_rest_with_explicit_edges_warns_and_ignores_them():
-    rest = _node("rest", ("Edge1",), rest=True)
-    built, warnings = model.resolve_claims([rest], EDGES)
-    assert built[rest.node] == frozenset(EDGES)
+def test_fallback_with_explicit_edges_warns_and_ignores_them():
+    fallback = _node("fallback", ("Edge1",), fallback=True)
+    built, warnings = model.resolve_claims([fallback], EDGES)
+    assert built[fallback.node] == frozenset(EDGES)
     assert any("explicit" in w for w in warnings)
 
 
-def test_nested_rest_warns_and_treats_as_normal():
-    rest = _node("rest", rest=True)
-    bad = _node("bad", ("Edge3",), rest=True)
-    rest.children.append(bad)
-    built, warnings = model.resolve_claims([rest], EDGES)
+def test_nested_fallback_warns_and_treats_as_normal():
+    fallback = _node("fallback", fallback=True)
+    bad = _node("bad", ("Edge3",), fallback=True)
+    fallback.children.append(bad)
+    built, warnings = model.resolve_claims([fallback], EDGES)
     assert built[bad.node] == frozenset(["Edge3"])
     assert any("direct child" in w for w in warnings)
 
 
-def test_no_rest_leaves_new_edges_unbuilt():
+def test_no_fallback_leaves_new_edges_unbuilt():
     a = _node("a", ("Edge1",))
     built, warnings = model.resolve_claims([a], EDGES)
     assert built[a.node] == frozenset(["Edge1"])

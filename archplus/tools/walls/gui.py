@@ -89,14 +89,14 @@ class WallPlusTaskPanel:
         skV = QtGui.QVBoxLayout(skBox)
         skForm = QtGui.QFormLayout()
         self.sketch = QtGui.QComboBox()
-        self.rest = QtGui.QComboBox()
+        self.fallback = QtGui.QComboBox()
         skForm.addRow("Sketch", self.sketch)
         skV.addLayout(skForm)
         skV.addWidget(_desc("The base sketch. Shared freely — other walls can "
                             "use it too."))
-        restForm = QtGui.QFormLayout()
-        restForm.addRow("Rest segment", self.rest)
-        skV.addLayout(restForm)
+        fallbackForm = QtGui.QFormLayout()
+        fallbackForm.addRow("Fallback segment", self.fallback)
+        skV.addLayout(fallbackForm)
         skV.addWidget(_desc("This segment auto-claims any new sketch edge. "
                             "\"None\" = new edges build nothing."))
         self.stats = QtGui.QLabel()
@@ -121,7 +121,7 @@ class WallPlusTaskPanel:
         self.align.currentIndexChanged.connect(self._schedule)
         self.tag.textChanged.connect(self._schedule)
         self.sketch.currentIndexChanged.connect(self._schedule)
-        self.rest.currentIndexChanged.connect(self._schedule)
+        self.fallback.currentIndexChanged.connect(self._schedule)
 
         self._building = False
         if self.obj is not None:
@@ -160,7 +160,7 @@ class WallPlusTaskPanel:
             offset=widgets.mm(self.offset),
             tag=self.tag.text(),
             base=self.sketch.currentData(),
-            rest=self.rest.currentData(),
+            fallback=self.fallback.currentData(),
         )
 
     def _loadFromObject(self):
@@ -184,18 +184,19 @@ class WallPlusTaskPanel:
             idx = self.sketch.findData(base)
             if idx >= 0:
                 self.sketch.setCurrentIndex(idx)
-        self.rest.clear()
-        self.rest.addItem("None", None)
+        self.fallback.clear()
+        self.fallback.addItem("None", None)
         if self.obj is not None:
             for o in self.obj.Group:
                 if walls_object.is_segment(o):
-                    self.rest.addItem(o.Label, o)
-            rest = [o for o in self.obj.Group
-                    if walls_object.is_segment(o) and getattr(o, "Rest", False)]
-            if rest:
-                idx = self.rest.findData(rest[0])
+                    self.fallback.addItem(o.Label, o)
+            fallback = [o for o in self.obj.Group
+                        if walls_object.is_segment(o)
+                        and getattr(o, "Fallback", False)]
+            if fallback:
+                idx = self.fallback.findData(fallback[0])
                 if idx >= 0:
-                    self.rest.setCurrentIndex(idx)
+                    self.fallback.setCurrentIndex(idx)
         self._building = False
 
     def _updateStats(self):
@@ -233,14 +234,14 @@ class WallPlusTaskPanel:
         self._timer.stop()
         self._apply()
         vals = self._collect()
-        if vals["rest"] is not None:
+        if vals["fallback"] is not None:
             for o in self.obj.Group:
                 if walls_object.is_segment(o):
-                    o.Rest = (o is vals["rest"])
+                    o.Fallback = (o is vals["fallback"])
         else:
             for o in self.obj.Group:
                 if walls_object.is_segment(o):
-                    o.Rest = False
+                    o.Fallback = False
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
             FreeCAD.ActiveDocument.recompute()
@@ -537,7 +538,7 @@ class WallSegmentTaskPanel:
         clV.addWidget(self.stats)
         clV.addWidget(_desc("Split / reassign edges with \"Split / move "
                             "segment…\" after picking wall faces in the 3D "
-                            "view. Rest and Sketch are set in the wall panel."))
+                            "view. Fallback and Sketch are set in the wall panel."))
         outer.addWidget(clBox)
 
         self._timer = QtCore.QTimer()
@@ -638,7 +639,7 @@ class WallSegmentTaskPanel:
             built, _warnings = model.resolve_claims(
                 nodes, walls_object._sketchEdgeNames(root.Base))
             mine = built.get(o, frozenset())
-            auto = len(mine) if getattr(o, "Rest", False) else 0
+            auto = len(mine) if getattr(o, "Fallback", False) else 0
             self.stats.setText("%d edges claimed · %d auto"
                                % (len(mine), auto))
         except Exception:

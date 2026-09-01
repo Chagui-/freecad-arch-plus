@@ -64,10 +64,10 @@ class _Wall:
                                 "The wall this segment belongs to")
             if "Edges" not in pl:
                 obj.addProperty("App::PropertyLinkSubList", "Edges", "Wall",
-                                "Claimed sketch edges; empty with Rest=true claims "
-                                "everything unclaimed")
-            if "Rest" not in pl:
-                obj.addProperty("App::PropertyBool", "Rest", "Wall",
+                                "Claimed sketch edges; empty with Fallback=true "
+                                "claims everything unclaimed")
+            if "Fallback" not in pl:
+                obj.addProperty("App::PropertyBool", "Fallback", "Wall",
                                 "Claim every sketch edge no other segment claims "
                                 "(one per wall)")
             if "Width" not in pl:
@@ -90,7 +90,7 @@ class _Wall:
             root = wall_root(obj) or obj
             for seg in all_segments(root):
                 seg.touch()
-        if prop in ("Edges", "Rest"):
+        if prop in ("Edges", "Fallback"):
             root = wall_root(obj)
             if root is not None:
                 for seg in all_segments(root):
@@ -104,6 +104,12 @@ class _Wall:
             root = wall_root(obj)
             for seg in all_segments(root or obj):
                 seg.touch()
+
+    def onDocumentRestored(self, obj):
+        self.setProperties(obj, self.Type == TYPE_WALL)
+        if self.Type == TYPE_SEGMENT and "Rest" in obj.PropertiesList:
+            obj.Fallback = obj.Rest
+            obj.removeProperty("Rest")
 
     def execute(self, obj):
         """Root: clear the placeholder shape, report claims, and re-mark the
@@ -130,13 +136,13 @@ class _Wall:
         for w in warnings:
             FreeCAD.Console.PrintWarning("ArchPlus: %s\n" % w)
         claimed = set().union(*built.values()) if built else set()
-        has_rest = any(n.rest for n in nodes)
-        if not has_rest:
+        has_fallback = any(n.fallback for n in nodes)
+        if not has_fallback:
             unclaimed = [n for n in names if n not in claimed]
             if unclaimed:
                 FreeCAD.Console.PrintWarning(
-                    "ArchPlus: %d sketch edge(s) unclaimed and no rest segment "
-                    "to build them\n" % len(unclaimed))
+                    "ArchPlus: %d sketch edge(s) unclaimed and no fallback "
+                    "segment to build them\n" % len(unclaimed))
         for win in _hostedOpenings(obj):
             sub = opening_volume(win, obj)
             if sub is None:
@@ -265,7 +271,7 @@ def _claimNode(obj):
     subs = []
     for _link, subs_ in getattr(obj, "Edges", None) or []:
         subs.extend(subs_)
-    node = model.ClaimNode(obj, subs, bool(getattr(obj, "Rest", False)))
+    node = model.ClaimNode(obj, subs, bool(getattr(obj, "Fallback", False)))
     node.children = [_claimNode(c) for c in getattr(obj, "Group", [])
                      if is_segment(c)]
     return node
@@ -1008,7 +1014,7 @@ class _ViewProviderWall:
 
 
 def makeWall(doc=None, sketch=None, name="Wall"):
-    """Create the wall root plus one rest child. Returns the root."""
+    """Create the wall root plus one fallback child. Returns the root."""
     doc = doc or FreeCAD.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", name)
     obj.addExtension("App::GroupExtensionPython")
@@ -1021,7 +1027,7 @@ def makeWall(doc=None, sketch=None, name="Wall"):
     obj.Align = "Center"
     obj.Offset = "0 mm"
     seg = makeSegment(obj, name="Segments")
-    seg.Rest = True
+    seg.Fallback = True
     return obj
 
 
@@ -1044,9 +1050,9 @@ def moveSegmentEdges(source, target, subnames):
     """Move claimed edges from `source` into the existing `target` segment.
 
     The target gains explicit claims; the source drops them from its own
-    claims, except when it is the rest segment — rest claims are dynamic,
-    so adding explicit claims to the target is enough (the rest rebuilds
-    without those edges on its own)."""
+    claims, except when it is the fallback segment — fallback claims are
+    dynamic, so adding explicit claims to the target is enough (the
+    fallback rebuilds without those edges on its own)."""
     if target is source:
         return
     edges = []
@@ -1058,7 +1064,7 @@ def moveSegmentEdges(source, target, subnames):
     if fresh and target.Base is not None:
         edges.append((target.Base, fresh))
         target.Edges = edges
-    if not source.Rest:
+    if not source.Fallback:
         remaining = []
         for link, subs in getattr(source, "Edges", None) or []:
             subs = tuple(s for s in subs if s not in subnames)
@@ -1072,7 +1078,7 @@ def splitSegment(segment, subnames, name=None):
     parent = parent_group(segment) or wall_root(segment)
     new = makeSegment(parent, name or "Segments")
     new.Edges = [(new.Base, sub) for sub in subnames]
-    if not segment.Rest:
+    if not segment.Fallback:
         remaining = []
         for link, subs in getattr(segment, "Edges", None) or []:
             subs = tuple(s for s in subs if s not in subnames)

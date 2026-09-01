@@ -45,10 +45,10 @@ class ClaimNode:
     """One segment in the claim tree (plain data; node identity is the
     document object, passed in as an opaque handle)."""
 
-    def __init__(self, node, claimed, rest=False):
+    def __init__(self, node, claimed, fallback=False):
         self.node = node
         self.claimed = frozenset(claimed)
-        self.rest = rest
+        self.fallback = fallback
         self.children = []
 
 
@@ -66,26 +66,26 @@ def resolve_claims(nodes, sketch_edge_names):
 
     for n in nodes:
         for d in _walk_descendants(n):
-            if d.rest:
+            if d.fallback:
                 warnings.append(
-                    "Rest only applies to direct children of the wall; "
+                    "Fallback only applies to direct children of the wall; "
                     "segment '%s' treated as normal"
                     % getattr(d.node, "Label", d.node))
-                d.rest = False
+                d.fallback = False
     for n in nodes:
-        if n.rest and n.claimed:
+        if n.fallback and n.claimed:
             warnings.append(
-                "Rest segment '%s' ignores its explicit edges"
+                "Fallback segment '%s' ignores its explicit edges"
                 % getattr(n.node, "Label", n.node))
             n.claimed = frozenset()
-    rest_nodes = [n for n in nodes if n.rest]
-    if len(rest_nodes) > 1:
-        for extra in rest_nodes[1:]:
+    fallback_nodes = [n for n in nodes if n.fallback]
+    if len(fallback_nodes) > 1:
+        for extra in fallback_nodes[1:]:
             warnings.append(
-                "Only one rest segment is allowed; '%s' treated as normal"
+                "Only one fallback segment is allowed; '%s' treated as normal"
                 % getattr(extra.node, "Label", extra.node))
-            extra.rest = False
-        rest_nodes = rest_nodes[:1]
+            extra.fallback = False
+        fallback_nodes = fallback_nodes[:1]
 
     sketch_set = set(sketch_edge_names)
 
@@ -107,8 +107,8 @@ def resolve_claims(nodes, sketch_edge_names):
         warnings.append(
             "Edge %s claimed by several segments; it builds nowhere" % sub)
 
-    rest_edges = sketch_set - set(owners) if rest_nodes else frozenset()
-    rest_node = rest_nodes[0] if rest_nodes else None
+    fallback_edges = sketch_set - set(owners) if fallback_nodes else frozenset()
+    fallback_node = fallback_nodes[0] if fallback_nodes else None
 
     built = {}
 
@@ -116,8 +116,8 @@ def resolve_claims(nodes, sketch_edge_names):
         below = frozenset().union(*(assign(c) for c in n.children)) \
             if n.children else frozenset()
         edges = (set(n.claimed) & sketch_set) - conflicted - below
-        if n is rest_node:
-            edges |= (rest_edges - below)
+        if n is fallback_node:
+            edges |= (fallback_edges - below)
         built[n.node] = frozenset(edges)
         return edges | below
 
