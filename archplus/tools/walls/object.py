@@ -187,10 +187,14 @@ class _Wall:
         if not edges:
             obj.Shape = empty
             return
-        try:
-            chains = Part.getSortedClusters(edges)
-        except Exception:
-            chains = [[edge] for edge in edges]
+        # A claim set can branch (partitions joining a ring), and the
+        # offset band needs one simple traversal to produce one face, so
+        # split at every vertex where more than two endpoints meet; each
+        # simple chain offsets cleanly and junction ends butt into the
+        # crossing band.
+        usable = [edge for edge in edges if edge.Length >= 1e-9]
+        chains = [[usable[i] for i in group]
+                  for group in model.chain_splits(_chainLinks(usable))]
         root = obj.Wall
         owners = _edgeOwners(root) if root is not None else {}
         sk_edges = []

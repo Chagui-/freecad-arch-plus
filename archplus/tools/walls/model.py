@@ -295,3 +295,62 @@ def chain_runs(links):
             runs.append(list(pts))
             kinds.append(is_line)
     return runs
+
+
+def chain_splits(links):
+    """Split edge links into simple chains: maximal paths and cycles that
+    visit no vertex twice. Vertices where more than two endpoints meet
+    (partitions joining a ring) and dead ends end a chain, because the
+    offset band needs one simple traversal to produce one face — handing
+    it a branched cluster makes the band self-overlap. Chains meeting at
+    a split vertex then butt into each other's band, which fuses into a
+    connected whole.
+
+    links is [(points, is_line)]; only the first and last point of each
+    list matter, in any order and either direction. Returns index lists
+    into links, one per simple chain; a closed curve (first point equal
+    to the last) always forms its own chain."""
+    start_keys = []
+    end_keys = []
+    degree = {}
+    for pts, _is_line in links:
+        a = (round(pts[0][0], 3), round(pts[0][1], 3), round(pts[0][2], 3))
+        b = (round(pts[-1][0], 3), round(pts[-1][1], 3),
+             round(pts[-1][2], 3))
+        start_keys.append(a)
+        end_keys.append(b)
+        degree[a] = degree.get(a, 0) + 1
+        degree[b] = degree.get(b, 0) + 1
+
+    unused = set(range(len(links)))
+    groups = []
+
+    def walk(seed, first_key):
+        """Consume links starting at first_key until the walk hits a
+        vertex whose degree is not 2 or runs out of unused edges."""
+        chain = [seed]
+        unused.discard(seed)
+        vertex = end_keys[seed] if start_keys[seed] == first_key \
+            else start_keys[seed]
+        while degree[vertex] == 2:
+            nxt = next((j for j in unused
+                        if start_keys[j] == vertex or end_keys[j] == vertex),
+                       None)
+            if nxt is None:
+                break
+            unused.discard(nxt)
+            chain.append(nxt)
+            vertex = end_keys[nxt] if start_keys[nxt] == vertex \
+                else start_keys[nxt]
+        return chain
+
+    for i in range(len(links)):
+        if i in unused and (degree[start_keys[i]] != 2
+                            or degree[end_keys[i]] != 2):
+            first = start_keys[i] if degree[start_keys[i]] != 2 \
+                else end_keys[i]
+            groups.append(walk(i, first))
+    for i in range(len(links)):
+        if i in unused:
+            groups.append(walk(i, start_keys[i]))
+    return groups

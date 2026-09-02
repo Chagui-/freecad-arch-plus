@@ -1259,6 +1259,38 @@ def _w28_mixed_direction_chain(doc):
             and not any("travel direction" in m for m in captured))
 
 
+def _w29_branched_plan(doc):
+    """A floor plan branches: partitions join the ring, so the claim set
+    is no single path. chain_splits must cut it into simple chains and
+    every piece must offset without falling back to butt ends."""
+    sk = _line_sketch(doc, [
+        ((4000, 0), (0, 0), False),
+        ((4000, 0), (8000, 0), False),
+        ((8000, 0), (8000, 5000), False),
+        ((0, 5000), (8000, 5000), False),
+        ((0, 5000), (0, 0), False),
+        ((4000, 2500), (4000, 0), False),
+    ], name="Branched")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        doc.recompute()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    seg = wall.Group[0]
+    # Ring band is mitred (perimeter x width); the partition band gets
+    # seam-trimmed to the ring centreline, so it overlaps the ring band by
+    # a half-width column instead of a full one.
+    volume = 300.0 * 2800.0 * (2.0 * (8000.0 + 5000.0) + 2500.0) \
+        - 0.5 * 300.0 * 300.0 * 2800.0
+    h.check("W29 branched plan builds mitered without fallback",
+            abs(seg.Shape.Volume - volume) < 1e-3
+            and len(seg.Shape.Solids) == 1
+            and not any("mitered chain build failed" in m for m in captured))
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1291,3 +1323,4 @@ def run():
     doc = h.fresh_doc()
     _w27_fallback_migration(doc)
     _w28_mixed_direction_chain(doc)
+    _w29_branched_plan(doc)

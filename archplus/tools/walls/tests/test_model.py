@@ -262,6 +262,71 @@ def test_chain_runs_splits_at_direction_changes_only():
     ]
 
 
+# --- chain_splits -----------------------------------------------------------
+
+def test_chain_splits_keeps_a_plain_cycle_whole():
+    links = [
+        ([(0, 0, 0), (4, 0, 0)], True),
+        ([(4, 0, 0), (4, 3, 0)], True),
+        ([(4, 3, 0), (0, 3, 0)], True),
+        ([(0, 3, 0), (0, 0, 0)], True),
+    ]
+    groups = model.chain_splits(links)
+    assert sorted(sorted(g) for g in groups) == [[0, 1, 2, 3]]
+
+
+def test_chain_splits_splits_a_branch_and_keeps_the_ring():
+    # Square ring with a spur hanging off one corner: the ring stays one
+    # closed chain (mitred corners), the spur splits off at the branch.
+    links = [
+        ([(0, 0, 0), (4, 0, 0)], True),   # 0 bottom
+        ([(4, 0, 0), (4, 3, 0)], True),   # 1 right
+        ([(4, 3, 0), (0, 3, 0)], True),   # 2 top
+        ([(0, 3, 0), (0, 0, 0)], True),   # 3 left
+        ([(4, 0, 0), (6, 0, 0)], True),   # 4 spur, collinear with 0
+    ]
+    groups = model.chain_splits(links)
+    assert sorted(sorted(g) for g in groups) == [[0, 1, 2, 3], [4]]
+
+
+def test_chain_splits_splits_at_every_branch():
+    # Three edges meeting at one vertex: no pair continues straight
+    # through, so each becomes its own chain and the junction is a butt.
+    links = [
+        ([(0, 0, 0), (4, 0, 0)], True),
+        ([(4, 0, 0), (4, 3, 0)], True),
+        ([(4, 0, 0), (4, -3, 0)], True),
+    ]
+    groups = model.chain_splits(links)
+    assert sorted(sorted(g) for g in groups) == [[0], [1], [2]]
+
+
+def test_chain_splits_keeps_an_open_path_whole():
+    links = [
+        ([(0, 0, 0), (4, 0, 0)], True),
+        ([(4, 0, 0), (4, 3, 0)], True),
+        ([(4, 3, 0), (9, 3, 0)], True),
+    ]
+    groups = model.chain_splits(links)
+    assert sorted(sorted(g) for g in groups) == [[0, 1, 2]]
+
+
+def test_chain_splits_separates_disjoint_components():
+    links = [
+        ([(0, 0, 0), (4, 0, 0)], True),
+        ([(0, 3, 0), (4, 3, 0)], True),
+    ]
+    groups = model.chain_splits(links)
+    assert sorted(sorted(g) for g in groups) == [[0], [1]]
+
+
+def test_chain_splits_handles_a_closed_curve():
+    # A full circle contributes both endpoints to one vertex; it is its
+    # own chain.
+    links = [([(0, 0, 0), (1, 0, 0), (0, 0, 0)], False)]
+    assert model.chain_splits(links) == [[0]]
+
+
 def test_chain_runs_rejects_unorderable_links():
     links = [
         ([(0, 0, 0), (1000, 0, 0)], True),
