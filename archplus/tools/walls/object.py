@@ -990,6 +990,18 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
+    def onDelete(self, vobj, subelements):
+        """GUI deletes cascade: FreeCAD's own delete never removes
+        children, so the wall's segments — and each nested segment's
+        children — are removed here first, or they would be orphaned
+        with dangling Wall links. The sketch is shared with other tools
+        and never follows. Programmatic doc.removeObject bypasses the
+        view provider and keeps the orphan behaviour."""
+        obj = vobj.Object
+        for seg in all_segments(obj):
+            obj.Document.removeObject(seg.Name)
+        return True
+
     def updateData(self, obj, prop):
         """Refresh the highlight overlay when the shape is rebuilt under a
         live face or edge selection; the overlay keeps its old tessellation
