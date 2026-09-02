@@ -1285,9 +1285,13 @@ def _w29_branched_plan(doc):
     # a half-width column instead of a full one.
     volume = 300.0 * 2800.0 * (2.0 * (8000.0 + 5000.0) + 2500.0) \
         - 0.5 * 300.0 * 300.0 * 2800.0
+    top = [f for f in seg.Shape.Faces
+           if abs(f.BoundBox.ZMin - seg.Shape.BoundBox.ZMax) < 1e-6
+           and abs(f.BoundBox.ZMax - seg.Shape.BoundBox.ZMax) < 1e-6]
     h.check("W29 branched plan builds mitered without fallback",
             abs(seg.Shape.Volume - volume) < 1e-3
             and len(seg.Shape.Solids) == 1
+            and len(top) == 1
             and not any("mitered chain build failed" in m for m in captured))
 
 

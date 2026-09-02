@@ -246,6 +246,14 @@ class _Wall:
         shape = solids.pop(0)
         for s in solids:
             shape = shape.fuse(s)
+        try:
+            # Fusing same-height bands leaves the coplanar top and bottom
+            # faces split along the old overlap boundaries, which reads as
+            # seams at every junction; the merge is purely cosmetic, so a
+            # failure must not lose the fused shape (partslib precedent).
+            shape = shape.removeSplitter()
+        except Exception:
+            pass
         if root is not None:
             for win in _hostedOpenings(root):
                 sub = opening_volume(win, root)
