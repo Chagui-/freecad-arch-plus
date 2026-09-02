@@ -236,21 +236,26 @@ def _projectPt(p, seg):
     return (projected.x, projected.y, projected.z)
 
 
-def _faceRunScope(seg, face_name):
+def _faceRunScope(seg, face_name, runs=None):
     """The run indices one picked face belongs to: the face's centroid
     projected onto the sketch plane and matched to the nearest run
     within one effective wall width — the split command's mapping. The
     face centroid is used instead of the click point because FreeCAD
-    fabricates PickedPoints for API-driven face selections. Returns a
-    (possibly empty) set of run indices."""
+    fabricates PickedPoints for API-driven face selections. runs is an
+    optional memo of segmentEdgeRuns results shared by every face of
+    one sync pass. Returns a (possibly empty) set of run indices."""
     try:
         point = seg.Shape.getElement(face_name).CenterOfGravity
     except Exception:
         return set()
     tol = walls_object.effectiveValues(seg)["Width"]
+    if runs is None:
+        runs = {}
+    key = _key(seg)
+    if key not in runs:
+        runs[key] = walls_object.segmentEdgeRuns(seg)
     projected = [[_projectPt(p, seg) for p in pts]
-                 for pts, _normal, _height
-                 in walls_object.segmentEdgeRuns(seg)]
+                 for pts, _normal, _height in runs[key]]
     index = model.match_edge(projected, _projectPt(point, seg), tol)
     return set() if index is None else {index}
 
@@ -481,11 +486,12 @@ def _dimScopes():
     from archplus.tools.walls import gui as walls_gui
     scopes = {}
     order = []
+    runs = {}    # segmentEdgeRuns memo, shared by one sync pass
     for sel in FreeCADGui.Selection.getSelectionEx():
         obj = getattr(sel, "Object", None)
         if walls_object.is_segment(obj):
             _mergeScope(scopes, order, obj,
-                        _selectionScope(obj, sel))
+                        _selectionScope(obj, sel, runs))
         elif walls_object.is_root(obj):
             counts = {}
             for name in (getattr(sel, "SubElementNames", None) or ()):
@@ -501,21 +507,21 @@ def _dimScopes():
                 seg = resolved[0]
                 local = resolved[1][0] if resolved[1] else name
                 _mergeScope(scopes, order, seg,
-                            _faceRunScope(seg, local))
+                            _faceRunScope(seg, local, runs))
     return [(seg, scopes[_key(seg)]) for seg in order]
 
 
-def _selectionScope(seg, sel):
+def _selectionScope(seg, sel, runs=None):
     """The run scope one direct segment selection member implies: None
     (every run) when it names no faces, else the union of the runs its
-    picked faces map to."""
+    picked faces map to. runs is the pass's segmentEdgeRuns memo."""
     names = list(getattr(sel, "SubElementNames", None) or ())
     if not any(n.startswith("Face") for n in names):
         return None
     scope = set()
     for name in names:
         if name.startswith("Face"):
-            scope |= _faceRunScope(seg, name)
+            scope |= _faceRunScope(seg, name, runs)
     return scope
 
 
@@ -573,22 +579,45 @@ def refresh(segment):
         pass
 
 
+_sync_timer = None
+
+
+def _scheduleSync():
+    """Coalesce a burst of selection events into one sync. Expanding a
+    tree selection to its faces fires addSelection once per face, and a
+    full resync per event stalled segment clicks for seconds on large
+    plans; the 0 ms single shot restarts per event, so the resync runs
+    once after the burst settles."""
+    global _sync_timer
+    if _sync_timer is not None:
+        _sync_timer.start()
+        return
+    try:
+        from PySide import QtCore
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(sync)
+        timer.start()
+        _sync_timer = timer
+    except Exception:
+        sync()
+
+
 class _SelectionDims:
-    """Selection observer redrawing the length dims on every selection
-    change."""
+    """Selection observer scheduling the length-dim resync on every
+    selection change (coalesced — see _scheduleSync)."""
 
     def addSelection(self, *_args):
-        sync()
+        _scheduleSync()
 
     def removeSelection(self, *_args):
-        sync()
+        _scheduleSync()
 
     def clearSelection(self, *_args):
-        sync()
+        _scheduleSync()
 
     def setSelection(self, *_args):
-        sync()
-
+        _scheduleSync()
 
 def install():
     """Register the selection observer once (gui.py import time, like the
