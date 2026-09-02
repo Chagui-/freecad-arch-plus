@@ -221,11 +221,14 @@ def _continues_straight(pts, next_pts):
     return _point_seg_dist(b0, a0, a1) < 1e-6
 
 
-def _orderLinks(links, reverse_seed):
-    """Order one chain's links head-to-tail, keeping every points list in
-    its stored travel direction; raises ValueError on unorderable
-    leftovers. Mirrors the offset machinery's traversal: forward from the
-    seed, then backward from the head."""
+def _orderLinks(links, reverse_seed, reverse_links=False):
+    """Order one chain's links head-to-tail. Without reverse_links every
+    points list keeps its stored travel direction — the historical
+    traversal for consistently drawn sketches — and links stored against
+    the traversal raise. With reverse_links, a link whose opposite
+    endpoint continues the chain is stored reversed, so hand-drawn
+    sketches whose edges run in mixed directions still order into one
+    traversal for the offset machinery."""
     first = links.pop(0)
     seed = list(reversed(first[0])) if reverse_seed else list(first[0])
     ordered = [(seed, first[1])]
@@ -235,12 +238,22 @@ def _orderLinks(links, reverse_seed):
                 ordered.append((list(pts), is_line))
                 links.pop(i)
                 break
+            if (reverse_links
+                    and _point_dist(pts[-1], ordered[-1][0][-1]) <= 1e-3):
+                ordered.append((list(reversed(pts)), is_line))
+                links.pop(i)
+                break
         else:
             break
     while links:
         for i, (pts, is_line) in enumerate(links):
             if _point_dist(pts[-1], ordered[0][0][0]) <= 1e-3:
                 ordered.insert(0, (list(pts), is_line))
+                links.pop(i)
+                break
+            if (reverse_links
+                    and _point_dist(pts[0], ordered[0][0][0]) <= 1e-3):
+                ordered.insert(0, (list(reversed(pts)), is_line))
                 links.pop(i)
                 break
         else:
@@ -266,7 +279,12 @@ def chain_runs(links):
     except ValueError:
         # The seed link may be stored tail-first relative to the chain;
         # retry with it flipped before giving up.
-        ordered = _orderLinks(list(links), True)
+        try:
+            ordered = _orderLinks(list(links), True)
+        except ValueError:
+            # Real sketches store edges in mixed directions; reverse
+            # individual links so any one connected chain still orders.
+            ordered = _orderLinks(list(links), False, reverse_links=True)
     runs = []
     kinds = []  # True while the run consists of straight links only
     for pts, is_line in ordered:

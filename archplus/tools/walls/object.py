@@ -703,10 +703,11 @@ def _chainLinks(edges):
 
 
 def _chainPolyline(edges):
-    """Discretized points along the chain, each edge taken in its own
-    sketch travel direction; raises when the edge directions do not
-    traverse the chain head-to-tail, since a doubled-back chain cannot
-    take one uniform offset side."""
+    """Discretized points along the chain in one consistent traversal —
+    model.chain_runs reverses individual links as needed, so sketch
+    edges stored in mixed directions still yield one polyline. Raises
+    only when the edges do not form one connected chain, since a
+    disconnected chain cannot take one uniform offset side."""
     pts = []
     for run in model.chain_runs(_chainLinks(edges)):
         if pts:

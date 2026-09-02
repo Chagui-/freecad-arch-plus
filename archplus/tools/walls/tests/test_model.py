@@ -217,6 +217,25 @@ def test_chain_runs_orders_unordered_and_reversed_links():
     ]
 
 
+def test_chain_runs_orders_mixed_direction_links():
+    # A closed loop drawn the way sketches are really drawn: edges stored
+    # in mixed directions, and not only in seed position. chain_runs must
+    # reverse individual links to find one consistent traversal.
+    links = [
+        ([(0, 0, 0), (4000, 0, 0)], True),        # top, along the travel
+        ([(0, 3000, 0), (4000, 3000, 0)], True),  # bottom, stored against it
+        ([(4000, 0, 0), (4000, 3000, 0)], True),  # right, along
+        ([(0, 3000, 0), (0, 0, 0)], True),        # left, stored against it
+    ]
+    runs = model.chain_runs(links)
+    assert runs == [
+        [(0, 0, 0), (4000, 0, 0)],
+        [(4000, 0, 0), (4000, 3000, 0)],
+        [(4000, 3000, 0), (0, 3000, 0)],
+        [(0, 3000, 0), (0, 0, 0)],
+    ]
+
+
 def test_chain_runs_keeps_arcs_solo():
     arc = [(0.0, 0.0, 0.0), (500.0, 500.0, 0.0), (1000.0, 0.0, 0.0)]
     links = [

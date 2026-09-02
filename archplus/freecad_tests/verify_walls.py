@@ -1233,6 +1233,32 @@ def _w27_fallback_migration(doc):
     FreeCAD.closeDocument(doc2.Name)
 
 
+def _w28_mixed_direction_chain(doc):
+    """Real sketches store edges in mixed directions; the mitered chain
+    build must normalize them into one traversal instead of falling back
+    to per-edge butt ends."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+        ((4000, 0), (4000, 3000), False),
+        ((0, 3000), (0, 0), False),
+    ], name="MixedDirs")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        doc.recompute()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    seg = wall.Group[0]
+    volume = 300.0 * 2800.0 * (4000.0 * 3000.0 - 3400.0 * 2400.0)
+    h.check("W28 mixed-direction chain miters without fallback",
+            abs(seg.Shape.Volume - volume) < 1e-3
+            and len(seg.Shape.Solids) == 1
+            and not any("travel direction" in m for m in captured))
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1264,3 +1290,4 @@ def run():
     _w7_reload(doc)
     doc = h.fresh_doc()
     _w27_fallback_migration(doc)
+    _w28_mixed_direction_chain(doc)
