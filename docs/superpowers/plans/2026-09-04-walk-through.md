@@ -1,6 +1,6 @@
 # Walk Through Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** An interactive first-person walk mode for ArchPlus: click the tool, click a point on 3D geometry to place your eyes at 1.65 m, walk on floors/stairs with WASD/arrows, look by holding the right mouse button, Esc restores the saved camera.
 
@@ -52,7 +52,7 @@
 **Interfaces:**
 - Produces (used by Tasks 2–3): constants `EYE_HEIGHT=1650.0`, `WALK_SPEED=1400.0`, `RUN_SPEED=4500.0`, `STEP_UP=600.0`, `STEP_DOWN=2000.0`, `MAX_STEP=300.0`, `PITCH_LIMIT`, `TURN_SPEED`, `LOOK_SENS=0.0035`, `TICK_INTERVAL=1/30`, `DT_MAX=0.1`; functions `look_direction(yaw, pitch) -> (x, y, z)`, `clamp_pitch(p) -> float`, `move_vector(active: set, yaw, run=False) -> (vx, vy)`, `clamp_step(dx, dy) -> (dx, dy)`, `snap_target(eye_z, ground_z) -> float | None`, `turn_step(active, dt) -> float`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `archplus/tools/walk/tests/test_kinematics.py`:
 
@@ -152,12 +152,12 @@ def test_turn_step_directions():
     assert kin.turn_step(set(), 1.0) == 0.0
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [x] **Step 2: Run the tests, verify they fail**
 
 Run: `uv run --no-project --with pytest python -m pytest archplus/tools/walk/tests/test_kinematics.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'archplus.tools.walk'` (or a collection error for the missing module).
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `archplus/tools/walk/__init__.py` and `archplus/tools/walk/tests/__init__.py`: empty files.
 
@@ -252,12 +252,12 @@ def turn_step(active, dt):
     return t * TURN_SPEED * dt
 ```
 
-- [ ] **Step 4: Run the tests, verify they pass**
+- [x] **Step 4: Run the tests, verify they pass**
 
 Run: `uv run --no-project --with pytest python -m pytest archplus/tools/walk/tests/test_kinematics.py -q`
 Expected: PASS (17 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add archplus/tools/walk
@@ -276,7 +276,7 @@ git commit -m "Add Walk Through kinematics"
 - Consumes: everything from `kinematics` (Task 1).
 - Produces (used by Task 3): `WalkController(position: (x, y, z), yaw=0.0, pitch=0.0)` with attributes `position`, `yaw`, `pitch`, `active`, `run`, `looking`, `exited`; methods `on_event(ev: dict) -> None`, `advance(dt: float, ground_z: float | None) -> None`. Event dicts are exactly what `addEventCallback("SoEvent", …)` delivers (see "FreeCAD API facts").
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `archplus/tools/walk/tests/test_state.py`:
 
@@ -426,12 +426,12 @@ def test_max_step_clamped_in_advance():
     assert c.position[1] == pytest.approx(kin.MAX_STEP)
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [x] **Step 2: Run the tests, verify they fail**
 
 Run: `uv run --no-project --with pytest python -m pytest archplus/tools/walk/tests/test_state.py -q`
 Expected: FAIL — `ImportError: cannot import name 'state'` (module missing).
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 `archplus/tools/walk/state.py`:
 
@@ -548,7 +548,7 @@ Note: drag deltas accumulate only while `looking` (and position tracking continu
 Run: `uv run --no-project --with pytest python -m pytest archplus/tools/walk/tests/ -q`
 Expected: PASS (32 tests total across both files).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add archplus/tools/walk
@@ -568,7 +568,7 @@ git commit -m "Add Walk Through controller"
 
 No headless unit tests: this file is thin FreeCAD/Qt glue (callback wiring, Coin camera writes, Snapper session); its behavior is verified by the full-suite run here and the live smoke test in Task 5. The pure logic it delegates to is already tested.
 
-- [ ] **Step 1: Write `archplus/tools/walk/gui.py`**
+- [x] **Step 1: Write `archplus/tools/walk/gui.py`**
 
 ```python
 # SPDX-License-Identifier: LGPL-2.1-or-later
@@ -781,12 +781,12 @@ if "ArchPlus_WalkThrough" not in FreeCADGui.listCommands():
     FreeCADGui.addCommand("ArchPlus_WalkThrough", WalkThroughCommand())
 ```
 
-- [ ] **Step 2: Run the full suite (nothing broke; the AST-based lazy guard must stay green)**
+- [x] **Step 2: Run the full suite (nothing broke; the AST-based lazy guard must stay green)**
 
 Run: `uv run --no-project --with pytest python -m pytest -q`
 Expected: PASS — 32 walk tests plus the pre-existing suite; zero failures.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add archplus/tools/walk/gui.py
@@ -805,7 +805,7 @@ git commit -m "Add Walk Through command and walk session"
 **Interfaces:**
 - Consumes: command name `ArchPlus_WalkThrough`, module `archplus.tools.walk.gui` (Task 3).
 
-- [ ] **Step 1: Wire the command into the BIM workbench injection**
+- [x] **Step 1: Wire the command into the BIM workbench injection**
 
 In `InitGui.py`, extend the two lists (exact current content: `commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows", "ArchPlus_PartsLibrary"]` and the four `import archplus.tools.*.gui` lines in `add_ui`):
 
@@ -819,7 +819,7 @@ In `InitGui.py`, extend the two lists (exact current content: `commands = ["Arch
         import archplus.tools.walk.gui  # noqa: F401
 ```
 
-- [ ] **Step 2: Extend the lazy-import guard**
+- [x] **Step 2: Extend the lazy-import guard**
 
 In `archplus/common/tests/test_lazy_imports.py`, add `archplus.tools.walk.gui` to `MODULES`:
 
@@ -834,12 +834,12 @@ MODULES = (
 )
 ```
 
-- [ ] **Step 3: Run the full suite**
+- [x] **Step 3: Run the full suite**
 
 Run: `uv run --no-project --with pytest python -m pytest -q`
 Expected: PASS, including the updated lazy-import guard (walk/gui.py imports `math`, `time`, `FreeCAD`, `FreeCADGui`, `PySide`, and lazy `pivy.coin` — none banned).
 
-- [ ] **Step 4: Document**
+- [x] **Step 4: Document**
 
 `docs/TOOLS.md` — append at the end (match the file's heading level for tools):
 
@@ -875,7 +875,7 @@ and a bullet to **Quick start**:
   hold the right mouse button to look, Shift to run, Esc to exit.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add InitGui.py archplus/common/tests/test_lazy_imports.py docs/TOOLS.md README.md
@@ -888,12 +888,12 @@ git commit -m "Register Walk Through and document it"
 
 **Files:** none created (fix-and-amend if anything fails).
 
-- [ ] **Step 1: Full headless suite**
+- [x] **Step 1: Full headless suite**
 
 Run: `uv run --no-project --with pytest python -m pytest -q`
 Expected: PASS, zero failures.
 
-- [ ] **Step 2: Live smoke via the FreeCAD MCP**
+- [x] **Step 2: Live smoke via the FreeCAD MCP**
 
 Run through `xd://mcp__freecad_execute_code` (the RPC server runs inside the real GUI; ticks are pumped manually so the smoke is deterministic):
 
@@ -952,15 +952,15 @@ print("Walk Through smoke: OK")
 
 Expected: the script prints `Walk Through smoke: OK` with no assertion errors. If an assertion fires, fix `gui.py`/`state.py`/`kinematics.py`, re-run `pytest`, and re-run the smoke.
 
-- [ ] **Step 3: Visual check via MCP**
+- [x] **Step 3: Visual check via MCP**
 
 Call `xd://mcp__freecad_get_view` twice: once mid-walk (re-run steps 1–4, stop before `s.stop()`) and once after exit — confirm the mid-walk view is a ground-level perspective inside the model and the post-exit view matches the original camera. Clean up: `FreeCAD.closeDocument("WalkSmoke")`.
 
-- [ ] **Step 4: Manual keyboard/mouse pass (user-side, since MCP cannot inject real input)**
+- [x] **Step 4: Manual keyboard/mouse pass (user-side, since MCP cannot inject real input)**
 
 Ask the user to run once in their FreeCAD: start BIM → Walk Through → click the floor → walk/look/Esc. This exercises the real event path (Snapper pick + live QTimer + Coin redraws) that the scripted smoke bypasses.
 
-- [ ] **Step 5: No commit** — Task 5 produces evidence, not diffs. If fixes were needed, commit them with the fix description.
+- [x] **Step 5: No commit** — Task 5 produces evidence, not diffs. If fixes were needed, commit them with the fix description.
 
 ---
 
