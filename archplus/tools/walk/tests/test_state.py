@@ -70,13 +70,27 @@ def test_escape_sets_exit_flag_and_freezes_pose():
 
 
 def test_rmb_drag_right_and_up():
+    # Defaults (invert_y=True, invert_x=False): drag right turns right,
+    # drag up looks DOWN — the user-requested inverted vertical.
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event(button("DOWN"))
     c.on_event(motion(100, 100))
     c.on_event(motion(200, 50))
     c.advance(0.03)
     assert c.yaw == pytest.approx(100 * kin.LOOK_SENS)
-    assert c.pitch == pytest.approx(50 * kin.LOOK_SENS)
+    assert c.pitch == pytest.approx(-50 * kin.LOOK_SENS)
+
+
+def test_invert_toggles_restore_standard_directions():
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    c.invert_y = False
+    c.invert_x = True
+    c.on_event(button("DOWN"))
+    c.on_event(motion(100, 100))
+    c.on_event(motion(200, 50))
+    c.advance(0.03)
+    assert c.yaw == pytest.approx(-100 * kin.LOOK_SENS)   # invert_x: drag right looks left
+    assert c.pitch == pytest.approx(50 * kin.LOOK_SENS)   # standard: drag up looks up
 
 
 def test_drag_without_rmb_does_not_look():
@@ -117,7 +131,7 @@ def test_pitch_clamped_at_limit():
     c.on_event(motion(0, 0))
     c.on_event(motion(0, 100000))
     c.advance(0.03)
-    assert c.pitch == pytest.approx(-kin.PITCH_LIMIT)
+    assert c.pitch == pytest.approx(kin.PITCH_LIMIT)
 
 
 def test_shift_down_runs():
@@ -192,3 +206,32 @@ def test_wheel_accumulates_and_respects_clamp():
     c.on_event({"Type": "SoMouseWheelEvent", "Delta": 10})
     c.advance(0.03)
     assert c.position[1] == pytest.approx(kin.MAX_STEP)
+
+
+def test_eye_height_parameter_sets_snap_target():
+    c = state.WalkController((0.0, 0.0, 1500.0))
+    c.eye_height = 1000.0
+    c.advance(0.03, ground_z=500.0)
+    assert c.position[2] == pytest.approx(1500.0)
+
+
+    # Clicked a storey-2 wall face at z=3500 (eye lands there); gui locks
+    # the ground at the implied feet level 1850. The down-ray finds the
+    # floor-1 slab at z=200 — far below, so the eye holds instead of
+    # snapping down to the first floor.
+    c = state.WalkController((0.0, 0.0, 3500.0))
+    c.ground_level = 1850.0
+    c.advance(0.03, ground_z=200.0)
+    assert c.position[2] == pytest.approx(3500.0)
+    assert c.ground_level == 1850.0
+
+
+def test_ground_lock_releases_when_geometry_reaches_the_level():
+    # Floor pick at 2800: lock = 2800 - 1650 = 1150; the down-ray hit is
+    # the slab top itself, so the lock releases immediately and normal
+    # following keeps the eye at hit + eye height.
+    c = state.WalkController((0.0, 0.0, 4450.0))
+    c.ground_level = 1150.0
+    c.advance(0.03, ground_z=2800.0)
+    assert c.ground_level is None
+    assert c.position[2] == pytest.approx(4450.0)

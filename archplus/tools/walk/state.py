@@ -37,6 +37,10 @@ class WalkController:
         self.run = False          # Shift held (from ShiftDown)
         self.looking = False      # right mouse button held
         self.exited = False       # set on Escape, read by the tick
+        self.eye_height = kin.EYE_HEIGHT   # live-settable from the panel
+        self.invert_y = True      # drag up looks down (user preference)
+        self.invert_x = False     # drag right looks right
+        self.ground_level = None  # clicked level governs until real ground
         self._mdx = 0             # unconsumed mouse drag delta, px
         self._mdy = 0
         self._last_mouse = None   # last Location2 position, for deltas
@@ -97,8 +101,11 @@ class WalkController:
         if self.exited:
             return
         if self.looking:
-            self.yaw += self._mdx * kin.LOOK_SENS
-            self.pitch = kin.clamp_pitch(self.pitch - self._mdy * kin.LOOK_SENS)
+            yaw_dir = -1 if self.invert_x else 1
+            pitch_dir = 1 if self.invert_y else -1
+            self.yaw += yaw_dir * self._mdx * kin.LOOK_SENS
+            self.pitch = kin.clamp_pitch(
+                self.pitch + pitch_dir * self._mdy * kin.LOOK_SENS)
         self._mdx = 0
         self._mdy = 0
         self.yaw += kin.turn_step(self.active, dt)
@@ -111,7 +118,18 @@ class WalkController:
         x += dx
         y += dy
         if ground_z is not None:
-            target = kin.snap_target(z, ground_z)
-            if target is not None:
-                z = target
+            # A storey without a slab: the down-ray finds the floor one or
+            # two storeys below the clicked level. The pick therefore locks
+            # the ground at the implied feet level (click z - eye height);
+            # while locked, snapping is refused, and the lock releases once
+            # real geometry comes within one step of the implied level.
+            if self.ground_level is not None:
+                if ground_z >= self.ground_level - kin.STEP_UP:
+                    self.ground_level = None
+                else:
+                    ground_z = None
+            if ground_z is not None:
+                target = kin.snap_target(z, ground_z, self.eye_height)
+                if target is not None:
+                    z = target
         self.position = (x, y, z)

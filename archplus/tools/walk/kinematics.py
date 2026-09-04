@@ -67,14 +67,14 @@ def clamp_step(dx, dy):
     return (dx * k, dy * k)
 
 
-def snap_target(eye_z, ground_z):
+def snap_target(eye_z, ground_z, eye_height=EYE_HEIGHT):
     """Eye z for a ground hit, or None when the snap must be refused.
 
     Refusal (keep the current height) covers walking off a ledge and any
     ground jump larger than the stair tolerances: the eye then holds its
     height instead of teleporting or sinking.
     """
-    target = ground_z + EYE_HEIGHT
+    target = ground_z + eye_height
     rise = target - eye_z
     if rise > STEP_UP:
         return None
