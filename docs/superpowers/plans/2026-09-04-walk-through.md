@@ -915,8 +915,7 @@ saved_camera = view.getCamera()
 saved_type = view.getCameraType()
 
 # 1. Start: eye on the floor at (500, 500), facing +Y.
-gui._start_walk(view, FreeCAD.Vector(500, 500, 0), face=None)
-s = gui._MODE
+gui._start_walk(view, FreeCAD.Vector(500, 500, 200), face=None)  # z=200: the floor's top face, as a real pick would return
 assert s is not None and s.controller.position == (500.0, 500.0, 1850.0), s.controller.position
 
 # 2. One tick with ground under the eye: height snaps to 200 + 1650.
