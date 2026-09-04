@@ -54,6 +54,7 @@ class WalkSession:
         FreeCAD.Console.PrintMessage(ACTIVE_HINT + "\n")
 
     def stop(self):
+        global _MODE
         if _MODE is not self:
             return
         self._timer.stop()
@@ -66,7 +67,6 @@ class WalkSession:
             self.view.setCameraType(self._saved_type)
         except Exception:
             pass  # view already gone
-        global _MODE
         _MODE = None
         FreeCAD.Console.PrintMessage("ArchPlus Walk Through: exited.\n")
 
