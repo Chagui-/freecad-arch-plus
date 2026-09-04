@@ -54,6 +54,8 @@ class WalkSession:
         FreeCAD.Console.PrintMessage(ACTIVE_HINT + "\n")
 
     def stop(self):
+        if _MODE is not self:
+            return
         self._timer.stop()
         try:
             self.view.removeEventCallback("SoEvent", self._on_event)
@@ -99,7 +101,7 @@ class WalkSession:
             self._teardown_only()
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
-            self._teardown_only()
+            self.stop()
 
     def _teardown_only(self):
         """Stop the mode WITHOUT touching the (possibly dead) view."""
@@ -191,6 +193,8 @@ class WalkThroughCommand:
                     picked["face"] = None
                 else:
                     picked["face"] = [o, fi]
+            else:
+                picked["face"] = None
 
         def _place(point=None, obj=None):
             FreeCADGui.Snapper.off()

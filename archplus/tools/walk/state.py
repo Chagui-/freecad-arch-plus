@@ -64,12 +64,16 @@ class WalkController:
                     self._mdy = 0
         elif etype == "SoLocation2Event":
             pos = ev.get("Position")
-            if pos:
-                x, y = int(pos[0]), int(pos[1])
-                if self._last_mouse is not None:
-                    self._mdx += x - self._last_mouse[0]
-                    self._mdy += y - self._last_mouse[1]
-                self._last_mouse = (x, y)
+            if not pos:
+                return
+            x, y = int(pos[0]), int(pos[1])
+            # Accumulate drag deltas only while looking; still track the
+            # position so a fresh RMB press starts measuring from where it
+            # happened (no jump from hover movement before the press).
+            if self.looking and self._last_mouse is not None:
+                self._mdx += x - self._last_mouse[0]
+                self._mdy += y - self._last_mouse[1]
+            self._last_mouse = (x, y)
         # ShiftDown is carried on every event; track it regardless of type.
         self.run = bool(ev.get("ShiftDown"))
 

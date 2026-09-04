@@ -100,6 +100,17 @@ def test_released_rmb_leaves_no_stale_jump():
     assert c.yaw == 0.0
 
 
+def test_hover_before_rmb_press_does_not_jump():
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    c.on_event(motion(100, 100))
+    c.on_event(motion(300, 40))          # hover while not looking
+    c.on_event(button("DOWN"))
+    c.on_event(motion(360, 40))          # first drag after the press
+    c.advance(0.03)
+    assert c.yaw == pytest.approx(60 * kin.LOOK_SENS)
+    assert c.pitch == 0.0
+
+
 def test_pitch_clamped_at_limit():
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event(button("DOWN"))
