@@ -47,8 +47,9 @@ BIM workbench → **ArchPlus** toolbar:
   library tab, edit its parameters, then click **Place** and click a floor
   or wall face to insert it. Right-click a placed part → **Reload from
   library** to refresh it from its manifest.
-- **Walk Through** → click a point in the 3D view → walk with WASD/arrows,
-  hold the right mouse button to look, Shift to run, Esc to exit.
+- **Walk Through** → click a point in the 3D view → walk with WASD/arrows
+  or the mouse wheel, hold the right mouse button to look, Shift to run,
+  Esc to exit.
 
 ## Documentation
 

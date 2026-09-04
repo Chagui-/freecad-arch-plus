@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- first-person eye, 1.65 m above the ground -->
+  <g fill="none" stroke="#1a5fb4" stroke-width="3" stroke-linejoin="round">
+    <path fill="#cfe3ff" d="M10 26 Q32 8 54 26 Q32 44 10 26 Z"/>
+    <circle cx="32" cy="26" r="6" fill="#1a5fb4" stroke="none"/>
+  </g>
+  <!-- eye drops to the floor; the floor carries you forward -->
+  <g stroke="#2ec27e" stroke-width="3" stroke-linecap="round">
+    <line x1="32" y1="42" x2="32" y2="52"/>
+    <line x1="8" y1="56" x2="44" y2="56"/>
+    <line x1="44" y1="56" x2="56" y2="56"/>
+  </g>
+  <path fill="#2ec27e" d="M44 52 L44 60 L56 56 Z"/>
+</svg>

@@ -12,6 +12,8 @@ constants ("UP_ARROW", "ESCAPE") pass through unchanged. Shift is reported
 as ShiftDown on every event and tracked regardless of event type.
 """
 
+import math
+
 from . import kinematics as kin
 
 KEYMAP = {
@@ -38,6 +40,7 @@ class WalkController:
         self._mdx = 0             # unconsumed mouse drag delta, px
         self._mdy = 0
         self._last_mouse = None   # last Location2 position, for deltas
+        self._wheel = 0           # unconsumed wheel notches (mouse walking)
 
     def on_event(self, ev):
         """Consume one event dict; never raises on unknown events."""
@@ -56,12 +59,20 @@ class WalkController:
                     elif kstate == "UP":
                         self.active.discard(action)
         elif etype == "SoMouseButtonEvent":
-            if ev.get("Button") == "BUTTON3":
+            # Coin's mouse-button numbering is platform-dependent (the
+            # right button is BUTTON2 on Windows, BUTTON3 on X11); during a
+            # walk both mean "look" — pan and zoom are meaningless anyway.
+            if ev.get("Button") in ("BUTTON2", "BUTTON3"):
                 self.looking = ev.get("State") == "DOWN"
                 if not self.looking:
                     self._last_mouse = None
                     self._mdx = 0
-                    self._mdy = 0
+        elif etype == "SoMouseWheelEvent":
+            # Mouse-only walking (no keyboard needed): each notch steps
+            # forward/back along the current view heading.
+            delta = ev.get("Delta")
+            if delta:
+                self._wheel += 1 if delta > 0 else -1
         elif etype == "SoLocation2Event":
             pos = ev.get("Position")
             if not pos:
@@ -92,7 +103,10 @@ class WalkController:
         self._mdy = 0
         self.yaw += kin.turn_step(self.active, dt)
         vx, vy = kin.move_vector(self.active, self.yaw, self.run)
-        dx, dy = kin.clamp_step(vx * dt, vy * dt)
+        wx = math.sin(self.yaw) * self._wheel * kin.WHEEL_STEP
+        wy = math.cos(self.yaw) * self._wheel * kin.WHEEL_STEP
+        self._wheel = 0
+        dx, dy = kin.clamp_step(vx * dt + wx, vy * dt + wy)
         x, y, z = self.position
         x += dx
         y += dy

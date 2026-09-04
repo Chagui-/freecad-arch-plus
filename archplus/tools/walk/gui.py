@@ -6,15 +6,19 @@ Click the tool, click a point on 3D geometry to place your eyes (point +
 right mouse button and move to look, Shift runs, Esc (or clicking the tool
 again) exits and restores the saved camera.
 
-Architecture: a per-view event callback only RECORDS input into a pure
-WalkController (see state.py); a 30 Hz QTimer tick integrates the pose and
-rewrites the Coin camera each frame — the tick's camera overwrite is what
-masks FreeCAD's own right-mouse orbit while RMB is repurposed for looking.
-The ground under the eye is found with ActiveView.getObjectInfoRay() (a
-vertical down-ray), so the eye rides floors and stairs.
+Input capture: the viewer's normal dispatch routes every event except ESC/Q
+keys straight to the navigation style, so walk mode enables the viewer's
+scene-graph event redirection and swallows events on a scene-level
+SoEventCallback node — the input callback sees the full stream and native
+orbit/zoom never fight the per-tick camera rewrite (see
+_start_input_capture). The tick still integrates the pose and rewrites the
+Coin camera each frame; the ground under the eye is found with
+ActiveView.getObjectInfoRay() (a vertical down-ray), so the eye rides
+floors and stairs.
 """
 
 import math
+import os
 import time
 
 import FreeCAD
@@ -24,12 +28,15 @@ from PySide import QtCore
 from . import kinematics as kin
 from . import state as walk_state
 
+_DIR = os.path.dirname(__file__)     # archplus/tools/walk/, for resources/
+ICON = os.path.join(_DIR, "resources", "icons", "WalkThrough.svg")
+
 _MODE = None  # the active WalkSession, or None
 
 PICK_HINT = ("ArchPlus Walk Through: click a point in the 3D view to start "
              "walking.")
-ACTIVE_HINT = ("ArchPlus Walk Through: WASD/arrows move, hold right-mouse "
-               "to look, Shift run, Esc exit.")
+ACTIVE_HINT = ("ArchPlus Walk Through: WASD/arrows or wheel to move, hold "
+               "right-mouse to look, Shift run, Esc exit.")
 
 
 class WalkSession:
@@ -48,6 +55,7 @@ class WalkSession:
     def start(self):
         self.view.setCameraType(1)  # perspective (0 = orthographic)
         self.view.addEventCallback("SoEvent", self._on_event)
+        self._start_input_capture()
         self._last_t = time.monotonic()
         self._timer.start()
         self._apply_camera()
@@ -57,7 +65,7 @@ class WalkSession:
         global _MODE
         if _MODE is not self:
             return
-        self._timer.stop()
+        self._stop_input_capture()
         try:
             self.view.removeEventCallback("SoEvent", self._on_event)
         except Exception:
@@ -81,6 +89,49 @@ class WalkSession:
             FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
             self.controller.exited = True
             QtCore.QTimer.singleShot(0, self.stop)
+
+    def _start_input_capture(self):
+        """Route 3D-view events through the scene graph and swallow them.
+
+        The viewer's normal dispatch hands EVERY event except ESC/Q keys
+        straight to the navigation style, bypassing scene-graph callbacks
+        entirely (View3DInventorViewer::processSoEvent) — walk input would
+        never arrive and the native orbit would fight the per-tick camera
+        rewrite. With event redirection enabled, our scene-level
+        SoEventCallback node marks every event handled: the input callback
+        above receives the full stream (keys, Shift, mouse), and the
+        navigation style is never triggered while walking.
+        """
+        from pivy import coin
+
+        viewer = self.view.getViewer()
+        self._saved_redir = viewer.isRedirectedToSceneGraph()
+        viewer.setRedirectToSceneGraph(True)
+        self._swallow = coin.SoEventCallback()
+        self._swallow.addEventCallback(
+            coin.SoEvent.getClassTypeId(), self._swallow_event)
+        viewer.getSceneGraph().addChild(self._swallow)
+
+    def _swallow_event(self, userdata, node):
+        """Scene-graph callback: mark every event handled while walking.
+
+        Fires AFTER the input-recording callback (the viewer's own event
+        node sits earlier in the traversal), so marking the event handled
+        only stops the navigation style from reacting to it.
+        """
+        node.setHandled()
+
+    def _stop_input_capture(self):
+        try:
+            self.view.getViewer().getSceneGraph().removeChild(self._swallow)
+        except Exception:
+            pass  # view/scene already gone
+        try:
+            self.view.getViewer().setRedirectToSceneGraph(self._saved_redir)
+        except Exception:
+            pass  # view already gone
+        self._swallow = None
+
 
     def _tick(self):
         now = time.monotonic()
@@ -157,7 +208,8 @@ class WalkThroughCommand:
     """Toolbar/menu command: toggles the walk mode."""
 
     def GetResources(self):
-        return {"MenuText": "Walk Through",
+        return {"Pixmap": ICON,
+                "MenuText": "Walk Through",
                 "ToolTip": ("First-person walk: click a point to place your "
                             "eyes, WASD to move, hold right-mouse to look, "
                             "Esc to exit")}

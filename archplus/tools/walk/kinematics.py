@@ -27,7 +27,7 @@ TURN_SPEED = math.radians(120.0)  # rad/s for the arrow turn keys
 LOOK_SENS = 0.0035         # rad per pixel of right-mouse drag
 TICK_INTERVAL = 1.0 / 30.0  # s; the Qt timer period (30 Hz)
 DT_MAX = 0.1               # s; clamp so a stall cannot teleport the camera
-
+WHEEL_STEP = 300.0        # mm per wheel notch (mouse-only walking)
 
 def look_direction(yaw, pitch):
     """Unit look direction (x, y, z) for a yaw/pitch pair."""

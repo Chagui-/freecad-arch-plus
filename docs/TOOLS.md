@@ -152,8 +152,13 @@ you in front of it). Then:
 
 - **W/S** or **Up/Down** — move forward/back · **A/D** — strafe
 - **Left/Right** — turn · **hold Right-mouse + move** — look around
+- **Mouse wheel** — step forward/back along the view heading (mouse-only
+  alternative to the keyboard)
 - **Shift** — run · **Esc** (or clicking the tool again) — exit and restore
   the camera
+
+While walking, the wheel and mouse buttons drive the walk mode itself, so
+native orbit/zoom/pan are suspended until you exit.
 
 The camera follows the ground: floors and stairs raise/lower your eyes
 within a ±0.6 m / 2 m step tolerance; over gaps or big drops the height is

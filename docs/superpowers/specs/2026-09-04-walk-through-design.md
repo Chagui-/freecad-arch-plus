@@ -61,7 +61,7 @@ Two-phase start (same pick pattern as Doors/Windows/Parts Library):
 | ← / → | turn (yaw) |
 | Hold RMB + move mouse | free look (yaw + pitch) |
 | Shift | run (higher speed) |
-| Wheel | zoom (unchanged, harmless) |
+| Wheel | step forward/back along the view heading (mouse-only walking; added 2026-09-04 after live testing, user-requested fallback) |
 | Esc | exit walk mode |
 
 Pitch clamped to ±85°.

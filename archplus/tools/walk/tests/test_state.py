@@ -152,3 +152,43 @@ def test_max_step_clamped_in_advance():
     c.on_event(key("w"))
     c.advance(10.0)                # absurd dt must not teleport
     assert c.position[1] == pytest.approx(kin.MAX_STEP)
+
+
+def test_button2_is_the_look_button_on_windows():
+    # Coin numbers mouse buttons platform-dependently: right button is
+    # BUTTON2 on Windows, BUTTON3 on X11. Both must toggle looking.
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    c.on_event(button("DOWN", btn="BUTTON2"))
+    assert c.looking is True
+    c.on_event(motion(100, 100))
+    c.on_event(motion(200, 100))
+    c.advance(0.03)                # consume the drag before releasing
+    assert c.yaw == pytest.approx(100 * kin.LOOK_SENS)
+    c.on_event(button("UP", btn="BUTTON2"))
+    assert c.looking is False
+
+
+def test_wheel_steps_walk_forward():
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    for _ in range(3):                 # one notch (Delta 1) per event/tick
+        c.on_event({"Type": "SoMouseWheelEvent", "Delta": 1})
+        c.advance(0.03)
+    assert c.position[:2] == pytest.approx((0.0, 3 * kin.WHEEL_STEP))
+    assert c.position[2] == pytest.approx(1650.0)
+
+
+def test_wheel_back_steps_toward_view():
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    for _ in range(2):
+        c.on_event({"Type": "SoMouseWheelEvent", "Delta": -1})
+        c.advance(0.03)
+    assert c.position[1] == pytest.approx(-2 * kin.WHEEL_STEP)
+
+
+def test_wheel_accumulates_and_respects_clamp():
+    # A fast scroll piles up notches between ticks; the per-tick
+    # displacement clamp still bounds the step.
+    c = state.WalkController((0.0, 0.0, 1650.0))
+    c.on_event({"Type": "SoMouseWheelEvent", "Delta": 10})
+    c.advance(0.03)
+    assert c.position[1] == pytest.approx(kin.MAX_STEP)
