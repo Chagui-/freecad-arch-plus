@@ -286,10 +286,17 @@ class _WalkKeyFilter(QtCore.QObject):
             return False
         # Only keys aimed at the walked view (the viewer widget, its GL
         # canvas child, or the focus holder); the whole rest of the app
-        # passes through untouched.
-        if not (obj is self._viewer_widget
-                or obj.parentWidget() is self._viewer_widget
-                or QtGui.QApplication.focusWidget() is self._viewer_widget):
+        # passes through untouched. Native delivery may target a bare
+        # QWindow or other non-widget object — treat anything that is not
+        # a widget as not-ours instead of crashing on it.
+        try:
+            aimed = (obj is self._viewer_widget
+                     or (isinstance(obj, QtGui.QWidget)
+                         and obj.parentWidget() is self._viewer_widget)
+                     or QtGui.QApplication.focusWidget() is self._viewer_widget)
+        except Exception:
+            aimed = False
+        if not aimed:
             return False
         if event.isAutoRepeat():
             return True            # held-key repeats must not toggle state
@@ -519,6 +526,15 @@ class WalkThroughCommand:
         picked = {"face": None}
         human = _HumanPreview(view)
         human.on()
+        # The Draft Snapper projects picks onto the working plane and snaps
+        # to vertices/grid — after placing doors on floor 1 the plane sits
+        # there, so a click on the 2nd-floor slab would come back at
+        # floor-1 height. For walk placement the raw cursor ray is the
+        # semantic you want: aim where you click. Save and restore the
+        # user's snap modes around the pick.
+        snapper = FreeCADGui.Snapper
+        saved_snaps = list(snapper.active_snaps)
+        snapper.active_snaps = []
 
         def _move(point, info):
             if info and "Face" in info.get("Component", ""):
@@ -536,6 +552,7 @@ class WalkThroughCommand:
 
         def _place(point=None, obj=None):
             FreeCADGui.Snapper.off()
+            snapper.active_snaps = saved_snaps
             human.off()
             if point is None:
                 return  # cancelled

@@ -148,7 +148,10 @@ in the `DOORS`, `WINDOWS` and `STAIRS` lists at the top of the script.
 First-person mode for inspecting a model at eye height. Click **Walk
 Through**, then click a point on any 3D geometry: the camera starts there,
 1.65 m along the picked face's normal (a floor puts you on it, a wall puts
-you in front of it). Then:
+you in front of it). A small figure shows where you will stand while you
+aim; placement ignores snap modes and always uses the surface under the
+cursor, so a click on a 2nd-floor slab starts you there even when the
+working plane still sits at floor-1 height. Then:
 
 - **W/S** or **Up/Down** — move forward/back · **A/D** — strafe
 - **Left/Right** — turn · **hold Right-mouse + move** — look around
