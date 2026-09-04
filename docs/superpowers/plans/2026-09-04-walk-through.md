@@ -305,9 +305,9 @@ def button(st, btn="BUTTON3"):
 def test_wasd_forward_moves_toward_look_direction():
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event(key("w"))
-    c.advance(1.0)
+    c.advance(0.05)                # one 50 ms tick: 1400 mm/s * 0.05 s
     x, y, z = c.position
-    assert (x, y) == pytest.approx((0.0, 1400.0))
+    assert (x, y) == pytest.approx((0.0, 70.0))
     assert z == pytest.approx(1650.0)
 
 
@@ -317,24 +317,24 @@ def test_uppercase_w_with_shift_runs_forward():
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event({"Type": "SoKeyboardEvent", "Key": "W", "State": "DOWN",
                 "ShiftDown": True})
-    c.advance(1.0)
-    assert c.position[1] == pytest.approx(kin.RUN_SPEED)
+    c.advance(0.05)
+    assert c.position[1] == pytest.approx(225.0)   # 4500 mm/s * 0.05 s
 
 
 def test_arrow_key_is_forward():
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event(key("UP_ARROW"))
-    c.advance(1.0)
-    assert c.position[1] == pytest.approx(kin.WALK_SPEED)
+    c.advance(0.05)
+    assert c.position[1] == pytest.approx(70.0)    # 1400 mm/s * 0.05 s
 
 
 def test_key_release_stops_motion():
     c = state.WalkController((0.0, 0.0, 1650.0))
     c.on_event(key("w"))
-    c.advance(0.5)
+    c.advance(0.05)
     c.on_event(key("w", "UP"))
-    c.advance(0.5)
-    assert c.position[1] == pytest.approx(700.0)
+    c.advance(0.05)
+    assert c.position[1] == pytest.approx(70.0)
 
 
 def test_arrow_turn_rotates_heading():
@@ -397,8 +397,8 @@ def test_shift_down_runs():
     c.on_event(key("w"))
     c.on_event({"Type": "SoKeyboardEvent", "Key": "SHIFT", "State": "DOWN",
                 "ShiftDown": True})
-    c.advance(1.0)
-    assert c.position[1] == pytest.approx(kin.RUN_SPEED)
+    c.advance(0.05)
+    assert c.position[1] == pytest.approx(225.0)   # 4500 mm/s * 0.05 s
 
 
 def test_ground_snap_rides_stairs():
@@ -506,7 +506,10 @@ class WalkController:
             if not pos:
                 return
             x, y = int(pos[0]), int(pos[1])
-            if self._last_mouse is not None:
+            # Accumulate drag deltas only while looking; still track the
+            # position so a fresh RMB press starts measuring from where it
+            # happened (no jump from hover movement before the press).
+            if self.looking and self._last_mouse is not None:
                 self._mdx += x - self._last_mouse[0]
                 self._mdy += y - self._last_mouse[1]
             self._last_mouse = (x, y)
@@ -539,9 +542,8 @@ class WalkController:
         self.position = (x, y, z)
 ```
 
-Note: drag deltas accumulate on every motion event but are applied only while `looking` — the RMB-up reset of `_mdx/_mdy/_last_mouse` is what keeps `test_released_rmb_leaves_no_stale_jump` green.
 
-- [ ] **Step 4: Run the tests, verify they pass**
+Note: drag deltas accumulate only while `looking` (and position tracking continues regardless), so hover movement before an RMB press can never leak into a look-jump; the RMB-up reset of `_mdx/_mdy/_last_mouse` keeps `test_released_rmb_leaves_no_stale_jump` green.
 
 Run: `uv run --no-project --with pytest python -m pytest archplus/tools/walk/tests/ -q`
 Expected: PASS (32 tests total across both files).
@@ -921,13 +923,11 @@ assert s is not None and s.controller.position == (500.0, 500.0, 1850.0), s.cont
 s._tick()
 assert s.controller.position[2] == 1850.0, s.controller.position
 
-# 3. Walk forward exactly 0.5 s worth (drive the controller directly; no
-#    _tick here, so no double movement).
+# 3. Walk forward exactly one 50 ms tick worth (drive the controller
+#    directly; no _tick here, so no double movement).
 s.controller.on_event({"Type": "SoKeyboardEvent", "Key": "w", "State": "DOWN"})
-s.controller.advance(0.5)
-assert s.controller.position[1] == 500.0 + 700.0, s.controller.position
-
-# 4. Release the key, then check the ground snap onto the step (top 370).
+s.controller.advance(0.05)
+assert s.controller.position[1] == 500.0 + 70.0, s.controller.position
 s.controller.on_event({"Type": "SoKeyboardEvent", "Key": "w", "State": "UP"})
 s.controller.position = (4500.0, 500.0, 1850.0)
 s._tick()
