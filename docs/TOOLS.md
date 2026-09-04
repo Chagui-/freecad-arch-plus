@@ -142,3 +142,20 @@ It needs a GUI session (the offscreen renderer wants a GL context),
 overwrites the generated layout images in `docs/images/` (the dialog
 screenshots are hand-captured and untouched), and the layouts to render live
 in the `DOORS`, `WINDOWS` and `STAIRS` lists at the top of the script.
+
+## Walk Through
+
+First-person mode for inspecting a model at eye height. Click **Walk
+Through**, then click a point on any 3D geometry: the camera starts there,
+1.65 m along the picked face's normal (a floor puts you on it, a wall puts
+you in front of it). Then:
+
+- **W/S** or **Up/Down** — move forward/back · **A/D** — strafe
+- **Left/Right** — turn · **hold Right-mouse + move** — look around
+- **Shift** — run · **Esc** (or clicking the tool again) — exit and restore
+  the camera
+
+The camera follows the ground: floors and stairs raise/lower your eyes
+within a ±0.6 m / 2 m step tolerance; over gaps or big drops the height is
+held. Movement is view-only — nothing in the document changes, and the
+camera/projection you had before is restored on exit.
