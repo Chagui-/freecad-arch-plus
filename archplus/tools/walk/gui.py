@@ -1,20 +1,28 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """Walk Through — interactive first-person walk mode (ArchPlus).
 
-Click the tool, click a point on 3D geometry to place your eyes (point +
-1.65 m along the picked face normal), then walk: WASD/arrows move, hold the
-right mouse button and move to look, Shift runs, Esc (or clicking the tool
-again) exits and restores the saved camera.
+Mouse-only by user decision: click the tool, aim the human figure at a
+point on 3D geometry (left click places your eyes there, point + 1.65 m
+along the picked face normal), then walk with the mouse wheel (each notch
+steps forward/back along the view heading) and look by holding the right
+mouse button. The toolbar toggle or the panel's Exit button ends the walk
+and restores the saved camera.
 
-Input capture: the viewer's normal dispatch routes every event except ESC/Q
-keys straight to the navigation style, so walk mode enables the viewer's
-scene-graph event redirection and swallows events on a scene-level
-SoEventCallback node — the input callback sees the full stream and native
-orbit/zoom never fight the per-tick camera rewrite (see
+Input capture: the viewer's normal dispatch hands every event straight to
+the navigation style, bypassing scene-graph callbacks — so walk mode
+enables the viewer's scene-graph event redirection and swallows events on
+a scene-level SoEventCallback node; the input callback sees the full mouse
+stream and native orbit/zoom never fight the per-tick camera rewrite (see
 _start_input_capture). The tick still integrates the pose and rewrites the
 Coin camera each frame; the ground under the eye is found with
 ActiveView.getObjectInfoRay() (a vertical down-ray), so the eye rides
 floors and stairs.
+
+Placement does NOT use Draft's Snapper: the Snapper projects the cursor
+ray onto the working plane unconditionally (getApparentPoint), which pins
+picks to the plane's height — after placing doors on floor 1, a click on
+the 2nd-floor slab would land at floor-1 height. _WalkPickFilter instead
+reads the true scene hit under the cursor via ActiveView.getObjectInfo().
 """
 
 import math
@@ -31,16 +39,28 @@ from . import state as walk_state
 _DIR = os.path.dirname(__file__)     # archplus/tools/walk/, for resources/
 ICON = os.path.join(_DIR, "resources", "icons", "WalkThrough.svg")
 
-_MODE = None  # the active WalkSession, or None
+_MODE = None   # the active WalkSession, or None
+_PICK = None   # the active _WalkPickFilter (placement phase), or None
 
-PICK_HINT = ("ArchPlus Walk Through: click a point in the 3D view to start "
-             "walking.")
-ACTIVE_HINT = ("ArchPlus Walk Through: WASD/arrows or wheel to move, hold "
-               "right-mouse to look, Shift run, Esc exit.")
+PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click a point "
+             "in the 3D view to start walking.")
+ACTIVE_HINT = ("ArchPlus Walk Through: wheel to move, hold right-mouse to "
+               "look, click the tool again to exit.")
 
 # Live settings, shared between the task panel and every session in this
 # FreeCAD run. Defaults honour the user's tested preferences.
 _SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False}
+
+
+def _find_viewer_widget():
+    best = None
+    for w in QtGui.QApplication.allWidgets():
+        if (w.isVisible()
+                and w.metaObject().className() == "Gui::View3DInventorViewer"):
+            if (best is None
+                    or w.width() * w.height() > best.width() * best.height()):
+                best = w
+    return best
 
 
 class WalkSession:
@@ -58,14 +78,11 @@ class WalkSession:
         self._timer.setInterval(int(round(1000.0 * kin.TICK_INTERVAL)))
         self._timer.timeout.connect(self._tick)
         self._last_t = time.monotonic()
-        self._key_filter = None
-        self._key_filter_widget = None
 
     def start(self):
         self.view.setCameraType(1)  # perspective (0 = orthographic)
         self.view.addEventCallback("SoEvent", self._on_event)
         self._start_input_capture()
-        self._install_key_filter()
         self._last_t = time.monotonic()
         self._timer.start()
         self._apply_camera()
@@ -76,7 +93,6 @@ class WalkSession:
         if _MODE is not self:
             return
         self._stop_input_capture()
-        self._remove_key_filter()
         try:
             self.view.removeEventCallback("SoEvent", self._on_event)
         except Exception:
@@ -96,26 +112,20 @@ class WalkSession:
     def _on_event(self, ev):
         try:
             self.controller.on_event(ev)
-            if self.controller.exited:
-                # Removing the callback from inside its own callback is not
-                # safe; defer the teardown to the next event-loop pass.
-                QtCore.QTimer.singleShot(0, self.stop)
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
-            self.controller.exited = True
-            QtCore.QTimer.singleShot(0, self.stop)
 
     def _start_input_capture(self):
         """Route 3D-view events through the scene graph and swallow them.
 
-        The viewer's normal dispatch hands EVERY event except ESC/Q keys
-        straight to the navigation style, bypassing scene-graph callbacks
-        entirely (View3DInventorViewer::processSoEvent) — walk input would
-        never arrive and the native orbit would fight the per-tick camera
+        The viewer's normal dispatch hands EVERY event straight to the
+        navigation style, bypassing scene-graph callbacks entirely
+        (View3DInventorViewer::processSoEvent) — walk input would never
+        arrive and the native orbit would fight the per-tick camera
         rewrite. With event redirection enabled, our scene-level
         SoEventCallback node marks every event handled: the input callback
-        above receives the full stream (keys, Shift, mouse), and the
-        navigation style is never triggered while walking.
+        above receives the full mouse stream (buttons, motion, wheel), and
+        the navigation style is never triggered while walking.
         """
         from pivy import coin
 
@@ -136,69 +146,6 @@ class WalkSession:
         """
         node.setHandled()
 
-    def qt_key(self, event, state):
-        """Feed one Qt key event to the controller as a FreeCAD-style dict.
-
-        Returns True when the key belongs to the walk mode (the filter must
-        consume it), False when FreeCAD should handle it normally.
-        """
-        key = _WalkKeyFilter._KEYS.get(event.key())
-        if key is None:
-            return False
-        self.controller.on_event({
-            "Type": "SoKeyboardEvent", "Key": key, "State": state,
-            "ShiftDown": bool(event.modifiers() & QtCore.Qt.ShiftModifier),
-        })
-        if self.controller.exited:
-            QtCore.QTimer.singleShot(0, self.stop)
-        return True
-
-    def _install_key_filter(self):
-        """Capture keyboard at the APPLICATION level while walking.
-
-        A FreeCAD application filter consumes plain key presses before any
-        per-widget filter or the 3D view can react (verified live: a probe
-        on the viewer widget never saw KeyPress). Our application-level
-        filter is called before that one, so it sees and consumes mapped
-        keys first — scoped to the walked view only.
-        """
-        self._key_filter_widget = self._find_viewer_widget()
-        if self._key_filter_widget is None:
-            return
-        self._key_filter = _WalkKeyFilter(self, self._key_filter_widget)
-        QtGui.QApplication.instance().installEventFilter(self._key_filter)
-
-    @staticmethod
-    def _find_viewer_widget():
-        best = None
-        for w in QtGui.QApplication.allWidgets():
-            if (w.isVisible()
-                    and w.metaObject().className() == "Gui::View3DInventorViewer"):
-                if (best is None
-                        or w.width() * w.height() > best.width() * best.height()):
-                    best = w
-        return best
-
-    def _remove_key_filter(self):
-        if self._key_filter is not None:
-            try:
-                QtGui.QApplication.instance().removeEventFilter(self._key_filter)
-            except Exception:
-                pass  # app already gone
-        self._key_filter = None
-        self._key_filter_widget = None
-    @staticmethod
-    def _find_viewer_widget():
-        best = None
-        for w in QtGui.QApplication.allWidgets():
-            if (w.isVisible()
-                    and w.metaObject().className() == "Gui::View3DInventorViewer"):
-                if (best is None
-                        or w.width() * w.height() > best.width() * best.height()):
-                    best = w
-        return best
-
-
     def _stop_input_capture(self):
         try:
             self.view.getViewer().getSceneGraph().removeChild(self._swallow)
@@ -210,7 +157,6 @@ class WalkSession:
             pass  # view already gone
         self._swallow = None
 
-
     def _tick(self):
         now = time.monotonic()
         dt = min(now - self._last_t, kin.DT_MAX)
@@ -221,16 +167,13 @@ class WalkSession:
                 FreeCAD.Vector(x, y, z), FreeCAD.Vector(0, 0, -1))
             ground = info["PickedPoint"].z if info else None
             self.controller.advance(dt, ground)
-            if self.controller.exited:
-                self.stop()
-                return
             self._apply_camera()
         except RuntimeError:
             # The view wrapper died (document closed / workbench switch).
             self._teardown_only()
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
-            self.stop()
+            self._teardown_only()
 
     def _teardown_only(self):
         """Stop the mode WITHOUT touching the (possibly dead) view."""
@@ -253,63 +196,53 @@ class WalkSession:
                     coin.SbVec3f(0.0, 0.0, 1.0))
 
 
-class _WalkKeyFilter(QtCore.QObject):
-    """Application-level keyboard capture for walk mode.
+class _WalkPickFilter(QtCore.QObject):
+    """Application-level pick capture for placement (replaces Draft's Snapper).
 
-    A FreeCAD application filter consumes plain key presses before any
-    per-widget filter or the 3D view can react (verified live: a probe
-    installed on the viewer widget never sees KeyPress). Installing ours
-    at the application level puts it in front; it acts ONLY on keys aimed
-    at the walked view's widgets while walk mode is active, so the rest of
-    the application behaves exactly as before.
+    Draft's Snapper projects the cursor ray onto the working plane
+    unconditionally (getApparentPoint), pinning every pick to the plane's
+    height — after placing doors on floor 1, a click on the 2nd-floor slab
+    lands at floor-1 height. This filter instead reads the TRUE scene hit
+    under the cursor (ActiveView.getObjectInfo) on every move, drives the
+    human preview with it, and starts the walk on left click.
     """
 
-    _KEYS = {
-        QtCore.Qt.Key_W: "W", QtCore.Qt.Key_S: "S",
-        QtCore.Qt.Key_A: "A", QtCore.Qt.Key_D: "D",
-        QtCore.Qt.Key_Up: "UP_ARROW", QtCore.Qt.Key_Down: "DOWN_ARROW",
-        QtCore.Qt.Key_Left: "LEFT_ARROW",
-        QtCore.Qt.Key_Right: "RIGHT_ARROW",
-    }
-
-    def __init__(self, session, viewer_widget):
+    def __init__(self, view, on_move, on_place):
         super().__init__()
-        self._session = session
-        self._viewer_widget = viewer_widget
+        self._view = view
+        self._on_move = on_move
+        self._on_place = on_place
+        self._viewer = _find_viewer_widget()
+
+    def _aimed(self, obj):
+        return (obj is self._viewer
+                or (isinstance(obj, QtGui.QWidget)
+                    and obj.parentWidget() is self._viewer))
 
     def eventFilter(self, obj, event):
-        session = self._session
-        if session is None or session.controller.exited:
-            return False
-        etype = event.type()
-        if etype not in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
-            return False
-        # Only keys aimed at the walked view (the viewer widget, its GL
-        # canvas child, or the focus holder); the whole rest of the app
-        # passes through untouched. Native delivery may target a bare
-        # QWindow or other non-widget object — treat anything that is not
-        # a widget as not-ours instead of crashing on it.
-        try:
-            aimed = (obj is self._viewer_widget
-                     or (isinstance(obj, QtGui.QWidget)
-                         and obj.parentWidget() is self._viewer_widget)
-                     or QtGui.QApplication.focusWidget() is self._viewer_widget)
-        except Exception:
-            aimed = False
-        if not aimed:
-            return False
-        if event.isAutoRepeat():
-            return True            # held-key repeats must not toggle state
-        state = "DOWN" if etype == QtCore.QEvent.KeyPress else "UP"
-        return session.qt_key(event, state)
+        t = event.type()
+        if t == QtCore.QEvent.MouseMove and self._aimed(obj):
+            self._on_move(int(event.position().x()),
+                          int(event.position().y()))
+            return False           # observe only: FreeCAD keeps the cursor
+        if (t == QtCore.QEvent.MouseButtonPress
+                and event.button() == QtCore.Qt.LeftButton
+                and self._aimed(obj)):
+            self._on_place(int(event.position().x()),
+                           int(event.position().y()))
+            return True            # consumed: no selection drag
+        return False
 
 
 class _HumanPreview:
     """Basic standing figure shown at the pick cursor during placement.
 
     Plain Coin primitives (cylinder body, sphere head), marked unpickable
-    so it never interferes with the Snapper pick; attached to the scene
+    so it never interferes with the scene pick; attached to the scene
     graph while picking and removed when the walk starts or is cancelled.
+    Each limb group uses its own SoTransformSeparator — Coin transforms
+    accumulate inside one separator, which used to fling the head away
+    from the body.
     """
 
     def __init__(self, view):
@@ -326,20 +259,28 @@ class _HumanPreview:
         self._root.addChild(mat)
         self._base = coin.SoTransform()
         self._root.addChild(self._base)
-        body = coin.SoTransform()
-        body.translation.setValue(0.0, 0.0, 600.0)
-        body.rotation.setValue(coin.SbVec3f(1.0, 0.0, 0.0), math.pi / 2)
+
+        body = coin.SoTransformSeparator()
+        rot = coin.SoTransform()
+        rot.rotation.setValue(coin.SbVec3f(1.0, 0.0, 0.0), math.pi / 2)
+        lift = coin.SoTransform()
+        lift.translation.setValue(0.0, 0.0, 600.0)
+        body.addChild(rot)
+        body.addChild(lift)
         cyl = coin.SoCylinder()
         cyl.radius.setValue(160.0)
         cyl.height.setValue(1200.0)
-        head = coin.SoTransform()
-        head.translation.setValue(0.0, 0.0, 1340.0)
+        body.addChild(cyl)
+        self._root.addChild(body)
+
+        head = coin.SoTransformSeparator()
+        at = coin.SoTransform()
+        at.translation.setValue(0.0, 0.0, 1340.0)
+        head.addChild(at)
         headSphere = coin.SoSphere()
         headSphere.radius.setValue(140.0)
-        self._root.addChild(body)
-        self._root.addChild(cyl)
+        head.addChild(headSphere)
         self._root.addChild(head)
-        self._root.addChild(headSphere)
 
     def on(self):
         if not self._attached:
@@ -362,7 +303,7 @@ class WalkTaskPanel:
     """Docked panel shown while walking.
 
     Person height and mouse inversion apply live; the control legend
-    doubles as the documentation. No OK/Cancel: FreeCAD's close (X or Esc)
+    doubles as the documentation. No OK/Cancel: FreeCAD's close (X)
     and the Exit button both end the walk.
     """
 
@@ -397,10 +338,9 @@ class WalkTaskPanel:
         outer.addWidget(mouse)
 
         controls = QtGui.QLabel(
-            "<b>W/S</b> or <b>Up/Down</b> forward/back · <b>A/D</b> strafe ·"
-            " <b>Left/Right</b> turn<br>"
-            "<b>Hold Right-mouse + move</b> look · <b>Wheel</b> step "
-            "forward/back<br><b>Shift</b> run · <b>Esc</b> exit")
+            "<b>Wheel</b> step forward/back along the view heading<br>"
+            "<b>Hold Right-mouse + move</b> look around<br>"
+            "<b>Click the tool again</b> or <b>Exit</b> stop the walk")
         controls.setWordWrap(True)
         outer.addWidget(controls)
 
@@ -484,13 +424,23 @@ def _start_walk(view, point, face):
 
 
 def _show_panel():
-    """Show the walk task panel (deferred: never inside a Snapper callback)."""
+    """Show the walk task panel (deferred: FreeCAD schedules dialogs)."""
     if _MODE is None:
         return
     try:
         FreeCADGui.Control.showDialog(WalkTaskPanel(_MODE))
     except Exception as exc:
         FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
+
+
+def _cancel_pick():
+    global _PICK
+    if _PICK is not None:
+        try:
+            QtGui.QApplication.instance().removeEventFilter(_PICK)
+        except Exception:
+            pass  # app already gone
+        _PICK = None
 
 
 class WalkThroughCommand:
@@ -500,16 +450,19 @@ class WalkThroughCommand:
         return {"Pixmap": ICON,
                 "MenuText": "Walk Through",
                 "ToolTip": ("First-person walk: click a point to place your "
-                            "eyes, WASD to move, hold right-mouse to look, "
-                            "Esc to exit")}
+                            "eyes, wheel to move, hold right-mouse to look")}
 
     def IsActive(self):
         window = FreeCADGui.getMainWindow().getActiveWindow()
         return hasattr(window, "getSceneGraph")
 
     def Activated(self):
+        global _PICK
         if _MODE is not None:
             _MODE.stop()
+            return
+        if _PICK is not None:
+            _cancel_pick()
             return
         if FreeCAD.ActiveDocument is None:
             FreeCAD.Console.PrintError(
@@ -517,7 +470,7 @@ class WalkThroughCommand:
             return
         gui_doc = FreeCADGui.ActiveDocument
         view = gui_doc.ActiveView if gui_doc is not None else None
-        if view is None or not hasattr(view, "getObjectInfoRay"):
+        if view is None or not hasattr(view, "getObjectInfo"):
             FreeCAD.Console.PrintError(
                 "ArchPlus Walk Through: no active 3D view.\n")
             return
@@ -526,40 +479,38 @@ class WalkThroughCommand:
         picked = {"face": None}
         human = _HumanPreview(view)
         human.on()
-        # The Draft Snapper projects picks onto the working plane and snaps
-        # to vertices/grid — after placing doors on floor 1 the plane sits
-        # there, so a click on the 2nd-floor slab would come back at
-        # floor-1 height. For walk placement the raw cursor ray is the
-        # semantic you want: aim where you click. Save and restore the
-        # user's snap modes around the pick.
-        snapper = FreeCADGui.Snapper
-        saved_snaps = list(snapper.active_snaps)
-        snapper.active_snaps = []
 
-        def _move(point, info):
+        def face_from(info):
             if info and "Face" in info.get("Component", ""):
                 o = doc.getObject(info["Object"])
                 try:
                     fi = int(info["Component"][4:]) - 1
                 except (ValueError, IndexError):
-                    picked["face"] = None
-                else:
-                    picked["face"] = [o, fi]
-            else:
-                picked["face"] = None
-            if point is not None:
-                human.move(point)
+                    return None
+                return [o, fi]
+            return None
 
-        def _place(point=None, obj=None):
-            FreeCADGui.Snapper.off()
-            snapper.active_snaps = saved_snaps
+        def point_from(info):
+            # getObjectInfo reports the hit as separate x/y/z values.
+            return FreeCAD.Vector(info["x"], info["y"], info["z"])
+
+        def on_move(x, y):
+            info = view.getObjectInfo((x, y))
+            if info:
+                human.move(point_from(info))
+                picked["face"] = face_from(info)
+
+        def on_place(x, y):
+            info = view.getObjectInfo((x, y))
+            if info is None:
+                return  # clicked empty space: keep aiming
             human.off()
-            if point is None:
-                return  # cancelled
-            _start_walk(view, point, picked["face"])
+            _cancel_pick()
+            _start_walk(view, point_from(info), face_from(info))
 
         FreeCAD.Console.PrintMessage(PICK_HINT + "\n")
-        FreeCADGui.Snapper.getPoint(callback=_place, movecallback=_move)
+        _PICK = _WalkPickFilter(view, on_move, on_place)
+        QtGui.QApplication.instance().installEventFilter(_PICK)
 
 
 # Register (FreeCAD 1.1 has no removeCommand; guard to stay reload-safe,

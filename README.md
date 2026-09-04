@@ -16,7 +16,7 @@ tools, plus a **Parts Library** for inserting catalog furnishings.
 | <img src="docs/images/door_single_swing.jpg" alt="Single-swing door hosted in a wall" width="100"><img src="docs/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100"> | **Doors** — swing, sliding and opening-only doors hosted in walls, with a live-preview panel and mouse placement. [Guide](docs/TOOLS.md#doors) |
 | <img src="docs/images/window_single_sliding.jpg" alt="Single sliding window" width="100"><img src="docs/images/window_double_casement.jpg" alt="Double casement window" width="100"><img src="docs/images/window_round_fixed.jpg" alt="Round fixed window" width="100"> | **Windows** — rectangular and round windows, casement and sliding, hosted in walls at sill height. [Guide](docs/TOOLS.md#windows) |
 | <img src="docs/images/parts-catalog.jpg" alt="The Parts Library browser" width="600"> | **Parts Library** — a one-screen catalog browser for parametric furniture, extensible with plain JSON manifests (no code) or Python builders. [Guide](docs/PARTS-LIBRARY.md) |
-| | **Walk Through** — first-person mode: click a point to place your eyes, walk floors and stairs with WASD, look with right-mouse drag. [Guide](docs/TOOLS.md#walk-through) |
+| | **Walk Through** — first-person mode, mouse-only: aim the figure, click to place your eyes, walk floors and stairs with the mouse wheel, look with right-mouse drag. [Guide](docs/TOOLS.md#walk-through) |
 
 ## Installation
 
@@ -47,9 +47,9 @@ BIM workbench → **ArchPlus** toolbar:
   library tab, edit its parameters, then click **Place** and click a floor
   or wall face to insert it. Right-click a placed part → **Reload from
   library** to refresh it from its manifest.
-- **Walk Through** → click a point in the 3D view → walk with WASD/arrows
-  or the mouse wheel, hold the right mouse button to look, Shift to run,
-  Esc to exit.
+- **Walk Through** → aim the figure in the 3D view and left-click → move
+  with the mouse wheel, hold the right mouse button to look, click the
+  tool again to exit.
 
 ## Documentation
 

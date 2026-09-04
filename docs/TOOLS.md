@@ -145,25 +145,24 @@ in the `DOORS`, `WINDOWS` and `STAIRS` lists at the top of the script.
 
 ## Walk Through
 
-First-person mode for inspecting a model at eye height. Click **Walk
-Through**, then click a point on any 3D geometry: the camera starts there,
-1.65 m along the picked face's normal (a floor puts you on it, a wall puts
-you in front of it). A small figure shows where you will stand while you
-aim; placement ignores snap modes and always uses the surface under the
-cursor, so a click on a 2nd-floor slab starts you there even when the
-working plane still sits at floor-1 height. Then:
+First-person mode for inspecting a model at eye height — mouse-only, no
+keyboard. Click **Walk Through**, then aim the small figure in the 3D view
+and left-click a point on any geometry: the camera starts there, 1.65 m
+along the picked face's normal (a floor puts you on it, a wall puts you in
+front of it). Placement always uses the surface under the cursor — snap
+modes and the working plane are ignored, so a click on a 2nd-floor slab
+starts you there even when the plane still sits at floor-1 height. While
+walking:
 
-- **W/S** or **Up/Down** — move forward/back · **A/D** — strafe
-- **Left/Right** — turn · **hold Right-mouse + move** — look around
-- **Mouse wheel** — step forward/back along the view heading (mouse-only
-  alternative to the keyboard)
-- **Shift** — run · **Esc** (or clicking the tool again) — exit and restore
-  the camera
-
-While walking, the wheel and mouse buttons drive the walk mode itself, so
-native orbit/zoom/pan are suspended until you exit.
+- **Mouse wheel** — step forward/back along the view heading (one notch
+  ≈ 30 cm; a fast scroll piles up notches, capped per step)
+- **Hold Right-mouse + move** — look around
+- **Click the tool again** or the panel's **Exit** — stop and restore the
+  camera
 
 The camera follows the ground: floors and stairs raise/lower your eyes
 within a ±0.6 m / 2 m step tolerance; over gaps or big drops the height is
-held. Movement is view-only — nothing in the document changes, and the
+held. Clicking a storey whose slab doesn't exist under the click keeps
+that level until you walk onto real geometry near it (e.g. stairs).
+Movement is view-only — nothing in the document changes, and the
 camera/projection you had before is restored on exit.

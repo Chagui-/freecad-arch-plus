@@ -51,18 +51,22 @@ Two-phase start (same pick pattern as Doors/Windows/Parts Library):
 4. Esc or clicking the tool again exits: event callback + timer removed,
    saved camera + projection restored.
 
-### Controls
+### Controls — revised 2026-09-04: mouse-only (user decision)
+
+After live testing the user removed the keyboard entirely (WASD, arrows,
+Shift, Esc). Draft's Snapper was also dropped from placement: it projects
+the cursor ray onto the working plane unconditionally
+(`getApparentPoint`), pinning picks to the plane's height — 2nd-floor
+clicks came back at floor-1 height after door placements moved the plane.
+Placement now reads the true scene hit under the cursor through an
+application-level mouse filter.
 
 | Input | Action |
 |---|---|
-| W / ↑ | move forward (horizontal heading) |
-| S / ↓ | move backward |
-| A / D | strafe left / right |
-| ← / → | turn (yaw) |
+| Left click (placement phase) | place the eyes at the aimed point |
+| Wheel | step forward/back along the view heading (one notch = 300 mm) |
 | Hold RMB + move mouse | free look (yaw + pitch) |
-| Shift | run (higher speed) |
-| Wheel | step forward/back along the view heading (mouse-only walking; added 2026-09-04 after live testing, user-requested fallback) |
-| Esc | exit walk mode |
+| Click tool again / panel Exit | exit walk mode |
 
 Pitch clamped to ±85°.
 

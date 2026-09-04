@@ -3,27 +3,18 @@
 
 Pure Python — no FreeCAD/PySide/pivy imports. `on_event` consumes the event
 dicts that `View3DInventorPy.addEventCallback("SoEvent", ...)` delivers
-(Type/State/Key/Button/Position/ShiftDown — see src/Gui/View3DPy.cpp
-eventCallback), and `advance` integrates one timer tick.
+(Type/Button/Position — see src/Gui/View3DPy.cpp eventCallback), and
+`advance` integrates one timer tick.
 
-Keyboard letters arrive through FreeCAD's printable-character default
-branch ("w", or "W" when Shift is held), so lookups normalize case; named
-constants ("UP_ARROW", "ESCAPE") pass through unchanged. Shift is reported
-as ShiftDown on every event and tracked regardless of event type.
+Movement is mouse-only (the user removed WASD): the mouse wheel steps
+forward/back along the view heading, the right mouse button looks around.
+The ground under the eye comes from the caller's down-ray pick; the ground
+lock lets a storey without a slab keep the clicked level.
 """
 
 import math
 
 from . import kinematics as kin
-
-KEYMAP = {
-    "W": "forward", "UP_ARROW": "forward",
-    "S": "back", "DOWN_ARROW": "back",
-    "A": "left",
-    "D": "right",
-    "RIGHT_ARROW": "turn_right",
-    "LEFT_ARROW": "turn_left",
-}
 
 
 class WalkController:
@@ -33,10 +24,7 @@ class WalkController:
         self.position = tuple(float(v) for v in position)  # (x, y, z) mm
         self.yaw = float(yaw)
         self.pitch = kin.clamp_pitch(float(pitch))
-        self.active = set()       # semantic actions currently held
-        self.run = False          # Shift held (from ShiftDown)
         self.looking = False      # right mouse button held
-        self.exited = False       # set on Escape, read by the tick
         self.eye_height = kin.EYE_HEIGHT   # live-settable from the panel
         self.invert_y = True      # drag up looks down (user preference)
         self.invert_x = False     # drag right looks right
@@ -49,20 +37,7 @@ class WalkController:
     def on_event(self, ev):
         """Consume one event dict; never raises on unknown events."""
         etype = ev.get("Type")
-        if etype == "SoKeyboardEvent":
-            kstate = ev.get("State")
-            key = ev.get("Key")
-            if key == "ESCAPE":
-                if kstate == "DOWN":
-                    self.exited = True
-            else:
-                action = KEYMAP.get(str(key).upper()) if key else None
-                if action is not None:
-                    if kstate == "DOWN":
-                        self.active.add(action)
-                    elif kstate == "UP":
-                        self.active.discard(action)
-        elif etype == "SoMouseButtonEvent":
+        if etype == "SoMouseButtonEvent":
             # Coin's mouse-button numbering is platform-dependent (the
             # right button is BUTTON2 on Windows, BUTTON3 on X11); during a
             # walk both mean "look" — pan and zoom are meaningless anyway.
@@ -71,9 +46,10 @@ class WalkController:
                 if not self.looking:
                     self._last_mouse = None
                     self._mdx = 0
+                    self._mdy = 0
         elif etype == "SoMouseWheelEvent":
-            # Mouse-only walking (no keyboard needed): each notch steps
-            # forward/back along the current view heading.
+            # Mouse-only walking: each notch steps forward/back along the
+            # current view heading.
             delta = ev.get("Delta")
             if delta:
                 self._wheel += 1 if delta > 0 else -1
@@ -89,8 +65,6 @@ class WalkController:
                 self._mdx += x - self._last_mouse[0]
                 self._mdy += y - self._last_mouse[1]
             self._last_mouse = (x, y)
-        # ShiftDown is carried on every event; track it regardless of type.
-        self.run = bool(ev.get("ShiftDown"))
 
     def advance(self, dt, ground_z=None):
         """Integrate one tick (`dt` seconds, clamped by the caller).
@@ -98,8 +72,6 @@ class WalkController:
         `ground_z` is the floor height under the eye from the down-ray pick,
         or None when nothing was hit / the snap was refused (height held).
         """
-        if self.exited:
-            return
         if self.looking:
             yaw_dir = -1 if self.invert_x else 1
             pitch_dir = 1 if self.invert_y else -1
@@ -108,12 +80,11 @@ class WalkController:
                 self.pitch + pitch_dir * self._mdy * kin.LOOK_SENS)
         self._mdx = 0
         self._mdy = 0
-        self.yaw += kin.turn_step(self.active, dt)
-        vx, vy = kin.move_vector(self.active, self.yaw, self.run)
+        # Mouse-only movement: wheel notches step along the view heading.
         wx = math.sin(self.yaw) * self._wheel * kin.WHEEL_STEP
         wy = math.cos(self.yaw) * self._wheel * kin.WHEEL_STEP
         self._wheel = 0
-        dx, dy = kin.clamp_step(vx * dt + wx, vy * dt + wy)
+        dx, dy = kin.clamp_step(wx, wy)
         x, y, z = self.position
         x += dx
         y += dy
