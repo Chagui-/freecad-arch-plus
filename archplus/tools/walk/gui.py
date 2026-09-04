@@ -23,6 +23,11 @@ ray onto the working plane unconditionally (getApparentPoint), which pins
 picks to the plane's height — after placing doors on floor 1, a click on
 the 2nd-floor slab would land at floor-1 height. _WalkPickFilter instead
 reads the true scene hit under the cursor via ActiveView.getObjectInfo().
+
+Session invariant: exactly ONE WalkSession (the one in _MODE) may run.
+_start_walk stops any prior session, and every tick self-checks it is the
+registered session — a replaced session tears itself down instead of
+leaving a zombie timer rewriting the camera after exit.
 """
 
 import math
@@ -158,6 +163,12 @@ class WalkSession:
         self._swallow = None
 
     def _tick(self):
+        if _MODE is not self:
+            # A zombie: _start_walk replaced this session but its timer
+            # kept running and kept rewriting the camera, which made the
+            # walk impossible to exit. Only the registered session lives.
+            self._teardown_only()
+            return
         now = time.monotonic()
         dt = min(now - self._last_t, kin.DT_MAX)
         self._last_t = now
@@ -171,15 +182,12 @@ class WalkSession:
         except RuntimeError:
             # The view wrapper died (document closed / workbench switch).
             self._teardown_only()
-        except Exception as exc:
-            FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
-            self._teardown_only()
-
     def _teardown_only(self):
         """Stop the mode WITHOUT touching the (possibly dead) view."""
         self._timer.stop()
         global _MODE
-        _MODE = None
+        if _MODE is self:
+            _MODE = None
         FreeCAD.Console.PrintMessage("ArchPlus Walk Through: exited.\n")
 
     def _apply_camera(self):
@@ -204,15 +212,27 @@ class _WalkPickFilter(QtCore.QObject):
     height — after placing doors on floor 1, a click on the 2nd-floor slab
     lands at floor-1 height. This filter instead reads the TRUE scene hit
     under the cursor (ActiveView.getObjectInfo) on every move, drives the
-    human preview with it, and starts the walk on left click.
+    human preview with it, and starts the walk on left click. One-shot:
+    the first left click wins, so double-clicks cannot start two walks.
     """
 
-    def __init__(self, view, on_move, on_place):
+    def __init__(self, view, human, on_move, on_place):
         super().__init__()
         self._view = view
+        self._human = human
         self._on_move = on_move
         self._on_place = on_place
+        self._done = False
         self._viewer = _find_viewer_widget()
+
+    def resume(self):
+        """Re-arm after a click that did not hit geometry."""
+        self._done = False
+
+    def cancel(self):
+        """Stop aiming: hide the human figure and ignore further input."""
+        self._done = True
+        self._human.off()
 
     def _aimed(self, obj):
         return (obj is self._viewer
@@ -221,13 +241,16 @@ class _WalkPickFilter(QtCore.QObject):
 
     def eventFilter(self, obj, event):
         t = event.type()
-        if t == QtCore.QEvent.MouseMove and self._aimed(obj):
+        if t == QtCore.QEvent.MouseMove and self._aimed(obj) and not self._done:
             self._on_move(int(event.position().x()),
                           int(event.position().y()))
             return False           # observe only: FreeCAD keeps the cursor
         if (t == QtCore.QEvent.MouseButtonPress
                 and event.button() == QtCore.Qt.LeftButton
                 and self._aimed(obj)):
+            done = self._done
+            self._done = True
+            self._human.off()
             self._on_place(int(event.position().x()),
                            int(event.position().y()))
             return True            # consumed: no selection drag
@@ -402,10 +425,14 @@ def _face_normal(face_obj, point):
 def _start_walk(view, point, face):
     """Start the session with the eye at `point` + eye height along normal.
 
-    The ground is locked to the implied feet level (click z - eye height):
-    on a storey whose slab does not exist under the click, the down-ray
+    Stops any session still running first (re-entrant activation), then
+    locks the ground at the implied feet level (click z - eye height): on
+    a storey whose slab does not exist under the click, the down-ray
     would otherwise find the floor one storey below and drop the eye.
     """
+    global _MODE
+    if _MODE is not None:
+        _MODE.stop()
     normal = _face_normal(face, point)
     if normal is None:
         normal = FreeCAD.Vector(0, 0, 1)
@@ -416,7 +443,6 @@ def _start_walk(view, point, face):
     # Keep the current heading: yaw from the view direction, pitch level.
     d = view.getViewDirection()
     yaw = math.atan2(d[0], d[1])
-    global _MODE
     _MODE = WalkSession(view, (eye.x, eye.y, eye.z), yaw=yaw)
     _MODE.controller.ground_level = point.z - eye_height
     _MODE.start()
@@ -436,6 +462,7 @@ def _show_panel():
 def _cancel_pick():
     global _PICK
     if _PICK is not None:
+        _PICK.cancel()
         try:
             QtGui.QApplication.instance().removeEventFilter(_PICK)
         except Exception:
@@ -463,6 +490,8 @@ class WalkThroughCommand:
             return
         if _PICK is not None:
             _cancel_pick()
+            FreeCAD.Console.PrintMessage(
+                "ArchPlus Walk Through: placement cancelled.\n")
             return
         if FreeCAD.ActiveDocument is None:
             FreeCAD.Console.PrintError(
@@ -503,13 +532,17 @@ class WalkThroughCommand:
         def on_place(x, y):
             info = view.getObjectInfo((x, y))
             if info is None:
-                return  # clicked empty space: keep aiming
-            human.off()
+                # Clicked empty space (or the NaviCube): keep aiming.
+                FreeCAD.Console.PrintMessage(
+                    "ArchPlus Walk Through: no geometry there — keep "
+                    "aiming.\n")
+                _PICK.resume()
+                return
             _cancel_pick()
             _start_walk(view, point_from(info), face_from(info))
 
         FreeCAD.Console.PrintMessage(PICK_HINT + "\n")
-        _PICK = _WalkPickFilter(view, on_move, on_place)
+        _PICK = _WalkPickFilter(view, human, on_move, on_place)
         QtGui.QApplication.instance().installEventFilter(_PICK)
 
 
