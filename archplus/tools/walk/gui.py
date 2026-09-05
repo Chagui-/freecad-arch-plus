@@ -49,7 +49,7 @@ _PICK = None   # True while a placement pick (Snapper session) is active
 _HUMAN = None  # the placement human preview figure
 
 _SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False,
-             "fov_h": 67.0}
+             "fov_h": 90.0}
 
 
 PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click — on "
@@ -318,10 +318,10 @@ class WalkTaskPanel:
 
         viewOpt = QtGui.QGroupBox("View")
         vform = QtGui.QFormLayout(viewOpt)
-        self._fov_values = [67.0, 90.0]
+        self._fov_values = [90.0, 67.0]
         self.fov = QtGui.QComboBox()
-        self.fov.addItem("67° (default)")
-        self.fov.addItem("90° (wide)")
+        self.fov.addItem("90° (default)")
+        self.fov.addItem("67°")
         try:
             self.fov.setCurrentIndex(self._fov_values.index(_SETTINGS["fov_h"]))
         except ValueError:
