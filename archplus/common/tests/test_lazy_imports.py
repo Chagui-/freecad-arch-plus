@@ -35,6 +35,7 @@ MODULES = (
     "archplus.tools.windows.gui",
     "archplus.tools.stairs.gui",
     "archplus.tools.partslib.gui",
+    "archplus.tools.walk.gui",
     "archplus.common.widgets",
 )
 
@@ -73,6 +74,11 @@ def _module_scope_import_names(modname):
     spec = importlib.util.find_spec(modname)
     with open(spec.origin, encoding="utf-8") as f:
         src = f.read()
+    # Bytecode-compile as well as parse: FreeCAD's import executes this
+    # stage, and it raises SyntaxError for errors the parser alone accepts
+    # - notably "name is used prior to global declaration", which shipped
+    # green under this suite and killed the add-on at startup.
+    compile(src, spec.origin, "exec")
     return _top_level_import_names(ast.parse(src))
 
 
@@ -126,3 +132,15 @@ def test_banned_hits_detects_every_dangerous_import_spelling():
         names = _top_level_import_names(ast.parse(snippet))
         assert not _banned_hits(names), \
             "did not expect %r to be caught as a banned import" % (snippet,)
+
+
+def test_compile_stage_catches_use_before_global():
+    # Regression for the Walk Through startup failure: ast.parse accepts a
+    # name used before its `global` declaration, but FreeCAD's import does
+    # not. The guard's compile pass must reject such a module.
+    try:
+        compile("def f():\n    print(_X)\n    global _X\n_X = 1\n",
+                "<synthetic>", "exec")
+    except SyntaxError:
+        return
+    raise AssertionError("compile() accepted use-prior-to-global")
