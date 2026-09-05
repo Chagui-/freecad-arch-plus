@@ -417,6 +417,32 @@ def _cancel_pick():
         _HUMAN.off()
 
 
+def _face_from_info(doc, info):
+    """[obj, face_index] when the pick info points at a face, else None."""
+    if info and "Face" in info.get("Component", ""):
+        o = doc.getObject(info["Object"])
+        try:
+            fi = int(info["Component"][4:]) - 1
+        except (ValueError, IndexError):
+            return None
+        return [o, fi]
+    return None
+
+
+def _stand_point(point, info):
+    """The 3D point the walk must start on.
+
+    The snapper's point is the working-plane projection unless snapping
+    was active; info x/y/z is the true scene hit, which is what
+    placement must use (a 2nd-floor slab top otherwise lands on floor
+    1). No info: empty space — keep the snapper point (default working
+    plane, z=0).
+    """
+    if info is not None and "x" in info:
+        return FreeCAD.Vector(info["x"], info["y"], info["z"])
+    return point
+
+
 class WalkThroughCommand:
     """Toolbar/menu command: toggles the walk mode."""
 
@@ -456,32 +482,9 @@ class WalkThroughCommand:
         _HUMAN = _HumanPreview(view)
         _HUMAN.on()
 
-        def face_from(info):
-            if info and "Face" in info.get("Component", ""):
-                o = doc.getObject(info["Object"])
-                try:
-                    fi = int(info["Component"][4:]) - 1
-                except (ValueError, IndexError):
-                    return None
-                return [o, fi]
-            return None
-
-        def stand_point(point, info):
-            """The 3D point the walk must start on.
-
-            The snapper's point is the working-plane projection unless
-            snapping was active; info x/y/z is the true scene hit, which
-            is what placement must use (a 2nd-floor slab top otherwise
-            lands on floor 1). No info: empty space — keep the snapper
-            point (default working plane, z=0).
-            """
-            if info is not None and "x" in info:
-                return FreeCAD.Vector(info["x"], info["y"], info["z"])
-            return point
-
         def _move(point, info):
-            picked["point"] = stand_point(point, info)
-            picked["face"] = face_from(info)
+            picked["point"] = _stand_point(point, info)
+            picked["face"] = _face_from_info(doc, info)
             _HUMAN.move(picked["point"])
 
         def _place(point, obj):
@@ -492,7 +495,7 @@ class WalkThroughCommand:
                 return
             stand = picked["point"]
             if stand is None:
-                stand = stand_point(point, None)
+                stand = point
             face = picked["face"]
             _finish_pick()
             _HUMAN.off()
@@ -500,6 +503,7 @@ class WalkThroughCommand:
                 "ArchPlus Walk Through: standing at (%.0f, %.0f, %.0f)\n"
                 % (stand.x, stand.y, stand.z))
             _start_walk(view, stand, face)
+
 
         FreeCAD.Console.PrintMessage(PICK_HINT + "\n")
         _PICK = True
