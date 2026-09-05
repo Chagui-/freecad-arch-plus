@@ -48,7 +48,8 @@ _MODE = None   # the active WalkSession, or None
 _PICK = None   # True while a placement pick (Snapper session) is active
 _HUMAN = None  # the placement human preview figure
 
-_SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False}
+_SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False,
+             "fov_h": 67.0}
 
 
 PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click — on "
@@ -102,6 +103,25 @@ class WalkSession:
             pass  # view already gone
         _MODE = None
         FreeCAD.Console.PrintMessage("ArchPlus Walk Through: exited.\n")
+
+    def apply_fov(self):
+        """Set the perspective camera's horizontal FOV from the settings.
+
+        SoPerspectiveCamera stores the VERTICAL angle; the configured
+        horizontal one is converted with the viewport aspect, so the
+        setting holds when the window is resized.
+        """
+        try:
+            cam = self.view.getCameraNode()
+            w, h = self.view.getSize()
+            if not h:
+                return
+            if "Perspective" not in str(cam.getTypeId().getName()):
+                return
+            cam.heightAngle.setValue(
+                2.0 * math.atan(math.tan(hfov / 2.0) / (w / float(h))))
+        except RuntimeError:
+            pass  # view gone
 
     def _on_event(self, ev):
         try:
@@ -191,6 +211,7 @@ class WalkSession:
                                  y + dy * 1000.0,
                                  z + dz * 1000.0),
                     coin.SbVec3f(0.0, 0.0, 1.0))
+        self.apply_fov()
 
 
 
@@ -266,7 +287,7 @@ class _HumanPreview:
 class WalkTaskPanel:
     """Docked panel shown while walking.
 
-    Person height and mouse inversion apply live; the control legend
+    Person height, FOV and mouse inversion apply live; the control legend
     doubles as the documentation. No OK/Cancel: FreeCAD's close (X)
     and the Exit button both end the walk.
     """
@@ -301,6 +322,20 @@ class WalkTaskPanel:
         mform.addRow(self.invertX)
         outer.addWidget(mouse)
 
+        viewOpt = QtGui.QGroupBox("View")
+        vform = QtGui.QFormLayout(viewOpt)
+        self._fov_values = [67.0, 90.0]
+        self.fov = QtGui.QComboBox()
+        self.fov.addItem("67° (default)")
+        self.fov.addItem("90° (wide)")
+        try:
+            self.fov.setCurrentIndex(self._fov_values.index(_SETTINGS["fov_h"]))
+        except ValueError:
+            self.fov.setCurrentIndex(0)
+        self.fov.setToolTip("Horizontal field of view of the walk camera.")
+        vform.addRow("Field of view", self.fov)
+        outer.addWidget(viewOpt)
+
         controls = QtGui.QLabel(
             "<b>Wheel</b> step forward/back along the view heading<br>"
             "<b>Hold Right-mouse + move</b> look around<br>"
@@ -315,12 +350,14 @@ class WalkTaskPanel:
         self.height.valueChanged.connect(self._on_height)
         self.invertY.toggled.connect(self._on_invert_y)
         self.invertX.toggled.connect(self._on_invert_x)
+        self.fov.currentIndexChanged.connect(self._on_fov)
 
     def _apply(self):
         if self._session is not None:
             self._session.controller.eye_height = _SETTINGS["eye_height"]
             self._session.controller.invert_y = _SETTINGS["invert_y"]
             self._session.controller.invert_x = _SETTINGS["invert_x"]
+            self._session.apply_fov()
 
     def _on_height(self, value):
         _SETTINGS["eye_height"] = float(value)
@@ -332,6 +369,10 @@ class WalkTaskPanel:
 
     def _on_invert_x(self, checked):
         _SETTINGS["invert_x"] = bool(checked)
+        self._apply()
+
+    def _on_fov(self, index):
+        _SETTINGS["fov_h"] = self._fov_values[index]
         self._apply()
 
     def _exit(self):
