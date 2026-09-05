@@ -370,6 +370,11 @@ class WalkTaskPanel:
                     "%.6f mm" % _SETTINGS["eye_height"]))
                 inp.setProperty("minimum", FreeCAD.Units.Quantity("500 mm"))
                 inp.setProperty("maximum", FreeCAD.Units.Quantity("2500 mm"))
+                try:
+                    inp.setProperty("singleStep",
+                                    FreeCAD.Units.Quantity("10 mm"))
+                except Exception:
+                    pass
                 inp.setToolTip(tip)
                 return inp
             except Exception:
@@ -379,6 +384,12 @@ class WalkTaskPanel:
         inp.setDecimals(2)
         inp.setSuffix(" m")
         inp.setValue(_SETTINGS["eye_height"] / 1000.0)
+        # Qt6's adaptive stepping jumps by 0.5 m here; pin 1 cm per click.
+        inp.setSingleStep(0.01)
+        try:
+            inp.setStepType(QtGui.QAbstractSpinBox.StepType.FixedStepType)
+        except Exception:
+            pass  # pre-Qt6 fallback keeps the 0.01 step above
         inp.setToolTip(tip)
         return inp
 
