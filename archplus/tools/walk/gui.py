@@ -443,6 +443,12 @@ class WalkTaskPanel:
         if _MODE is not None:
             _MODE.stop()
 
+    def isAllowedAlterDocument(self):
+        # The walk only repositions the camera; document edits stay allowed
+        # while it runs. TaskDialog's default (false) disables every
+        # AlterDoc command — including this tool's own toggle button.
+        return True
+
     def accept(self):
         self._exit()
         return True
@@ -570,7 +576,8 @@ class WalkThroughCommand:
         return {"Pixmap": ICON,
                 "MenuText": "Walk Through",
                 "ToolTip": ("First-person walk: click a point to place your "
-                            "eyes, wheel to move, hold right-mouse to look")}
+                            "eyes, wheel to move, hold right-mouse to look"),
+                "CmdType": "Alter3DView"}
 
     def IsActive(self):
         window = FreeCADGui.getMainWindow().getActiveWindow()
