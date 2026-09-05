@@ -45,36 +45,13 @@ _DIR = os.path.dirname(__file__)     # archplus/tools/walk/, for resources/
 ICON = os.path.join(_DIR, "resources", "icons", "WalkThrough.svg")
 
 _MODE = None   # the active WalkSession, or None
-_PICK = None   # the active _WalkPickFilter (placement phase), or None
+_PICK = None   # True while a placement pick (Snapper session) is active
+_HUMAN = None  # the placement human preview figure
 
-PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click a point "
-             "in the 3D view to start walking.")
+PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click — on "
+             "geometry or on empty ground — to start walking; Esc cancels.")
 ACTIVE_HINT = ("ArchPlus Walk Through: wheel to move, hold right-mouse to "
                "look, click the tool again to exit.")
-
-def _find_viewer_widget(doc_name=None):
-    """The active document's 3D viewer widget.
-
-    Several documents can have visible 3D views at once; the MDI window
-    title carries the document name, so match it first and fall back to
-    the largest visible viewer.
-    """
-    best = None
-    for w in QtGui.QApplication.allWidgets():
-        if (w.isVisible()
-                and w.metaObject().className() == "Gui::View3DInventorViewer"):
-            if doc_name:
-                anc, title = w, ""
-                while anc is not None:
-                    if anc.metaObject().className() == "QMdiSubWindow":
-                        title = anc.windowTitle()
-                        break
-                    anc = anc.parentWidget()
-                if doc_name in title:
-                    return w
-            if (best is None
-                    or w.width() * w.height() > best.width() * best.height()):
-                best = w
 
 
 class WalkSession:
@@ -213,72 +190,6 @@ class WalkSession:
                     coin.SbVec3f(0.0, 0.0, 1.0))
 
 
-class _WalkPickFilter(QtCore.QObject):
-    """Application-level pick capture for placement (replaces Draft's Snapper).
-
-    Draft's Snapper projects the cursor ray onto the working plane
-    unconditionally (getApparentPoint), pinning every pick to the plane's
-    height — after placing doors on floor 1, a click on the 2nd-floor slab
-    lands at floor-1 height. This filter instead reads the TRUE scene hit
-    under the cursor (ActiveView.getObjectInfo) on every move, drives the
-    human preview with it, and starts the walk on left click. One-shot:
-    the first left click wins, so double-clicks cannot start two walks.
-    """
-
-    def __init__(self, view, doc_name, human, on_move, on_place):
-        super().__init__()
-        self._view = view
-        self._human = human
-        self._on_move = on_move
-        self._on_place = on_place
-        self._done = False
-        self._viewer = _find_viewer_widget(doc_name)
-        self._dpr = self._viewer.devicePixelRatio() if self._viewer else 1.0
-
-    def _to_view(self, x, y):
-        """Qt widget coords -> Coin viewport coords (FreeCAD's fromQPoint).
-
-        Coin's viewport origin is BOTTOM-left and its pixels are device
-        pixels, while Qt reports top-left logical pixels: x is scaled by
-        the device pixel ratio and y is flipped and scaled. Skipping this
-        conversion made the figure track the cursor mirrored in y and
-        scaled in x.
-        """
-        _, h = self._view.getSize()          # device pixels
-        return (int(round(x * self._dpr)),
-                int(h - round(y * self._dpr) - 1))
-
-    def resume(self):
-        """Re-arm after a click that did not hit geometry."""
-        self._done = False
-
-    def cancel(self):
-        """Stop aiming: hide the human figure and ignore further input."""
-        self._done = True
-        self._human.off()
-
-    def _aimed(self, obj):
-        return (obj is self._viewer
-                or (isinstance(obj, QtGui.QWidget)
-                    and obj.parentWidget() is self._viewer))
-
-    def eventFilter(self, obj, event):
-        t = event.type()
-        if t == QtCore.QEvent.MouseMove and self._aimed(obj) and not self._done:
-            vx, vy = self._to_view(int(event.position().x()),
-                                   int(event.position().y()))
-            self._on_move(vx, vy)
-            return False           # observe only: FreeCAD keeps the cursor
-        if (t == QtCore.QEvent.MouseButtonPress
-                and event.button() == QtCore.Qt.LeftButton
-                and self._aimed(obj)):
-            self._done = True
-            self._human.off()
-            vx, vy = self._to_view(int(event.position().x()),
-                                   int(event.position().y()))
-            self._on_place(vx, vy)
-            return True            # consumed: no selection drag
-        return False
 
 
 class _HumanPreview:
@@ -483,32 +394,27 @@ def _show_panel():
         FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
 
 
-def _cancel_pick():
+def _finish_pick():
+    """Mark the placement pick as finished."""
     global _PICK
-    if _PICK is not None:
-        _PICK.cancel()
+    _PICK = None
+
+
+def _cancel_pick():
+    """Abort an active placement pick and hide the preview figure."""
+    global _HUMAN
+    if _PICK:
+        # A no-argument getPoint() call removes the snapper's callbacks:
+        # its documented cancel path.
+        FreeCADGui.Snapper.getPoint()
         try:
-            QtGui.QApplication.instance().removeEventFilter(_PICK)
+            FreeCADGui.draftToolBar.offUi()
         except Exception:
-            pass  # app already gone
-        _PICK = None
-
-
-def _ray_ground(line, z=0.0):
-    """Intersection of a projecting line with the horizontal z plane.
-
-    `line` is the (p1, p2) pair ActiveView.projectPointToLine returns.
-    Returns None when the ray never reaches the plane (looking up).
-    """
-    p1, p2 = line
-    dz = p2.z - p1.z
-    if abs(dz) < 1e-9:
-        return None
-    t = (z - p1.z) / dz
-    if t < 0.0:
-        return None
-    return FreeCAD.Vector(p1.x + t * (p2.x - p1.x),
-                          p1.y + t * (p2.y - p1.y), z)
+            pass  # tool bar gone
+        FreeCADGui.Snapper.off()
+        _finish_pick()
+    if _HUMAN is not None:
+        _HUMAN.off()
 
 
 class WalkThroughCommand:
@@ -525,11 +431,11 @@ class WalkThroughCommand:
         return hasattr(window, "getSceneGraph")
 
     def Activated(self):
-        global _PICK
+        global _PICK, _HUMAN
         if _MODE is not None:
             _MODE.stop()
             return
-        if _PICK is not None:
+        if _PICK:
             _cancel_pick()
             FreeCAD.Console.PrintMessage(
                 "ArchPlus Walk Through: placement cancelled.\n")
@@ -546,9 +452,9 @@ class WalkThroughCommand:
             return
 
         doc = FreeCAD.ActiveDocument
-        picked = {"face": None}
-        human = _HumanPreview(view)
-        human.on()
+        picked = {"face": None, "point": None}
+        _HUMAN = _HumanPreview(view)
+        _HUMAN.on()
 
         def face_from(info):
             if info and "Face" in info.get("Component", ""):
@@ -560,45 +466,44 @@ class WalkThroughCommand:
                 return [o, fi]
             return None
 
-        def point_from(info):
-            # getObjectInfo reports the hit as separate x/y/z values.
-            return FreeCAD.Vector(info["x"], info["y"], info["z"])
+        def stand_point(point, info):
+            """The 3D point the walk must start on.
 
-        def on_move(x, y):
-            info = view.getObjectInfo((x, y))
-            if info:
-                human.move(point_from(info))
-                picked["face"] = face_from(info)
-                return
-            # No geometry under the cursor: aim at the cursor ray's
-            # crossing of the z=0 ground plane, so the empty floor can be
-            # picked too.
-            p = _ray_ground(view.projectPointToLine((x, y)))
-            if p is not None:
-                human.move(p)
-                picked["face"] = None
+            The snapper's point is the working-plane projection unless
+            snapping was active; info x/y/z is the true scene hit, which
+            is what placement must use (a 2nd-floor slab top otherwise
+            lands on floor 1). No info: empty space — keep the snapper
+            point (default working plane, z=0).
+            """
+            if info is not None and "x" in info:
+                return FreeCAD.Vector(info["x"], info["y"], info["z"])
+            return point
 
-        def on_place(x, y):
-            info = view.getObjectInfo((x, y))
-            if info:
-                _cancel_pick()
-                _start_walk(view, point_from(info), face_from(info))
+        def _move(point, info):
+            picked["point"] = stand_point(point, info)
+            picked["face"] = face_from(info)
+            _HUMAN.move(picked["point"])
+
+        def _place(point, obj):
+            if point is None:            # Esc or the task panel cancel
+                _finish_pick()
+                _HUMAN.off()
+                FreeCADGui.Snapper.off()
                 return
-            # Empty space: stand on the z=0 ground plane at the cursor.
-            p = _ray_ground(view.projectPointToLine((x, y)))
-            if p is None:
-                # The ray never crosses z=0 (looking up): keep aiming.
-                FreeCAD.Console.PrintMessage(
-                    "ArchPlus Walk Through: nothing to stand on there — "
-                    "keep aiming.\n")
-                _PICK.resume()
-                return
-            _cancel_pick()
-            _start_walk(view, p, None)
+            stand = picked["point"]
+            if stand is None:
+                stand = stand_point(point, None)
+            face = picked["face"]
+            _finish_pick()
+            _HUMAN.off()
+            FreeCAD.Console.PrintMessage(
+                "ArchPlus Walk Through: standing at (%.0f, %.0f, %.0f)\n"
+                % (stand.x, stand.y, stand.z))
+            _start_walk(view, stand, face)
 
         FreeCAD.Console.PrintMessage(PICK_HINT + "\n")
-        _PICK = _WalkPickFilter(view, doc.Name, human, on_move, on_place)
-        QtGui.QApplication.instance().installEventFilter(_PICK)
+        _PICK = True
+        FreeCADGui.Snapper.getPoint(callback=_place, movecallback=_move)
 
 
 # Register (FreeCAD 1.1 has no removeCommand; guard to stay reload-safe,
