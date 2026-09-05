@@ -48,6 +48,9 @@ _MODE = None   # the active WalkSession, or None
 _PICK = None   # True while a placement pick (Snapper session) is active
 _HUMAN = None  # the placement human preview figure
 
+_SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False}
+
+
 PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click — on "
              "geometry or on empty ground — to start walking; Esc cancels.")
 ACTIVE_HINT = ("ArchPlus Walk Through: wheel to move, hold right-mouse to "
