@@ -145,24 +145,27 @@ in the `DOORS`, `WINDOWS` and `STAIRS` lists at the top of the script.
 
 ## Walk Through
 
-First-person mode for inspecting a model at eye height — mouse-only, no
-keyboard. Click **Walk Through**, then aim the small figure in the 3D view
-and left-click a point on any geometry: the camera starts there, 1.65 m
-along the picked face's normal (a floor puts you on it, a wall puts you in
-front of it). Placement always uses the surface under the cursor — snap
-modes and the working plane are ignored, so a click on a 2nd-floor slab
-starts you there even when the plane still sits at floor-1 height. While
-walking:
+First-person mode for inspecting a model at eye height — mouse-driven.
+Click **Walk Through**, then aim the small figure in the 3D view and
+left-click: the camera starts there at the person height (1.65 m by
+default) along the picked face's normal (a floor puts you on it, a wall
+puts you in front of it). Placement runs on the Draft Snapper's real
+mouse pipeline, so the stand point is the actual surface under the
+cursor — a click on a 2nd-floor slab starts you there, and clicking bare
+ground stands you on the z=0 plane. While walking:
 
 - **Mouse wheel** — step forward/back along the view heading (one notch
   ≈ 30 cm; a fast scroll piles up notches, capped per step)
 - **Hold Right-mouse + move** — look around
-- **Click the tool again** or the panel's **Exit** — stop and restore the
-  camera
+- **Esc**, **click the tool again**, or the panel's **Exit** — stop and
+  restore the camera
 
 The camera follows the ground: floors and stairs raise/lower your eyes
-within a ±0.6 m / 2 m step tolerance; over gaps or big drops the height is
-held. Clicking a storey whose slab doesn't exist under the click keeps
-that level until you walk onto real geometry near it (e.g. stairs).
-Movement is view-only — nothing in the document changes, and the
-camera/projection you had before is restored on exit.
+within a 0.6 m rise / 2 m drop tolerance; over gaps or big drops the
+height is held. Clicking a storey whose slab doesn't exist under the
+click keeps that level until you walk onto real geometry near it (e.g.
+stairs). The task panel adjusts person height (meters, or ft/in when
+your unit scheme is imperial), look-axis inversion, and the walk camera's
+field of view (90°/67° horizontal) while you walk. Movement is
+view-only — nothing in the document changes, and the camera/projection
+you had before is restored on exit.

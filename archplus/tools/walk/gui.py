@@ -126,6 +126,13 @@ class WalkSession:
 
     def _on_event(self, ev):
         try:
+            if (ev.get("Type") == "SoKeyboardEvent"
+                    and ev.get("Key") == "ESCAPE"
+                    and ev.get("State") == "DOWN"):
+                # Esc must not run stop() inside the Coin dispatch (it
+                # removes this very callback); defer to the event loop.
+                QtCore.QTimer.singleShot(0, self.stop)
+                return
             self.controller.on_event(ev)
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
@@ -333,7 +340,7 @@ class WalkTaskPanel:
         controls = QtGui.QLabel(
             "<b>Wheel</b> step forward/back along the view heading<br>"
             "<b>Hold Right-mouse + move</b> look around<br>"
-            "<b>Click the tool again</b> or <b>Exit</b> stop the walk")
+            "<b>Esc</b> or <b>click the tool again</b> stop the walk")
         controls.setWordWrap(True)
         outer.addWidget(controls)
 
