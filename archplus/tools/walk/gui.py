@@ -113,11 +113,12 @@ class WalkSession:
         """
         try:
             cam = self.view.getCameraNode()
+            if "Perspective" not in str(cam.getTypeId().getName()):
+                return
             w, h = self.view.getSize()
             if not h:
                 return
-            if "Perspective" not in str(cam.getTypeId().getName()):
-                return
+            hfov = math.radians(_SETTINGS["fov_h"])
             cam.heightAngle.setValue(
                 2.0 * math.atan(math.tan(hfov / 2.0) / (w / float(h))))
         except RuntimeError:
@@ -431,14 +432,23 @@ def _start_walk(view, point, face):
     QtCore.QTimer.singleShot(0, _show_panel)
 
 
-def _show_panel():
-    """Show the walk task panel (deferred: FreeCAD schedules dialogs)."""
+def _show_panel(retries=3):
+    """Show the walk task panel (deferred: FreeCAD schedules dialogs).
+
+    The Snapper's point UI may still be detaching when this first runs,
+    which makes showDialog raise; retry a few times on the event loop.
+    """
     if _MODE is None:
         return
     try:
         FreeCADGui.Control.showDialog(WalkTaskPanel(_MODE))
-    except Exception as exc:
-        FreeCAD.Console.PrintError("ArchPlus Walk Through: %s\n" % exc)
+    except Exception:
+        import traceback
+        FreeCAD.Console.PrintError(
+            "ArchPlus Walk Through: showing the panel failed:\n"
+            + traceback.format_exc())
+        if retries > 0:
+            QtCore.QTimer.singleShot(200, lambda: _show_panel(retries - 1))
 
 
 def _finish_pick():
