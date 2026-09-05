@@ -52,20 +52,29 @@ PICK_HINT = ("ArchPlus Walk Through: aim the figure and left-click a point "
 ACTIVE_HINT = ("ArchPlus Walk Through: wheel to move, hold right-mouse to "
                "look, click the tool again to exit.")
 
-# Live settings, shared between the task panel and every session in this
-# FreeCAD run. Defaults honour the user's tested preferences.
-_SETTINGS = {"eye_height": 1650.0, "invert_y": True, "invert_x": False}
+def _find_viewer_widget(doc_name=None):
+    """The active document's 3D viewer widget.
 
-
-def _find_viewer_widget():
+    Several documents can have visible 3D views at once; the MDI window
+    title carries the document name, so match it first and fall back to
+    the largest visible viewer.
+    """
     best = None
     for w in QtGui.QApplication.allWidgets():
         if (w.isVisible()
                 and w.metaObject().className() == "Gui::View3DInventorViewer"):
+            if doc_name:
+                anc, title = w, ""
+                while anc is not None:
+                    if anc.metaObject().className() == "QMdiSubWindow":
+                        title = anc.windowTitle()
+                        break
+                    anc = anc.parentWidget()
+                if doc_name in title:
+                    return w
             if (best is None
                     or w.width() * w.height() > best.width() * best.height()):
                 best = w
-    return best
 
 
 class WalkSession:
@@ -216,14 +225,28 @@ class _WalkPickFilter(QtCore.QObject):
     the first left click wins, so double-clicks cannot start two walks.
     """
 
-    def __init__(self, view, human, on_move, on_place):
+    def __init__(self, view, doc_name, human, on_move, on_place):
         super().__init__()
         self._view = view
         self._human = human
         self._on_move = on_move
         self._on_place = on_place
         self._done = False
-        self._viewer = _find_viewer_widget()
+        self._viewer = _find_viewer_widget(doc_name)
+        self._dpr = self._viewer.devicePixelRatio() if self._viewer else 1.0
+
+    def _to_view(self, x, y):
+        """Qt widget coords -> Coin viewport coords (FreeCAD's fromQPoint).
+
+        Coin's viewport origin is BOTTOM-left and its pixels are device
+        pixels, while Qt reports top-left logical pixels: x is scaled by
+        the device pixel ratio and y is flipped and scaled. Skipping this
+        conversion made the figure track the cursor mirrored in y and
+        scaled in x.
+        """
+        _, h = self._view.getSize()          # device pixels
+        return (int(round(x * self._dpr)),
+                int(h - round(y * self._dpr) - 1))
 
     def resume(self):
         """Re-arm after a click that did not hit geometry."""
@@ -242,17 +265,18 @@ class _WalkPickFilter(QtCore.QObject):
     def eventFilter(self, obj, event):
         t = event.type()
         if t == QtCore.QEvent.MouseMove and self._aimed(obj) and not self._done:
-            self._on_move(int(event.position().x()),
-                          int(event.position().y()))
+            vx, vy = self._to_view(int(event.position().x()),
+                                   int(event.position().y()))
+            self._on_move(vx, vy)
             return False           # observe only: FreeCAD keeps the cursor
         if (t == QtCore.QEvent.MouseButtonPress
                 and event.button() == QtCore.Qt.LeftButton
                 and self._aimed(obj)):
-            done = self._done
             self._done = True
             self._human.off()
-            self._on_place(int(event.position().x()),
-                           int(event.position().y()))
+            vx, vy = self._to_view(int(event.position().x()),
+                                   int(event.position().y()))
+            self._on_place(vx, vy)
             return True            # consumed: no selection drag
         return False
 
@@ -470,6 +494,23 @@ def _cancel_pick():
         _PICK = None
 
 
+def _ray_ground(line, z=0.0):
+    """Intersection of a projecting line with the horizontal z plane.
+
+    `line` is the (p1, p2) pair ActiveView.projectPointToLine returns.
+    Returns None when the ray never reaches the plane (looking up).
+    """
+    p1, p2 = line
+    dz = p2.z - p1.z
+    if abs(dz) < 1e-9:
+        return None
+    t = (z - p1.z) / dz
+    if t < 0.0:
+        return None
+    return FreeCAD.Vector(p1.x + t * (p2.x - p1.x),
+                          p1.y + t * (p2.y - p1.y), z)
+
+
 class WalkThroughCommand:
     """Toolbar/menu command: toggles the walk mode."""
 
@@ -528,21 +569,35 @@ class WalkThroughCommand:
             if info:
                 human.move(point_from(info))
                 picked["face"] = face_from(info)
+                return
+            # No geometry under the cursor: aim at the cursor ray's
+            # crossing of the z=0 ground plane, so the empty floor can be
+            # picked too.
+            p = _ray_ground(view.projectPointToLine((x, y)))
+            if p is not None:
+                human.move(p)
+                picked["face"] = None
 
         def on_place(x, y):
             info = view.getObjectInfo((x, y))
-            if info is None:
-                # Clicked empty space (or the NaviCube): keep aiming.
+            if info:
+                _cancel_pick()
+                _start_walk(view, point_from(info), face_from(info))
+                return
+            # Empty space: stand on the z=0 ground plane at the cursor.
+            p = _ray_ground(view.projectPointToLine((x, y)))
+            if p is None:
+                # The ray never crosses z=0 (looking up): keep aiming.
                 FreeCAD.Console.PrintMessage(
-                    "ArchPlus Walk Through: no geometry there — keep "
-                    "aiming.\n")
+                    "ArchPlus Walk Through: nothing to stand on there — "
+                    "keep aiming.\n")
                 _PICK.resume()
                 return
             _cancel_pick()
-            _start_walk(view, point_from(info), face_from(info))
+            _start_walk(view, p, None)
 
         FreeCAD.Console.PrintMessage(PICK_HINT + "\n")
-        _PICK = _WalkPickFilter(view, human, on_move, on_place)
+        _PICK = _WalkPickFilter(view, doc.Name, human, on_move, on_place)
         QtGui.QApplication.instance().installEventFilter(_PICK)
 
 
