@@ -201,9 +201,9 @@ class _HumanPreview:
     Plain Coin primitives (cylinder body, sphere head), marked unpickable
     so it never interferes with the scene pick; attached to the scene
     graph while picking and removed when the walk starts or is cancelled.
-    Each limb group uses its own SoTransformSeparator — Coin transforms
-    accumulate inside one separator, which used to fling the head away
-    from the body.
+    Each part sits in its own SoTransformSeparator so its transforms stay
+    local (Coin transforms accumulate across a plain group, which used
+    to fling the head away from the body).
     """
 
     def __init__(self, view):
@@ -221,13 +221,16 @@ class _HumanPreview:
         self._base = coin.SoTransform()
         self._root.addChild(self._base)
 
+        # One transform does both: Coin applies a node's translation in the
+        # parent frame, after its rotation. Splitting them into two nodes
+        # composed the other way round (first child's transform applies
+        # last), which dropped the cylinder half under the floor and
+        # shoved it sideways — the body no longer sat under the head.
         body = coin.SoTransformSeparator()
-        rot = coin.SoTransform()
-        rot.rotation.setValue(coin.SbVec3f(1.0, 0.0, 0.0), math.pi / 2)
-        lift = coin.SoTransform()
-        lift.translation.setValue(0.0, 0.0, 600.0)
-        body.addChild(rot)
-        body.addChild(lift)
+        stance = coin.SoTransform()
+        stance.rotation.setValue(coin.SbVec3f(1.0, 0.0, 0.0), math.pi / 2)
+        stance.translation.setValue(0.0, 0.0, 600.0)
+        body.addChild(stance)
         cyl = coin.SoCylinder()
         cyl.radius.setValue(160.0)
         cyl.height.setValue(1200.0)
