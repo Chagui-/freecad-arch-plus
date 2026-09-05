@@ -301,14 +301,7 @@ class WalkTaskPanel:
 
         person = QtGui.QGroupBox("Person")
         pform = QtGui.QFormLayout(person)
-        self.height = QtGui.QDoubleSpinBox()
-        self.height.setRange(500.0, 2500.0)
-        self.height.setDecimals(0)
-        self.height.setSuffix(" mm")
-        self.height.setValue(_SETTINGS["eye_height"])
-        self.height.setToolTip(
-            "Eye height above the ground. Applies to the ground snap "
-            "immediately and to the next placement pick.")
+        self.height = self._height_widget()
         pform.addRow("Person height", self.height)
         outer.addWidget(person)
 
@@ -348,21 +341,73 @@ class WalkTaskPanel:
         self.exitBtn.clicked.connect(self._exit)
         outer.addWidget(self.exitBtn)
 
-        self.height.valueChanged.connect(self._on_height)
+        self._height_connect(self.height)
         self.invertY.toggled.connect(self._on_invert_y)
         self.invertX.toggled.connect(self._on_invert_x)
         self.fov.currentIndexChanged.connect(self._on_fov)
 
+    def _height_widget(self):
+        """Eye-height input in the user's unit scheme.
+
+        Metric schemas get a plain meters spinbox (nobody quotes a
+        person's height in mm); imperial schemas (US customary, imperial
+        decimal/building/civil) get FreeCAD's native quantity spinbox,
+        which shows ft/in per the active scheme and parses its input.
+        """
+        try:
+            schema = FreeCAD.ParamGet(
+                "User parameter:BaseApp/Preferences/Units").GetInt(
+                "UserSchema", 0)
+        except Exception:
+            schema = 0
+        tip = ("Eye height above the ground. Applies immediately while "
+               "walking and to the next placement pick.")
+        if schema in (2, 3, 5, 7):
+            try:
+                inp = FreeCADGui.UiLoader().createWidget(
+                    "Gui::QuantitySpinBox")
+                inp.setProperty("value", FreeCAD.Units.Quantity(
+                    "%.6f mm" % _SETTINGS["eye_height"]))
+                inp.setProperty("minimum", FreeCAD.Units.Quantity("500 mm"))
+                inp.setProperty("maximum", FreeCAD.Units.Quantity("2500 mm"))
+                inp.setToolTip(tip)
+                return inp
+            except Exception:
+                pass  # fall through to the plain widget
+        inp = QtGui.QDoubleSpinBox()
+        inp.setRange(0.5, 2.5)
+        inp.setDecimals(2)
+        inp.setSuffix(" m")
+        inp.setValue(_SETTINGS["eye_height"] / 1000.0)
+        inp.setToolTip(tip)
+        return inp
+
+    def _height_connect(self, widget):
+        try:
+            widget.valueChanged.connect(self._on_height)
+        except Exception:
+            pass  # the widget type lacks the signal
+
     def _apply(self):
         if self._session is not None:
-            self._session.controller.eye_height = _SETTINGS["eye_height"]
+            self._session.controller.set_eye_height(_SETTINGS["eye_height"])
             self._session.controller.invert_y = _SETTINGS["invert_y"]
             self._session.controller.invert_x = _SETTINGS["invert_x"]
             self._session.apply_fov()
 
     def _on_height(self, value):
-        _SETTINGS["eye_height"] = float(value)
+        try:
+            mm = float(value.Value)          # Gui::QuantitySpinBox signal
+        except AttributeError:
+            mm = float(value) * 1000.0       # plain meters spinbox
+        except Exception:
+            try:
+                mm = FreeCAD.Units.Quantity(str(value)).getValueAs("mm")
+            except Exception:
+                return
+        _SETTINGS["eye_height"] = max(500.0, min(2500.0, mm))
         self._apply()
+
 
     def _on_invert_y(self, checked):
         _SETTINGS["invert_y"] = bool(checked)

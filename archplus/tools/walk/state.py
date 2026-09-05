@@ -66,6 +66,20 @@ class WalkController:
                 self._mdy += y - self._last_mouse[1]
             self._last_mouse = (x, y)
 
+    def set_eye_height(self, mm):
+        """Change the eye height and shift the eye so the feet stay put.
+
+        The snap tolerances (STEP_UP/STEP_DOWN) are stair-sized, so a
+        person-height change can exceed them and the snap would then
+        refuse the target for as long as the person stands still. The
+        shift applies immediately; later snaps use the new height.
+        """
+        delta = float(mm) - self.eye_height
+        self.eye_height = float(mm)
+        x, y, z = self.position
+        self.position = (x, y, z + delta)
+
+
     def advance(self, dt, ground_z=None):
         """Integrate one tick (`dt` seconds, clamped by the caller).
 
