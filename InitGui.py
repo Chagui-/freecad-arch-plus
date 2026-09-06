@@ -20,7 +20,7 @@ def _injectIntoBIM():
 
     toolbar = "ArchPlus"
     commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows",
-                "ArchPlus_PartsLibrary", "ArchPlus_WalkThrough", "ArchPlus_Walls", "ArchPlus_WallSplit"]
+                "ArchPlus_PartsLibrary", "ArchPlus_WalkThrough", "ArchPlus_WallTools"]
     wb = Gui.getWorkbench("BIMWorkbench")
     if wb is None:
         FreeCAD.Console.PrintWarning(

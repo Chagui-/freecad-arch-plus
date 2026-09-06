@@ -21,7 +21,7 @@ from archplus.tools.walls import dims
 
 _DIR = os.path.dirname(__file__)
 ICON = os.path.join(_DIR, "resources", "icons", "WallPlus.svg")
-_ICON_DIR = os.path.join(_DIR, "resources", "icons")
+_SPLIT_ICON = os.path.join(_DIR, "resources", "icons", "WallSplit.svg")
 
 WIDTH_DESC = "Thickness of the wall, perpendicular to its baseline."
 HEIGHT_DESC = "Vertical height, measured from the sketch plane."
@@ -810,7 +810,7 @@ class _FaceSelection:
 
 class WallSplitCommand:
     def GetResources(self):
-        return {"Pixmap": ICON, "MenuText": "Split / move segment…",
+        return {"Pixmap": _SPLIT_ICON, "MenuText": "Split / move segment…",
                 "ToolTip": "Move the selected wall faces into a new or an "
                            "existing segment"}
 
@@ -1074,3 +1074,22 @@ class WallSplitCommand:
 
 
 FreeCADGui.addCommand("ArchPlus_WallSplit", WallSplitCommand())
+
+
+class _WallGroupCommand:
+    """Toolbar flyout grouping the wall and split commands: one button,
+    the split behind the drop arrow (the BIM grouped-tools pattern)."""
+
+    def GetCommands(self):
+        return ("ArchPlus_Walls", "ArchPlus_WallSplit")
+
+    def GetResources(self):
+        return {"MenuText": "Walls",
+                "ToolTip": "Wall creation and segment splitting",
+                "Icon": ICON}
+
+    def IsActive(self):
+        return True
+
+
+FreeCADGui.addCommand("ArchPlus_WallTools", _WallGroupCommand())
