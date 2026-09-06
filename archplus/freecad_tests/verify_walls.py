@@ -658,55 +658,6 @@ def _w16_split_ux(doc):
     FreeCADGui.Selection.clearSelection()
 
 
-def _w17_bim_context_menu(doc):
-    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)], name="CtxMenu")
-    wall = walls_object.makeWall(doc, sketch=sk)
-    doc.recompute()
-    seg = wall.Group[0]
-    import FreeCADGui
-    from archplus.tools.walls import gui as walls_gui
-    h.check("W17 old workbench-manipulator hook is gone",
-            not hasattr(FreeCADGui, "_ArchPlusWallsMenuHook"))
-    wb = FreeCADGui.getWorkbench("BIMWorkbench")
-    if not h.check("W17 BIM workbench exposes a callable ContextMenu handler",
-                   wb is not None
-                   and callable(getattr(wb, "ContextMenu", None))):
-        return
-    FreeCADGui.Selection.clearSelection()
-    FreeCADGui.Selection.addSelection(seg, "Face1")
-    h.check("W17 selection gate accepts a segment face",
-            walls_gui.wall_segment_selected())
-    if not hasattr(wb, "snapmenu"):
-        wb.snapmenu = []
-
-    def _run_handler():
-        recorded = []
-        orig_append = wb.appendContextMenu
-        wb.appendContextMenu = lambda *args: recorded.append(args)
-        threw = None
-        try:
-            wb.ContextMenu("View")
-        except Exception as exc:
-            threw = exc
-        finally:
-            wb.appendContextMenu = orig_append
-        return threw, recorded
-
-    threw_sel, recorded_sel = _run_handler()
-    FreeCADGui.Selection.clearSelection()
-    threw_empty, recorded_empty = _run_handler()
-    if threw_sel is None and threw_empty is None:
-        detail = "with segment face: %r; empty selection: %r" % (
-            recorded_sel, recorded_empty)
-    else:
-        detail = "handler raised: %r" % (threw_sel or threw_empty,)
-    h.check("W17 wrapped BIM handler appends the split command",
-            threw_sel is None and threw_empty is None
-            and ("", ["ArchPlus_WallSplit"]) in recorded_sel
-            and ("", ["ArchPlus_WallSplit"]) in recorded_empty,
-            detail)
-
-
 def _facePoint(seg):
     """An interior point of the segment's largest face: well away from
     shared seams, where two segments' faces coincide and a pick point
@@ -1312,7 +1263,6 @@ def run():
     _w14_view_provider(doc)
     _w15_split_gate(doc)
     _w16_split_ux(doc)
-    _w17_bim_context_menu(doc)
     _w18_segment_miter(doc)
     _w19_mixed_width_miter(doc)
     _w20_butt_fallbacks(doc)

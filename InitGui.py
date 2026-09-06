@@ -2,8 +2,7 @@
 #
 # ArchPlus startup (GUI). Instead of registering its own workbench, this
 # add-on injects an "ArchPlus" toolbar and menu into the existing BIM
-# workbench by wrapping BIMWorkbench.Initialize(), and adds the wall split
-# entry to the 3D-view context menu by wrapping BIMWorkbench.ContextMenu().
+# workbench by wrapping BIMWorkbench.Initialize().
 #
 # IMPORTANT: FreeCAD exec()s InitGui.py with SEPARATE globals and locals dicts.
 # Module-level def/constants land in locals, but a function invoked later
@@ -17,8 +16,7 @@ import FreeCADGui as Gui
 
 
 def _injectIntoBIM():
-    """Wrap BIMWorkbench.Initialize and ContextMenu so ArchPlus tools
-    appear inside BIM."""
+    """Wrap BIMWorkbench.Initialize so ArchPlus tools appear inside BIM."""
 
     toolbar = "ArchPlus"
     commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows",
@@ -56,19 +54,6 @@ def _injectIntoBIM():
             FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
     wb.Initialize = _wrappedInitialize
-
-    _origContextMenu = getattr(wb, "ContextMenu", None)
-
-    def _wrappedContextMenu(recipient):
-        if callable(_origContextMenu):
-            _origContextMenu(recipient)
-        if recipient == "View":
-            try:
-                wb.appendContextMenu("", ["ArchPlus_WallSplit"])
-            except Exception as exc:
-                FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
-
-    wb.ContextMenu = _wrappedContextMenu
 
     # If BIM was already active this session (e.g. add-on reloaded), add the
     # tools immediately too. At cold startup there is no active workbench yet,

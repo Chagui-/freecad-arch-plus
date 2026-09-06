@@ -4,8 +4,7 @@
 # the split command's selection gate with its pick-point recorder. Follows
 # the stairs/windows panel pattern: docked form, debounced live preview,
 # reference diagrams, description lines. The view provider lives in
-# object.py; gui.py only consumes it. InitGui.py injects the 3D-view
-# context-menu entry by wrapping the BIM workbench's ContextMenu handler.
+# object.py; gui.py only consumes it.
 
 import os
 
