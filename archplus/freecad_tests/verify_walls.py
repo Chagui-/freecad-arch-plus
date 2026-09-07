@@ -472,7 +472,7 @@ def _w15_split_gate(doc):
     h.check("W15 selection gate rejects an empty selection",
             not walls_gui.wall_segment_selected())
     h.check("W15 view provider offers no tree context-menu entry "
-            "(the split entry is 3D-only)",
+            "(the split entry is toolbar-only)",
             not hasattr(walls_object._ViewProviderWall, "setupContextMenu")
             and not hasattr(wall.ViewObject.Proxy, "setupContextMenu")
             and not hasattr(seg.ViewObject.Proxy, "setupContextMenu"))

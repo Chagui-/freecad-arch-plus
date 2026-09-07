@@ -160,12 +160,13 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
   opening's `Hosts`, and an opening that spans two segments is cut from both.
-- **Split / move segment** — the **Split / move segment…** entry lives only
-  in the 3D-view right-click menu (there is no tree context-menu entry and no
-  toolbar button), greyed out until a wall face is selected. Clicking a wall
-  face selects the wall itself — FreeCAD attributes picks of claimed children
-  to the top claim parent — and the split resolves each clicked face to the
-  segment owning it. Select the faces to move, right-click and choose it: a
+- **Split / move segment** — the **Split / move segment…** entry lives in
+  the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
+  button (there is no tree or 3D context-menu entry), greyed out until a
+  wall face is selected. Clicking a wall face selects the wall itself —
+  FreeCAD attributes picks of claimed children to the top claim parent —
+  and the split resolves each clicked face to the segment owning it.
+  Select the faces to move, open the **Walls** drop-down and choose it: a
   picker dialog offers **<new segment>**, which splits the picked faces' runs
   into a new sibling segment, or one of the wall's other top-level segments,
   which the runs are moved into (rejoining that segment's chain). Hovering a
@@ -173,6 +174,11 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   Splitting requires picked faces — running the command with no face picked
   prints a Report-view warning and changes nothing. Each clicked face moves
   the run nearest to the click.
+- **Delete cascades** — deleting the wall (or any segment) in the GUI also
+  removes its descendant segments in the same transaction, so **Ctrl+Z**
+  brings everything back; the base sketch is shared with other tools and
+  never follows. Scripted `doc.removeObject` calls bypass the view provider
+  and keep FreeCAD's orphan behaviour.
 - **Native selection mapping** — clicking a segment in the tree selects all
   of its faces, and clicking wall geometry in the 3D view selects the
   segment that owns the picked face or edge (not the wall root), so the
@@ -207,10 +213,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 
 BIM workbench → select a sketch → **ArchPlus** toolbar → **Wall** → set the
 default dimensions → **OK**. Double-click the wall or a segment to edit it.
-With the wall built, click one or more wall faces in the 3D view (the menu
-entry stays greyed out otherwise), right-click, choose **Split / move
-segment…**, then pick **<new segment>** or an existing segment to move the
-faces' runs into.
+With the wall built, click one or more wall faces in the 3D view (the entry
+stays greyed out otherwise), open the **Walls** drop-down on the **ArchPlus**
+toolbar, choose **Split / move segment…**, then pick **<new segment>** or an
+existing segment to move the faces' runs into.
 
 ### Known limitations
 
