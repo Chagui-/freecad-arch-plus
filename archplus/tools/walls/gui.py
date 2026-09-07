@@ -22,6 +22,7 @@ from archplus.tools.walls import dims
 _DIR = os.path.dirname(__file__)
 ICON = os.path.join(_DIR, "resources", "icons", "WallPlus.svg")
 _SPLIT_ICON = os.path.join(_DIR, "resources", "icons", "WallSplit.svg")
+_ICON_DIR = os.path.join(_DIR, "resources", "icons")
 
 WIDTH_DESC = "Thickness of the wall, perpendicular to its baseline."
 HEIGHT_DESC = "Vertical height, measured from the sketch plane."

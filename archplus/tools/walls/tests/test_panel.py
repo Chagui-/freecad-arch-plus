@@ -4,10 +4,21 @@
 # test_stairs.py: the panel reads/writes object properties, so _collect /
 # _loadFromObject carry the decisions worth testing here.
 
+import os
 import types
 
 from archplus.tools.walls import gui as wg
 from conftest import FakeCombo, FakeNum, FakeCheck, quantity
+
+
+def test_icon_wiring_resolves_to_real_files():
+    """The panel constructors and both commands consume these constants at
+    runtime, but no headless test runs those constructors (they build real
+    Qt widgets), so the wiring itself is the contract."""
+    assert os.path.isfile(wg.ICON)
+    assert os.path.isfile(wg._SPLIT_ICON)
+    assert os.path.isdir(wg._ICON_DIR)
+    assert wg.WallSplitCommand().GetResources()["Pixmap"] == wg._SPLIT_ICON
 
 
 class _FakeLine:
