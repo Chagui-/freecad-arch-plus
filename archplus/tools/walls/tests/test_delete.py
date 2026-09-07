@@ -46,6 +46,30 @@ def _vobj(obj):
 def _vp():
     return walls_object._ViewProviderWall.__new__(
         walls_object._ViewProviderWall)
+def test_viewprovider_visibility_cascades_to_segments():
+    """Hiding the wall root must hide its claimed segments: the root
+    itself has no shape, so without the cascade the wall would still
+    read as visible. Arch levels hide their direct children; this closes
+    the chain down to the segments."""
+    doc, _removed = _doc()
+    nested = _segment("nested", doc)
+    a = _segment("a", doc, [nested])
+    root = _root(doc, [a])
+    vobj = types.SimpleNamespace(Object=root, Visibility=True)
+    vp = _vp()
+    vos = {}
+    for seg in (nested, a):
+        vo = types.SimpleNamespace(Visibility=True)
+        seg.ViewObject = vo
+        vos[seg.Name] = vo
+    vp.onChanged(vobj, "Visibility")
+    assert all(vo.Visibility for vo in vos.values())
+    vobj.Visibility = False
+    vp.onChanged(vobj, "Visibility")
+    assert not any(vo.Visibility for vo in vos.values())
+    vobj.Visibility = True
+    vp.onChanged(vobj, "Visibility")
+    assert all(vo.Visibility for vo in vos.values())
 
 
 def test_delete_root_cascades_to_all_segments():

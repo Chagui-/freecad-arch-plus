@@ -990,6 +990,17 @@ class _ViewProviderWall:
         obj = getattr(self, "Object", None)
         return list(getattr(obj, "Group", None) or [])
 
+    def onChanged(self, vobj, prop):
+        """Cascade visibility to the claimed segments: the wall root
+        itself has no shape, so hiding it must hide the segments or the
+        wall would still read as visible. Arch levels hide their direct
+        children, and this closes the chain down to the segments."""
+        if prop == "Visibility":
+            obj = getattr(self, "Object", None) or vobj.Object
+            for seg in all_segments(obj):
+                if seg.ViewObject is not None:
+                    seg.ViewObject.Visibility = vobj.Visibility
+
     def onDelete(self, vobj, subelements):
         """GUI deletes cascade: FreeCAD's own delete never removes
         children, so the wall's segments — and each nested segment's
