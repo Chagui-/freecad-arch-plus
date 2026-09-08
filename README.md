@@ -3,8 +3,9 @@
 A FreeCAD add-on that extends the built-in **BIM** workbench with enhanced
 Arch tools. It adds an **ArchPlus** toolbar and menu inside the BIM workbench.
 
-It currently provides enhanced parametric **Stairs**, **Doors**, and **Windows**
-tools, plus a **Parts Library** for inserting catalog furnishings.
+It currently provides enhanced parametric **Stairs**, **Walls**, **Doors**,
+and **Windows** tools, a **Parts Library** for inserting catalog
+furnishings, and a first-person **Walk Through** mode.
 
 <img src="docs/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
 
@@ -15,6 +16,7 @@ tools, plus a **Parts Library** for inserting catalog furnishings.
 | <img src="docs/images/stairs_landing.jpg" alt="Stairs with a landing" width="100"><img src="docs/images/stairs_half_turn.jpg" alt="Half-turn stairs" width="100"><img src="docs/images/stairs_quarter_turn.jpg" alt="Quarter-turn stairs" width="100"> | **Stairs** — live-preview configuration, configurable landings, and half-/quarter-turn winders. [Guide](docs/TOOLS.md#stairs) |
 | <img src="docs/images/door_single_swing.jpg" alt="Single-swing door hosted in a wall" width="100"><img src="docs/images/doors_double_swing.jpg" alt="Double-swing door hosted in a wall" width="100"> | **Doors** — swing, sliding and opening-only doors hosted in walls, with a live-preview panel and mouse placement. [Guide](docs/TOOLS.md#doors) |
 | <img src="docs/images/window_single_sliding.jpg" alt="Single sliding window" width="100"><img src="docs/images/window_double_casement.jpg" alt="Double casement window" width="100"><img src="docs/images/window_round_fixed.jpg" alt="Round fixed window" width="100"> | **Windows** — rectangular and round windows, casement and sliding, hosted in walls at sill height. [Guide](docs/TOOLS.md#windows) |
+| | **Walls** — sketch-based segmented walls: runs build as mitered chains, segments nest with inherited overrides, and they host the doors and windows above. [Guide](docs/TOOLS.md#walls) |
 | <img src="docs/images/parts-catalog.jpg" alt="The Parts Library browser" width="600"> | **Parts Library** — a one-screen catalog browser for parametric furniture, extensible with plain JSON manifests (no code) or Python builders. [Guide](docs/PARTS-LIBRARY.md) |
 | | **Walk Through** — first-person mode, mouse-only: aim the figure, click to place your eyes, walk floors and stairs with the mouse wheel, look with right-mouse drag. [Guide](docs/TOOLS.md#walk-through) |
 
@@ -43,6 +45,10 @@ BIM workbench → **ArchPlus** toolbar:
   default) → configure in the panel. Double-click (or right-click → Edit) a
   window to reopen the panel; right-click → **Reposition (pick point)** to
   move it with the mouse.
+- **Walls** → select a sketch, **Walls → Wall**, set the dimensions →
+  **OK**. Click wall faces in the 3D view, then **Walls → Split / move
+  segment…** to carve them into their own segments; deleting the wall takes
+  its segments with it.
 - **Parts Library** → filter by room chip and/or search the catalog in the
   library tab, edit its parameters, then click **Place** and click a floor
   or wall face to insert it. Right-click a placed part → **Reload from
@@ -53,7 +59,8 @@ BIM workbench → **ArchPlus** toolbar:
 
 ## Documentation
 
-- [Tools guide](docs/TOOLS.md) — stairs, doors and windows in detail.
+- [Tools guide](docs/TOOLS.md) — stairs, walls, doors, windows and
+  walk-through in detail.
 - [Parts Library](docs/PARTS-LIBRARY.md) — browser features and the part
   authoring guide (manifests, model files, builders, IFC metadata).
 - [Testing](docs/TESTING.md) — how the headless test suite works.

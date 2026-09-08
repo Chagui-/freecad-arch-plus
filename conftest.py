@@ -201,6 +201,7 @@ def _install_fakes():
     freecadgui = types.ModuleType("FreeCADGui")
     freecadgui.listCommands = lambda: []
     freecadgui.addCommand = lambda name, obj: None
+    freecadgui.Selection = types.SimpleNamespace(getSelectionEx=lambda: [])
     sys.modules["FreeCADGui"] = freecadgui
 
     # PySide.QtGui / QtCore — placeholders. Most widgets are never built in
@@ -296,6 +297,9 @@ class FakeNum:
         pass
 
     def setMinimum(self, _):
+        pass
+
+    def setEnabled(self, _):
         pass
 
 

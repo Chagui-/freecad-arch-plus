@@ -1,0 +1,1280 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# Wall checks: creation, claims, config inheritance, split, sketch edits,
+# hosted openings, reload. Mirrors the spec's verify list.
+
+from archplus.freecad_tests import _harness as h
+
+import FreeCAD
+import Part
+
+from archplus.tools.walls import object as walls_object
+
+
+def _line_sketch(doc, lines, name="FloorPlan"):
+    sk = doc.addObject("Sketcher::SketchObject", name)
+    for (x1, y1), (x2, y2), construction in lines:
+        sk.addGeometry(Part.LineSegment(FreeCAD.Vector(x1, y1, 0),
+                                        FreeCAD.Vector(x2, y2, 0)),
+                       construction)
+    return sk
+
+
+def _expected_volume(width, height, lengths):
+    return width * height * sum(lengths)
+
+
+def _vp_name(obj):
+    return getattr(getattr(getattr(obj, "ViewObject", None), "Proxy", None),
+                   "__class__", None).__name__
+
+
+def _w1_creation(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+        ((0, 6000), (4000, 6000), True),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    h.check("W1 root type and single child",
+            wall.Proxy.Type == "Wall" and len(wall.Group) == 1)
+    seg = wall.Group[0]
+    h.check("W1 fallback child defaults",
+            seg.Proxy.Type == "WallSegment" and seg.Fallback
+            and seg.Wall is wall)
+    h.check("W1 fallback child builds 2 edges, construction excluded",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
+    return wall, sk
+
+
+def _w2_inheritance(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    wall.Width = "400 mm"
+    doc.recompute()
+    fallback = wall.Group[0]
+    h.check("W2 root width change reaches the fallback child",
+            abs(fallback.Shape.Volume
+                - _expected_volume(400, 2800, [4000, 4000])) < 1e-3)
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge2",))]
+    doc.recompute()
+    h.check("W2 explicit claim removed from the fallback",
+            abs(fallback.Shape.Volume
+                - _expected_volume(400, 2800, [4000])) < 1e-3)
+    h.check("W2 new sibling builds its claim",
+            abs(ext.Shape.Volume - _expected_volume(400, 2800, [4000])) < 1e-3)
+    short = walls_object.makeSegment(ext, name="short")
+    short.Edges = [(sk, ("Edge1",))]
+    short.Height = "2200 mm"
+    doc.recompute()
+    h.check("W2 nested child overrides height and inherits width",
+            abs(short.Shape.Volume - _expected_volume(400, 2200, [4000])) < 1e-3)
+    h.check("W2 ancestor excludes descendant claims (rest builds nothing)",
+            rest.Shape.Volume < 1e-3)
+    h.check("W2 sibling unaffected by nested child",
+            abs(ext.Shape.Volume - _expected_volume(400, 2800, [4000])) < 1e-3)
+    return wall, sk
+
+
+def _w3_sketch_edits(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 6000, 0),
+                                    FreeCAD.Vector(4000, 6000, 0)), False)
+    doc.recompute()
+    h.check("W3 new sketch edge lands in the rest child",
+            abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000] * 3)) < 1e-3)
+    sk.delGeometry(2)
+    doc.recompute()
+    h.check("W3 deleted edge drops from the rest child",
+            abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
+    sk.moveGeometry(0, 2, FreeCAD.Vector(5000, 0, 0))
+    doc.recompute()
+    h.check("W3 moved vertex: claim follows the edge",
+            abs(rest.Shape.Volume - _expected_volume(300, 2800, [5000, 4000])) < 1e-3)
+    return wall, sk
+
+
+def _w4_panel(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.walls import gui as walls_gui
+    panel = walls_gui.WallPlusTaskPanel(wall)
+    panel._loadFromObject()
+    from archplus.common import widgets
+    widgets.set_mm(panel.width, 450.0)
+    panel.align.setCurrentText("Left")
+    panel._apply()
+    doc.recompute()
+    h.check("W4 panel edits reach the wall and its child",
+            abs(wall.Width.Value - 450.0) < 1e-9
+            and wall.Align == "Left"
+            and abs(wall.Group[0].Shape.Volume
+                    - _expected_volume(450, 2800, [4000])) < 1e-3)
+    panel.reject()
+
+
+def _w5_split(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge1"], name="exterior")
+    doc.recompute()
+    new = [o for o in wall.Group if o is not rest][0]
+    h.check("W5 split moved the claim",
+            abs(new.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    h.check("W5 source keeps the remainder",
+            abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    h.check("W5 split-created segment carries the wall view provider",
+            _vp_name(new) == "_ViewProviderWall"
+            and _vp_name(wall) == "_ViewProviderWall"
+            and _vp_name(rest) == "_ViewProviderWall")
+    nested = walls_object.makeSegment(new, name="short")
+    nested.Edges = [(sk, ("Edge2",))]
+    nested.Height = "2200 mm"
+    doc.recompute()
+    h.check("W5 nesting after split inherits the group",
+            abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3
+            and rest.Shape.Volume < 1e-3
+            and abs(new.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    wall.addObject(new)
+    doc.recompute()
+    h.check("W5 re-parenting preserves geometry",
+            abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3)
+    from archplus.tools.walls import gui as walls_gui
+    from archplus.tools.walls import model
+    polys = walls_gui._claimedEdgePolylines(new)
+    picked = model.match_edge([pts for _sub, pts in polys],
+                              (2000.0, 0.0, 0.0), tol=5.0)
+    h.check("W5 split helper matches a face pick to its edge",
+            len(polys) == 1 and picked == 0 and polys[picked][0] == "Edge1")
+    new.Width = "200 mm"
+    doc.recompute()
+    h.check("W5 nested child inherits the group width override",
+            abs(nested.Shape.Volume - _expected_volume(200, 2200, [4000])) < 1e-3)
+    new.removeObject(nested)
+    wall.addObject(nested)
+    h.check("W5 re-parenting marks the moved child for rebuild",
+            "Touched" in nested.State)
+    doc.recompute()
+    h.check("W5 real re-parenting re-derives the inherited config",
+            nested.Wall is wall
+            and abs(nested.Shape.Volume - _expected_volume(300, 2200, [4000])) < 1e-3
+            and abs(new.Shape.Volume - _expected_volume(200, 2800, [4000])) < 1e-3)
+    return wall, sk
+
+
+def _w6_hosting(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    full = seg.Shape.Volume
+
+    from archplus.tools.windows import gui as wg
+    from archplus.tools.windows import object as wo
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000, 1000, wp, name="Win")
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    h.check("W6 hosted window cuts its segment",
+            seg.Shape.Volume < full - 1000 * 300 * 1000 * 0.5)
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    wg._recomputeWithHosts(win)
+    h.check("W6 moved window re-cuts its segment",
+            not seg.Shape.isInside(FreeCAD.Vector(1000, 0, 500), 1e-6, True)
+            and seg.Shape.isInside(FreeCAD.Vector(2000, 0, 500), 1e-6, True))
+    wall.Subtractions = []
+    win.Hosts = []
+    doc.recompute()
+    h.check("W6 unhosting restores the segment",
+            abs(seg.Shape.Volume - full) < 1e-3)
+
+    sk2 = _line_sketch(doc, [
+        ((0, 5000), (2000, 5000), False),
+        ((2000, 5000), (4000, 5000), False),
+    ], name="SplitRun")
+    wall2 = walls_object.makeWall(doc, sketch=sk2, name="Wall2")
+    doc.recompute()
+    a, b = wall2.Group[0], walls_object.makeSegment(wall2, name="b")
+    a.Edges = [(sk2, ("Edge1",))]
+    a.Rest = False
+    b.Edges = [(sk2, ("Edge2",))]
+    doc.recompute()
+    fa, fb = a.Shape.Volume, b.Shape.Volume
+    wsk2, wp2 = wg._makeWindowGeometry(spec)
+    win2 = wo.makeWindow(wsk2, 1000, 1000, wp2, name="Win2")
+    wsk2.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 5000, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win2.Hosts = [wall2]
+    wall2.Subtractions = [win2]
+    doc.recompute()
+    h.check("W6 spanning window cuts both collinear segments",
+            a.Shape.Volume < fa - 100 and b.Shape.Volume < fb - 100)
+    gb = b.Shape.Volume
+    wsk3, wp3 = wg._makeWindowGeometry(spec)
+    win3 = wo.makeWindow(wsk3, 1000, 1000, wp3, name="Win3")
+    wsk3.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(3500, 5000, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win3.Hosts = [wall2]
+    doc.recompute()
+    h.check("W6 Hosts-only window cuts its segment",
+            b.Shape.Volume < gb)
+    return wall, sk
+
+
+def _w7_reload(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    walls_object.splitSegment(wall.Group[0], ["Edge1"], name="exterior")
+    doc.recompute()
+    import os
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), "archplus_walls_reload.FCStd")
+    if os.path.exists(path):
+        os.remove(path)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    doc2 = FreeCAD.openDocument(path)
+    doc2.recompute()
+    wall2 = doc2.getObject("Wall")
+    ok = wall2 is not None and len(wall2.Group) == 2
+    for seg in (wall2.Group if ok else []):
+        ok = ok and abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+        ok = ok and seg.Proxy.Type == "WallSegment" and seg.Wall is wall2
+    h.check("W7 reload preserves tree, claims and inheritance", ok)
+    h.check("W7 restored view provider nests the segments",
+            wall2 is not None
+            and _vp_name(wall2) == "_ViewProviderWall"
+            and wall2.ViewObject.Proxy.claimChildren() == list(wall2.Group))
+    FreeCAD.closeDocument(doc2.Name)
+
+
+def _w8_placed_sketch(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    sk.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 0, 2800),
+                                     FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    bb = seg.Shape.BoundBox
+    h.check("W8 placed sketch: volume and placement match the sketch",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3
+            and abs(bb.XMin) < 1.0 and abs(bb.XMax - 4000) < 1.0
+            and abs(bb.YMin + 2800) < 1.0 and abs(bb.YMax) < 1.0
+            and abs(bb.ZMin - 2650) < 1.0 and abs(bb.ZMax - 5950) < 1.0,
+            "bbox %s" % bb)
+
+
+def _w9_align_offset(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    wall.Align = "Left"
+    wall.Offset = "100 mm"
+    doc.recompute()
+    bb = seg.Shape.BoundBox
+    h.check("W9 Left builds left of travel with offset",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(bb.YMin - 100) < 1.0 and abs(bb.YMax - 400) < 1.0,
+            "bbox %s" % bb)
+    wall.Align = "Right"
+    doc.recompute()
+    bb = seg.Shape.BoundBox
+    h.check("W9 Right builds right of travel with offset",
+            abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(bb.YMin + 400) < 1.0 and abs(bb.YMax + 100) < 1.0,
+            "bbox %s" % bb)
+    rev = _line_sketch(doc, [((4000, 0), (0, 0), False)], name="RevPlan")
+    wall2 = walls_object.makeWall(doc, sketch=rev, name="Wall2")
+    wall2.Align = "Left"
+    doc.recompute()
+    bb = wall2.Group[0].Shape.BoundBox
+    h.check("W9 Left follows the edge travel direction",
+            abs(bb.YMin + 300) < 1.0 and abs(bb.YMax) < 1.0,
+            "bbox %s" % bb)
+
+
+def _w10_arc(doc):
+    import math
+    sk = doc.addObject("Sketcher::SketchObject", "ArcPlan")
+    sk.addGeometry(Part.ArcOfCircle(
+        Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 2000),
+        0.0, math.pi / 2), False)
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    area = (math.pi / 2) / 2.0 * (2150.0 ** 2 - 1850.0 ** 2)
+    expected = area * 2800.0
+    h.check("W10 arc wall matches the annular-sector volume",
+            abs(seg.Shape.Volume - expected) < 1e-6 * expected,
+            "volume %.3f vs expected %.3f" % (seg.Shape.Volume, expected))
+
+
+def _w11_delete_segment(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge2",))]
+    doc.recompute()
+    h.check("W11 explicit sibling and rest child each build one edge",
+            len(wall.Group) == 2
+            and abs(ext.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(rest.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    doc.removeObject(ext.Name)
+    doc.recompute()
+    h.check("W11 deleting a segment frees its edge for the rest child",
+            len(wall.Group) == 1
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
+
+
+def _w12_closed_corner(doc):
+    L, W, H = 4000.0, 300.0, 2800.0
+    sk = _line_sketch(doc, [
+        ((-2000, -2000), (2000, -2000), False),
+        ((2000, -2000), (2000, 2000), False),
+        ((2000, 2000), (-2000, 2000), False),
+        ((-2000, 2000), (-2000, -2000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    expected = ((L + W) ** 2 - (L - W) ** 2) * H
+    bb = seg.Shape.BoundBox
+    h.check("W12 closed square: one mitered ring solid",
+            len(seg.Shape.Solids) == 1
+            and abs(seg.Shape.Volume - expected) < 1e-6 * expected,
+            "volume %.3f expected %.3f solids %d"
+            % (seg.Shape.Volume, expected, len(seg.Shape.Solids)))
+    h.check("W12 closed square: bbox (L+W) per side, centered on sketch",
+            abs(bb.XMin + (L + W) / 2) < 1e-3
+            and abs(bb.XMax - (L + W) / 2) < 1e-3
+            and abs(bb.YMin + (L + W) / 2) < 1e-3
+            and abs(bb.YMax - (L + W) / 2) < 1e-3,
+            "bbox %s" % bb)
+
+
+def _w13_closed_align(doc):
+    L, W, H = 4000.0, 300.0, 2800.0
+    sk = _line_sketch(doc, [
+        ((-2000, -2000), (-2000, 2000), False),
+        ((-2000, 2000), (2000, 2000), False),
+        ((2000, 2000), (2000, -2000), False),
+        ((2000, -2000), (-2000, -2000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    wall.Align = "Left"
+    doc.recompute()
+    seg = wall.Group[0]
+    expected = ((L + 2 * W) ** 2 - L ** 2) * H
+    bb = seg.Shape.BoundBox
+    h.check("W13 closed square Left: outward ring, no gaps",
+            len(seg.Shape.Solids) == 1
+            and abs(seg.Shape.Volume - expected) < 1e-6 * expected
+            and abs(bb.XMin + (L + 2 * W) / 2) < 1e-3
+            and abs(bb.XMax - (L + 2 * W) / 2) < 1e-3
+            and abs(bb.YMin + (L + 2 * W) / 2) < 1e-3
+            and abs(bb.YMax - (L + 2 * W) / 2) < 1e-3,
+            "volume %.3f expected %.3f bbox %s"
+            % (seg.Shape.Volume, expected, bb))
+
+
+def _w14_view_provider(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    h.check("W14 factory-built wall and segment carry the wall view provider",
+            _vp_name(wall) == "_ViewProviderWall"
+            and _vp_name(seg) == "_ViewProviderWall")
+    h.check("W14 view provider nests segments under the wall",
+            wall.ViewObject.Proxy.claimChildren() == list(wall.Group)
+            and seg.ViewObject.Proxy.claimChildren() == [])
+
+
+def _w15_split_gate(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    from archplus.tools.walls import gui as walls_gui
+    import FreeCADGui
+    FreeCADGui.Selection.clearSelection()
+    h.check("W15 split command inactive without a segment selection",
+            not walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.addSelection(seg)
+    h.check("W15 split command active with a segment selected",
+            walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg, "Face1")
+    h.check("W15 split command active with a segment face selected",
+            walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall)
+    h.check("W15 split command active with the wall root selected",
+            walls_gui.WallSplitCommand().IsActive())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg, "Face1")
+    h.check("W15 selection gate accepts a picked segment face",
+            walls_gui.wall_segment_selected())
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall)
+    h.check("W15 selection gate accepts the wall root (3D picks of claimed "
+            "children select it)",
+            walls_gui.wall_segment_selected())
+    FreeCADGui.Selection.clearSelection()
+    h.check("W15 selection gate rejects an empty selection",
+            not walls_gui.wall_segment_selected())
+    h.check("W15 view provider offers no tree context-menu entry "
+            "(the split entry is toolbar-only)",
+            not hasattr(walls_object._ViewProviderWall, "setupContextMenu")
+            and not hasattr(wall.ViewObject.Proxy, "setupContextMenu")
+            and not hasattr(seg.ViewObject.Proxy, "setupContextMenu"))
+
+
+def _w16_split_ux(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    import FreeCADGui
+    from archplus.tools.walls import gui as walls_gui
+    cmd = walls_gui.WallSplitCommand()
+
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(rest)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        cmd.Activated()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W16 split without faces warns and creates nothing",
+            any("Click one or more wall faces" in m for m in captured)
+            and len(wall.Group) == 1
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(rest, "Face1", 500.0, 0.0, 0.0)
+    h.check("W16 split command active with a picked face", cmd.IsActive())
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new = [o for o in wall.Group if o is not rest]
+    h.check("W16 picked-face split moves the picked run into a new sibling",
+            len(new) == 1
+            and abs(new[0].Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3
+            and abs(rest.Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3)
+    h.check("W16 split-created segment gets the wall view provider",
+            _vp_name(new[0]) == "_ViewProviderWall")
+    FreeCADGui.Selection.clearSelection()
+
+    sk2 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX2")
+    wall2 = walls_object.makeWall(doc, sketch=sk2)
+    doc.recompute()
+    a = walls_object.makeSegment(wall2, name="a")
+    a.Edges = [(sk2, ("Edge1",))]
+    a.Rest = False
+    b = walls_object.makeSegment(wall2, name="b")
+    b.Edges = [(sk2, ("Edge2",))]
+    doc.recompute()
+    rest2 = wall2.Group[0]
+    h.check("W16 two explicit segments and a dormant rest child",
+            abs(a.Shape.Volume - _expected_volume(300, 2800, [2000])) < 1e-3
+            and abs(b.Shape.Volume - _expected_volume(300, 2800, [2000])) < 1e-3
+            and rest2.Shape.Volume < 1e-3)
+    options = cmd._targetOptions([(a, ("Edge1",))])
+    h.check("W16 move targets list the other top-level segments only",
+            b in options and rest2 in options and a not in options)
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(a, "Face1", 500.0, 0.0, 0.0)
+    cmd._chooseTarget = lambda sources: b
+    cmd.Activated()
+    doc.recompute()
+    h.check("W16 move to existing: source empties, target joins the runs",
+            a.Shape.Volume < 1e-3
+            and len(b.Shape.Solids) == 1
+            and abs(b.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
+    sk3 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX3")
+    wall3 = walls_object.makeWall(doc, sketch=sk3)
+    doc.recompute()
+    fallback3 = wall3.Group[0]
+    d = walls_object.makeSegment(wall3, name="d")
+    d.Edges = [(sk3, ("Edge2",))]
+    doc.recompute()
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(fallback3, "Face1", 500.0, 0.0, 0.0)
+    cmd._chooseTarget = lambda sources: d
+    cmd.Activated()
+    doc.recompute()
+    h.check("W16 moving out of a fallback source frees only the moved run",
+            abs(d.Shape.Volume
+                - _expected_volume(300, 2800, [2000, 2000])) < 1e-3
+            and fallback3.Shape.Volume < 1e-3
+            and fallback3.Fallback)
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(b, "Face1", 2500.0, 0.0, 0.0)
+    FreeCADGui.Selection.addSelection(d, "Face1", 500.0, 0.0, 0.0)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        cmd.Activated()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W16 selection across walls aborts with a warning",
+            any("several walls" in m for m in captured)
+            and len(b.Shape.Solids) == 1
+            and abs(b.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3
+            and abs(d.Shape.Volume
+                    - _expected_volume(300, 2800, [2000, 2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
+    sk4 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (4000, 0), False),
+    ], name="SplitUX4")
+    wall4 = walls_object.makeWall(doc, sketch=sk4)
+    doc.recompute()
+    a4 = walls_object.makeSegment(wall4, name="a4")
+    a4.Edges = [(sk4, ("Edge1",))]
+    a4.Fallback = False
+    b4 = walls_object.makeSegment(wall4, name="b4")
+    b4.Edges = [(sk4, ("Edge2",))]
+    doc.recompute()
+    fallback4 = wall4.Group[0]
+    pnt = _facePoint(a4)
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(wall4, "Face1", pnt.x, pnt.y, pnt.z)
+    h.check("W16 split command active with a picked root face", cmd.IsActive())
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new4 = [o for o in wall4.Group
+            if o is not fallback4 and o is not a4 and o is not b4]
+    h.check("W16 root-face pick resolves to the owning segment and splits",
+            len(new4) == 1
+            and abs(new4[0].Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3
+            and a4.Shape.Volume < 1e-3
+            and abs(b4.Shape.Volume
+                    - _expected_volume(300, 2800, [2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
+    sk5 = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ], name="SplitUX5")
+    wall5 = walls_object.makeWall(doc, sketch=sk5)
+    doc.recompute()
+    a5 = walls_object.makeSegment(wall5, name="a5")
+    a5.Edges = [(sk5, ("Edge1",))]
+    a5.Fallback = False
+    b5 = walls_object.makeSegment(wall5, name="b5")
+    b5.Edges = [(sk5, ("Edge2",))]
+    b5.Fallback = False
+    doc.recompute()
+    fallback5 = wall5.Group[0]
+    p_a = _facePoint(a5)
+    p_b = _facePoint(b5)
+    FreeCADGui.Selection.addSelection(wall5, "Face1", p_a.x, p_a.y, p_a.z)
+    FreeCADGui.Selection.addSelection(wall5, "Face2", p_b.x, p_b.y, p_b.z)
+    cmd._chooseTarget = lambda sources: walls_gui.NEW_SEGMENT
+    cmd.Activated()
+    doc.recompute()
+    new5 = [o for o in wall5.Group
+            if o is not fallback5 and o is not a5 and o is not b5]
+    h.check("W16 two root faces resolve to their own segments",
+            len(new5) == 2
+            and a5.Shape.Volume < 1e-3
+            and b5.Shape.Volume < 1e-3
+            and abs(sum(o.Shape.Volume for o in new5)
+                    - 2 * _expected_volume(300, 2800, [2000])) < 1e-3)
+    FreeCADGui.Selection.clearSelection()
+
+
+def _facePoint(seg):
+    """An interior point of the segment's largest face: well away from
+    shared seams, where two segments' faces coincide and a pick point
+    cannot distinguish them."""
+    return max(seg.Shape.Faces, key=lambda f: f.Area).CenterOfGravity
+
+
+def _segment_claims(seg):
+    out = []
+    for _link, subs in getattr(seg, "Edges", None) or []:
+        out.extend(subs)
+    return out
+
+
+def _w18_segment_miter(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 1000), (0, 1000), False),
+        ((0, 1000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge2"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall)
+    seg_new = [s for s in segs if _segment_claims(s) == ["Edge2"]][0]
+    seg_rest = [s for s in segs if s is not seg_new][0]
+    height = 2800.0
+    h.check("W18 split corner builds valid solids",
+            seg_new.Shape.isValid() and seg_rest.Shape.isValid())
+    h.check("W18 split segment volume is exact",
+            abs(seg_new.Shape.Volume - 300000.0 * height) < 1.0)
+    h.check("W18 rest volume is exact",
+            abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+    common = seg_new.Shape.common(seg_rest.Shape).Volume
+    h.check("W18 corner seam leaves no overlap", common < 1e-6,
+            detail="overlap volume %s" % common)
+    empty = 0
+    for gx in range(-4, 5):
+        for gy in range(-4, 5):
+            p = FreeCAD.Vector(1000 + gx * 25.0, gy * 25.0, height / 2.0)
+            if not (seg_new.Shape.isInside(p, 1e-7, True)
+                    or seg_rest.Shape.isInside(p, 1e-7, True)):
+                empty += 1
+    h.check("W18 corner region has no gap", empty == 0,
+            detail="%d empty grid points" % empty)
+
+
+def _w19_mixed_width_miter(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 1000), (0, 1000), False),
+        ((0, 1000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    walls_object.splitSegment(rest, ["Edge2"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall)
+    seg_new = [s for s in segs if _segment_claims(s) == ["Edge2"]][0]
+    seg_rest = [s for s in segs if s is not seg_new][0]
+    seg_new.Width = 200
+    doc.recompute()
+    height = 2800.0
+    h.check("W19 narrowed segment volume is exact",
+            abs(seg_new.Shape.Volume - 200000.0 * height) < 1.0)
+    h.check("W19 rest area is invariant to the neighbor width",
+            abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+    common = seg_new.Shape.common(seg_rest.Shape).Volume
+    h.check("W19 mixed-width seam leaves no overlap", common < 1e-6,
+            detail="overlap volume %s" % common)
+    slant = (seg_new.Shape.isInside(FreeCAD.Vector(1060, -80, height / 2.0),
+                                    1e-7, True)
+             and seg_rest.Shape.isInside(FreeCAD.Vector(940, 80, height / 2.0),
+                                         1e-7, True)
+             and not seg_rest.Shape.isInside(
+                 FreeCAD.Vector(1060, -80, height / 2.0), 1e-7, True)
+             and not seg_new.Shape.isInside(
+                 FreeCAD.Vector(940, 80, height / 2.0), 1e-7, True))
+    h.check("W19 seam slant gives the wider segment the larger share",
+            slant)
+    seg_new.Width = 300
+    doc.recompute()
+    h.check("W19 width restore rebuilds both sides of the seam",
+            abs(seg_new.Shape.Volume - 300000.0 * height) < 1.0
+            and abs(seg_rest.Shape.Volume - 900000.0 * height) < 1.0)
+
+
+def _w20_butt_fallbacks(doc):
+    sk = _line_sketch(doc, [((0, 0), (1000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    rest = wall.Group[0]
+    h.check("W20 open sketch end builds a butt-ended band",
+            rest.Shape.isValid()
+            and abs(rest.Shape.Volume - 300000.0 * 2800.0) < 1.0)
+    sk2 = _line_sketch(doc, [
+        ((0, 0), (1000, 0), False),
+        ((1000, 0), (1000, 1000), False),
+        ((1000, 0), (2000, -500), False),
+    ], name="TPlan")
+    wall2 = walls_object.makeWall(doc, sketch=sk2)
+    doc.recompute()
+    rest2 = wall2.Group[0]
+    walls_object.splitSegment(rest2, ["Edge2"])
+    walls_object.splitSegment(rest2, ["Edge3"])
+    doc.recompute()
+    segs = walls_object.all_segments(wall2)
+    expected = sorted([300.0 * 1000.0 * 2800.0,
+                       300.0 * 1000.0 * 2800.0,
+                       300.0 * 1118.0339878225 * 2800.0])
+    got = sorted(s.Shape.Volume for s in segs)
+    ok = (len(segs) == 3
+          and all(s.Shape.isValid() for s in segs)
+          and all(abs(g - e) < 2.0 for g, e in zip(got, expected)))
+    h.check("W20 three segments at one vertex keep exact butt bands", ok,
+            detail="volumes %s" % [round(s.Shape.Volume, 1) for s in segs])
+
+
+def _w21_segment_panel_toggle(doc):
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.walls import gui as walls_gui
+    from archplus.common import widgets
+    panel = walls_gui.WallSegmentTaskPanel(wall.Group[0])
+    try:
+        h.check("W21 width field starts disabled while inheriting",
+                not panel.width.isEnabled())
+        panel.overrideW.setChecked(True)
+        h.check("W21 checking the override enables the field immediately",
+                panel.width.isEnabled())
+        h.check("W21 the field pre-fills with the inherited value",
+                abs(widgets.mm(panel.width) - 300.0) < 1e-6)
+        panel.overrideW.setChecked(False)
+        h.check("W21 unchecking disables the field again",
+                not panel.width.isEnabled())
+    finally:
+        panel.reject()
+
+
+def _pump():
+    from PySide import QtWidgets
+    for _ in range(20):
+        QtWidgets.QApplication.processEvents()
+
+
+def _w22_tree_select_faces(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(seg)
+    _pump()
+    sel = [s for s in FreeCADGui.Selection.getSelectionEx()
+           if s.Object is seg]
+    h.check("W22 a tree click on a segment selects all its faces",
+            len(sel) == 1
+            and len(sel[0].SubElementNames) == len(seg.Shape.Faces))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    sel2 = [s for s in FreeCADGui.Selection.getSelectionEx()
+            if s.Object is seg]
+    h.check("W22 deselecting clears the face selection", not sel2)
+
+
+def _w23_pick_redirect(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    a = walls_object.makeSegment(wall, name="a")
+    a.Edges = [(sk, ("Edge1",))]
+    a.Fallback = False
+    b = walls_object.makeSegment(wall, name="b")
+    b.Edges = [(sk, ("Edge2",))]
+    b.Fallback = False
+    doc.recompute()
+    p_a = _facePoint(a)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      p_a.x, p_a.y, p_a.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W23 a 3D pick selects the owning segment, not the wall",
+            a in objs and objs[a] and wall not in objs)
+    h.check("W23 the redirected pick keeps exactly the picked face",
+            a in objs and len(objs[a]) == 1)
+    ok = walls_object.addFaceHighlight(
+        b.ViewObject, walls_object.PREVIEW_HIGHLIGHT,
+        (0.95, 0.55, 0.10), 0.55)
+    present = [ch for ch in (b.ViewObject.RootNode.getChildren() or [])
+               if ch.getName() == walls_object.PREVIEW_HIGHLIGHT]
+    walls_object.removeFaceHighlight(
+        b.ViewObject, walls_object.PREVIEW_HIGHLIGHT)
+    h.check("W23 the picker preview overlay still works",
+            ok and len(present) == 1)
+    walls_object.splitSegment(a, ["Edge1"])
+    doc.recompute()
+    c = [o for o in walls_object.all_segments(wall)
+         if o is not a and o is not b and not o.Fallback][0]
+    p_c = _facePoint(c)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face14",
+                                      p_c.x, p_c.y, p_c.z)
+    _pump()
+    objs2 = {s.Object: list(s.SubElementNames)
+             for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W23 an aggregate face index still redirects after a split",
+            c in objs2 and wall not in objs2
+            and objs2[c] and objs2[c][0].startswith("Face"))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W23 the redirect does not resurrect after deselection",
+            not FreeCADGui.Selection.getSelectionEx())
+
+
+def _overlayNodes(seg):
+    node = seg.ViewObject.RootNode
+    return [ch for ch in (node.getChildren() or [])
+            if ch.getName() == walls_object.FACE_HIGHLIGHT]
+
+
+def _overlayCoords(seg):
+    """Vertices drawn by the face highlight overlay (0 if absent)."""
+    for node in _overlayNodes(seg):
+        for ch in node.getChildren() or []:
+            if str(ch.getTypeId().getName()).endswith("Coordinate3"):
+                return ch.point.getNum()
+    return 0
+
+
+def _faceCoordCount(obj, subs):
+    import Part
+    faces = [obj.Shape.getElement(s) for s in subs]
+    shape = Part.makeCompound(faces) if len(faces) > 1 else faces[0]
+    return len(shape.tessellate(0.5)[0])
+
+
+def _w24_click_highlight(doc):
+    import FreeCADGui
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    a = walls_object.makeSegment(wall, name="a")
+    a.Edges = [(sk, ("Edge1",))]
+    a.Fallback = False
+    b = walls_object.makeSegment(wall, name="b")
+    b.Edges = [(sk, ("Edge2",))]
+    b.Fallback = False
+    doc.recompute()
+
+    # FreeCAD's face tint is unreliable for a selected group child, so
+    # every selected face of a segment is drawn by the overlay — exactly
+    # the selected faces, nothing more.
+    p_a = _facePoint(a)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      p_a.x, p_a.y, p_a.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    picked = objs[a][0] if a in objs and objs[a] else None
+    h.check("W24 a face pick keeps the redirect to the owning segment",
+            picked is not None and wall not in objs)
+    h.check("W24 the picked face is drawn by the highlight overlay",
+            _overlayCoords(a) == _faceCoordCount(a, [picked]),
+            "overlay=%d expected=%d" % (_overlayCoords(a),
+                                        _faceCoordCount(a, [picked])))
+    h.check("W24 the unpicked segment stays unlit", not _overlayNodes(b))
+
+    # a second, ctrl-clicked face joins the overlay
+    other = "Face2" if picked != "Face2" else "Face1"
+    FreeCADGui.Selection.addSelection(a, other)
+    _pump()
+    h.check("W24 a second face joins the highlight overlay",
+            _overlayCoords(a) == _faceCoordCount(a, sorted([picked,
+                                                            other])),
+            "overlay=%d expected=%d"
+            % (_overlayCoords(a),
+               _faceCoordCount(a, sorted([picked, other]))))
+
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W24 deselecting drops the highlight overlay",
+            not _overlayNodes(a))
+
+    # Edge picks land on the owning segment with its local edge name and
+    # keep the native edge tint; no face overlay is stacked for them.
+    from archplus.tools.walls import gui as walls_gui
+    target = FreeCAD.Vector(1000, -150, 2800)
+    edges = list(a.Shape.Edges)
+    e = min(edges, key=lambda e: e.CenterOfGravity.sub(target).Length)
+    p_e = e.CenterOfGravity
+    h.check("W24 the test targets the top-front edge midpoint",
+            p_e.sub(target).Length < 1e-6 and e.Length > 1500)
+    h.check("W24 the nearest-edge resolver finds the picked edge",
+            walls_gui._nearestEdgeName(a, p_e)
+            == "Edge%d" % (edges.index(e) + 1))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(wall, "Edge1",
+                                      p_e.x, p_e.y, p_e.z)
+    _pump()
+    objs = {s.Object: list(s.SubElementNames)
+            for s in FreeCADGui.Selection.getSelectionEx()}
+    h.check("W24 an edge pick lands on the owning segment's edge",
+            a in objs and objs[a] and wall not in objs
+            and objs[a][0].startswith("Edge"))
+    h.check("W24 an edge pick carries no face overlay",
+            not _overlayNodes(a))
+
+    # A tree click selects every face; the overlay carries the full set
+    # because the native tint cannot be relied on for group children.
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    FreeCADGui.Selection.addSelection(a)
+    _pump()
+    sel = [s for s in FreeCADGui.Selection.getSelectionEx()
+           if s.Object is a]
+    h.check("W24 a tree click still selects every face",
+            len(sel) == 1
+            and len(sel[0].SubElementNames) == len(a.Shape.Faces))
+    h.check("W24 the tree-click overlay covers every face",
+            _overlayCoords(a) == _faceCoordCount(
+                a, sorted(sel[0].SubElementNames)))
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W24 clearing drops the tree-click overlay",
+            not _overlayNodes(a))
+
+
+
+def _w25_selection_dims(doc):
+    import FreeCADGui
+    from pivy import coin
+    from archplus.tools.walls import dims
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+
+    def dim_nodes():
+        return [ch for ch in (vobj.RootNode.getChildren() or [])
+                if ch.getName() == dims.DIM_NODE]
+
+    def label_parts():
+        named = dim_nodes()
+        if not named:
+            return None, None
+
+        def flat(nodes):
+            out = []
+            for n in (nodes or []):
+                out.append(n)
+                out.extend(flat(n.getChildren()))
+            return out
+
+        # labels live in their own nested SoSeparator (run-aligned frame)
+        kids = flat(named[0].getChildren())
+        texts = [ch for ch in kids if isinstance(ch, coin.SoText3)]
+        trans = [ch for ch in kids if isinstance(ch, coin.SoMatrixTransform)]
+        if not texts or not trans:
+            return None, None
+        return str(texts[0].string[0]), trans[0].matrix.getValue()[3][2]
+
+    expected = FreeCAD.Units.Quantity(4000.0, FreeCAD.Units.Length).UserString
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg)
+    _pump()
+    text, z = label_parts()
+    h.check("W25 selecting a segment draws the length dim",
+            len(dim_nodes()) == 1 and text == expected,
+            detail="text=%r" % text)
+    h.check("W25 the label rides above the wall top",
+            z is not None and abs(z - 2820.0) < 1e-6, detail="z=%r" % z)
+    coords = [ch for ch in (dim_nodes()[0].getChildren() if dim_nodes() else [])
+              if isinstance(ch, coin.SoCoordinate3)]
+    h.check("W25 the dim line and ticks carry points",
+            bool(coords) and coords[0].point.getNum() >= 6)
+    seg.Height = 2000
+    doc.recompute()
+    text, z = label_parts()
+    h.check("W25 the dim tracks reflows",
+            z is not None and abs(z - 2020.0) < 1e-6, detail="z=%r" % z)
+    seg.Height = 2800
+    doc.recompute()
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W25 deselecting removes the dim", len(dim_nodes()) == 0)
+    pnt = seg.Shape.getElement("Face1").CenterOfGravity
+    FreeCADGui.Selection.addSelection(wall, "Face1",
+                                      pnt.x, pnt.y, pnt.z)
+    _pump()
+    h.check("W25 a picked wall face dims its owning segment",
+            len(dim_nodes()) == 1)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W25 clearing drops it again", len(dim_nodes()) == 0)
+
+
+def _w26_square_wall_dims(doc):
+    """The reported regression: a closed square wall is one chain, so the
+    old dim drew the perimeter. Whole-select must dim each side (one run
+    per face); picking one face must dim only that side."""
+    import FreeCADGui
+    from pivy import coin
+    from archplus.tools.walls import dims
+    sk = _line_sketch(doc, [
+        ((0, 0), (2000, 0), False),
+        ((2000, 0), (2000, 2000), False),
+        ((2000, 2000), (0, 2000), False),
+        ((0, 2000), (0, 0), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    vobj = seg.ViewObject
+
+    def dim_node():
+        named = [ch for ch in (vobj.RootNode.getChildren() or [])
+                 if ch.getName() == dims.DIM_NODE]
+        return named[0] if named else None
+
+    def labels():
+        node = dim_node()
+        if node is None:
+            return []
+        out = []
+        for label in node.getChildren() or []:
+            for ch in label.getChildren() or []:
+                if isinstance(ch, coin.SoText3):
+                    out.append(str(ch.string[0]))
+        return out
+
+    expected = FreeCAD.Units.Quantity(2000.0,
+                                      FreeCAD.Units.Length).UserString
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(seg)
+    _pump()
+    texts = labels()
+    h.check("W26 a square wall dims every run when fully selected",
+            len(texts) == 4 and all(t == expected for t in texts),
+            detail="labels=%r" % texts)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W26 deselecting clears the square's dims", dim_node() is None)
+    # one side's face pick dims only that side: the face nearest the
+    # target point is that side's own outer/inner face
+    target = FreeCAD.Vector(1000.0, -150.0, 1400.0)  # on the side's face
+    best, best_dist = None, None
+    for i in range(1, len(seg.Shape.Faces) + 1):
+        cog = seg.Shape.getElement("Face%d" % i).CenterOfGravity
+        dist = cog.distanceToPoint(target)
+        if best_dist is None or dist < best_dist:
+            best, best_dist = i, dist
+    FreeCADGui.Selection.addSelection(wall, "Face%d" % best,
+                                      target.x, target.y, target.z)
+    _pump()
+    texts = labels()
+    h.check("W26 a picked face dims only its own run",
+            len(texts) == 1 and texts == [expected],
+            detail="labels=%r" % texts)
+    FreeCADGui.Selection.clearSelection()
+    _pump()
+    h.check("W26 clearing drops the single dim", dim_node() is None)
+
+
+def _w27_fallback_migration(doc):
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    seg.Fallback = False
+    seg.addProperty("App::PropertyBool", "Rest", "Wall",
+                    "Claim every sketch edge no other segment claims "
+                    "(one per wall)")
+    seg.Rest = True
+    seg.removeProperty("Fallback")
+    doc.recompute()
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(),
+                        "archplus_walls_migration.FCStd")
+    if os.path.exists(path):
+        os.remove(path)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    doc2 = FreeCAD.openDocument(path)
+    doc2.recompute()
+    wall2 = doc2.getObject("Wall")
+    seg2 = wall2.Group[0] if wall2 is not None and wall2.Group else None
+    # Only the flag move is asserted: a synthetic pre-rename document saved by
+    # new code carries an empty (never-built) shape, and migration deliberately
+    # preserves saved shapes — a real pre-rename document keeps its volume.
+    h.check("W27 pre-rename Rest flag migrates to Fallback on restore",
+            seg2 is not None
+            and seg2.Fallback
+            and "Rest" not in seg2.PropertiesList)
+    FreeCAD.closeDocument(doc2.Name)
+
+
+def _w28_mixed_direction_chain(doc):
+    """Real sketches store edges in mixed directions; the mitered chain
+    build must normalize them into one traversal instead of falling back
+    to per-edge butt ends."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+        ((4000, 0), (4000, 3000), False),
+        ((0, 3000), (0, 0), False),
+    ], name="MixedDirs")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        doc.recompute()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    seg = wall.Group[0]
+    volume = 300.0 * 2800.0 * (4000.0 * 3000.0 - 3400.0 * 2400.0)
+    h.check("W28 mixed-direction chain miters without fallback",
+            abs(seg.Shape.Volume - volume) < 1e-3
+            and len(seg.Shape.Solids) == 1
+            and not any("travel direction" in m for m in captured))
+
+
+def _w29_branched_plan(doc):
+    """A floor plan branches: partitions join the ring, so the claim set
+    is no single path. chain_splits must cut it into simple chains and
+    every piece must offset without falling back to butt ends."""
+    sk = _line_sketch(doc, [
+        ((4000, 0), (0, 0), False),
+        ((4000, 0), (8000, 0), False),
+        ((8000, 0), (8000, 5000), False),
+        ((0, 5000), (8000, 5000), False),
+        ((0, 5000), (0, 0), False),
+        ((4000, 2500), (4000, 0), False),
+    ], name="Branched")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        doc.recompute()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    seg = wall.Group[0]
+    # Ring band is mitred (perimeter x width); the partition band gets
+    # seam-trimmed to the ring centreline, so it overlaps the ring band by
+    # a half-width column instead of a full one.
+    volume = 300.0 * 2800.0 * (2.0 * (8000.0 + 5000.0) + 2500.0) \
+        - 0.5 * 300.0 * 300.0 * 2800.0
+    top = [f for f in seg.Shape.Faces
+           if abs(f.BoundBox.ZMin - seg.Shape.BoundBox.ZMax) < 1e-6
+           and abs(f.BoundBox.ZMax - seg.Shape.BoundBox.ZMax) < 1e-6]
+    h.check("W29 branched plan builds mitered without fallback",
+            abs(seg.Shape.Volume - volume) < 1e-3
+            and len(seg.Shape.Solids) == 1
+            and len(top) == 1
+            and not any("mitered chain build failed" in m for m in captured))
+
+
+def run():
+    doc = h.fresh_doc()
+    _w1_creation(doc)
+    _w2_inheritance(doc)
+    _w3_sketch_edits(doc)
+    _w4_panel(doc)
+    _w5_split(doc)
+    _w6_hosting(doc)
+    _w8_placed_sketch(doc)
+    _w9_align_offset(doc)
+    _w10_arc(doc)
+    _w11_delete_segment(doc)
+    _w12_closed_corner(doc)
+    _w13_closed_align(doc)
+    _w14_view_provider(doc)
+    _w15_split_gate(doc)
+    _w16_split_ux(doc)
+    _w18_segment_miter(doc)
+    _w19_mixed_width_miter(doc)
+    _w20_butt_fallbacks(doc)
+    _w21_segment_panel_toggle(doc)
+    _w22_tree_select_faces(doc)
+    _w23_pick_redirect(doc)
+    _w24_click_highlight(doc)
+    _w25_selection_dims(doc)
+    _w26_square_wall_dims(doc)
+    doc = h.fresh_doc()
+    _w7_reload(doc)
+    doc = h.fresh_doc()
+    _w27_fallback_migration(doc)
+    _w28_mixed_direction_chain(doc)
+    _w29_branched_plan(doc)

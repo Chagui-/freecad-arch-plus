@@ -403,15 +403,20 @@ def _recomputeWithHosts(obj):
     A hosted window is computed BEFORE its host wall in the dependency graph,
     so one recompute leaves the wall still cutting the door's previous shape and
     position — the change only appears after some later recompute. Touching the
-    hosts and recomputing again makes the wall opening follow the door now."""
+    hosts and recomputing again makes the wall opening follow the door now.
+    Wall segments hang off their root through a dependency-free hidden link, so
+    they are touched explicitly or their opening cuts go stale."""
     if obj is None:
         return
     doc = obj.Document
     doc.recompute()
     touched = False
+    from archplus.tools.walls import object as walls_object
     for h in (getattr(obj, "Hosts", None) or []):
         try:
             h.touch()
+            for seg in walls_object.all_segments(h):
+                seg.touch()
             touched = True
         except Exception:
             pass
@@ -672,7 +677,10 @@ class DoorsPlusTaskPanel:
         zs = []
         for h in (getattr(self.obj, "Hosts", None) or []):
             try:
-                zs.append(h.Shape.BoundBox.ZMin)
+                if getattr(h, "Shape", None) is not None and not h.Shape.isNull():
+                    zs.append(h.Shape.BoundBox.ZMin)
+                elif getattr(h, "Base", None) is not None:
+                    zs.append(h.Base.Placement.Base.z)
             except Exception:
                 pass
         return min(zs) if zs else None
@@ -955,6 +963,8 @@ def repositionDoor(door, reopen=False):
             if state["face"] is not None:
                 import Draft
                 host = state["face"][0]
+                if Draft.getType(host) == "WallSegment":
+                    host = getattr(host, "Wall", host)
                 if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                     door.Hosts = [host]
             # Moving the sketch placement touches the door but NOT its host, so
@@ -1118,6 +1128,8 @@ class DoorsPlusCommand:
         # Try to auto-host if a wall was clicked
         if self.baseFace is not None:
             host = self.baseFace[0]
+            if Draft.getType(host) == "WallSegment":
+                host = getattr(host, "Wall", host)
             if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                 door.Hosts = [host]
 

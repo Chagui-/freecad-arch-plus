@@ -782,7 +782,7 @@ class _Window(ArchComponent.Component):
                 # TODO More robust approach :  With ArchSketch, on which wall segment an ArchObject is attached to is declared by user and saved.
                 #      The extrusion of each wall segment could be done per segment, and punch hole in the exact wall segment before fusing them all. No need to care about each wall segment thickness.
                 # TODO Consider to turn below codes to getWidths/getSortedWidths() in ArchWall (below codes copied and modified from ArchWall)
-                propSetUuid = host.Proxy.ArchSkPropSetPickedUuid
+                propSetUuid = getattr(host.Proxy, "ArchSkPropSetPickedUuid", "")
                 widths = []  # [] or None are both False
                 if (
                     hasattr(host, "ArchSketchData")
@@ -795,7 +795,7 @@ class _Window(ArchComponent.Component):
                             # of sorted edges of Sketch.
                             widths = host.Base.Proxy.getWidths(host.Base, propSetUuid=propSetUuid)
                 if not widths:
-                    if host.OverrideWidth:
+                    if getattr(host, "OverrideWidth", None):
                         # TODO No need to test as in ArchWall if host.Base is Sketch and sortSketchWidth(), just need the max value
                         widths = host.OverrideWidth
                     elif host.Width:

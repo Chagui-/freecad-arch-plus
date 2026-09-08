@@ -1,13 +1,14 @@
 # ArchPlus tools
 
-User guide for the enhanced **Stairs**, **Doors** and **Windows** tools. For
-the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md); for the road ahead
-see [ROADMAP.md](ROADMAP.md).
+User guide for the enhanced **Stairs**, **Doors**, **Windows** and **Walls**
+tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md); for the
+road ahead see [ROADMAP.md](ROADMAP.md).
 
-Each geometry engine is a modifiable copy of a native FreeCAD module —
-`ArchStairs` for stairs and `ArchWindow` for doors and windows — so every
-native feature (IFC export, hosting/opening cuts, presets, …) is preserved
-while new behaviour is added on top, without affecting the built-in tools.
+Stairs, doors and windows are each a modifiable copy of a native FreeCAD
+module — `ArchStairs` and `ArchWindow` respectively — so every native feature
+(IFC export, hosting/opening cuts, presets, …) is preserved while new
+behaviour is added on top, without affecting the built-in tools. Walls is a
+from-scratch engine built around a shared sketch.
 
 ## Stairs
 
@@ -127,6 +128,104 @@ BIM workbench → **ArchPlus** toolbar → **Windows** → click a wall face to 
 (drops to a 900 mm sill height by default) → configure in the panel.
 Double-click (or right-click → **Edit**) a window to reopen the panel;
 right-click → **Reposition (pick point)** to move it with the mouse.
+
+## Walls
+
+- **Sketch-based segments** — a wall references its base sketch (never owns
+  it): each straight run of the sketch is claimed by a `WallSegment` group
+  that extrudes it separately, so segments can be edited, split and
+  overridden independently. Connected runs build as one mitered chain —
+  corners join cleanly and closed loops build as a single ring — exactly
+  like an Arch Wall. The `Wall` root holds the default dimensions and
+  the hosted openings.
+- **Nesting with inherited overrides** — segments can be grouped and
+  sub-grouped; a parent's settings flow down to its children unless they
+  override. Width and height are overridden with a checkbox (unchecked =
+  inherit; the panel pre-fills the field with the inherited value), align
+  with an **Inherit** option in its combo.
+- **Fallback segment** — an optional segment that auto-claims every sketch
+  edge no other segment claims (at most one per wall, a direct child of the
+  wall, set from the Edit Wall panel). New sketch edges land in the fallback
+  segment automatically; with no fallback segment they stay unbuilt and a
+  warning is printed to the Report view.
+- **Cross-segment corners** — where one segment's run ends and another's
+  begins, both segments extend or trim to the same seam line (each using
+  its own width, align and offset), so segment boundaries are mitered just
+  like corners within one segment: no gap and no overlap. With differing
+  widths the seam slants so the wider segment takes the larger share of the
+  corner; segment heights simply step at the seam plane. Open sketch ends,
+  curved boundary edges, and vertices where three or more segments meet
+  keep a straight butt joint.
+- **Hosted doors and windows** — ArchPlus doors and windows host on the wall
+  by picking any segment face (the tool walks up to the root). Openings are
+  found both among the root's `Subtractions` and, Arch-style, through the
+  opening's `Hosts`, and an opening that spans two segments is cut from both.
+- **Split / move segment** — the **Split / move segment…** entry lives in
+  the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
+  button (there is no tree or 3D context-menu entry), greyed out until a
+  wall face is selected. Clicking a wall face selects the wall itself —
+  FreeCAD attributes picks of claimed children to the top claim parent —
+  and the split resolves each clicked face to the segment owning it.
+  Select the faces to move, open the **Walls** drop-down and choose it: a
+  picker dialog offers **<new segment>**, which splits the picked faces' runs
+  into a new sibling segment, or one of the wall's other top-level segments,
+  which the runs are moved into (rejoining that segment's chain). Hovering a
+  row previews that segment in the 3D view; double-click chooses it.
+  Splitting requires picked faces — running the command with no face picked
+  prints a Report-view warning and changes nothing. Each clicked face moves
+  the run nearest to the click.
+- **Delete cascades** — deleting the wall (or any segment) in the GUI also
+  removes its descendant segments in the same transaction, so **Ctrl+Z**
+  brings everything back; the base sketch is shared with other tools and
+  never follows. Scripted `doc.removeObject` calls bypass the view provider
+  and keep FreeCAD's orphan behaviour.
+- **Native selection mapping** — clicking a segment in the tree selects all
+  of its faces, and clicking wall geometry in the 3D view selects the
+  segment that owns the picked face or edge (not the wall root), so the
+  tree always highlights the right item. FreeCAD's face tint is unreliable
+  for a selected group child, so every selected face of a segment is drawn
+  with a translucent green highlight overlay; edge selections keep the
+  native edge tint. Both behave like any other FreeCAD selection:
+  clicking something else clears or replaces it.
+- **On-select length dimension** — selecting a wall segment, or clicking
+  a face in the 3D view, draws dimension lines above the wall's top edge
+  with oblique end ticks and the length of each selected face's wall run
+  (a straight stretch between corners); selecting the whole segment dims
+  every run. Deselecting removes them.
+
+### Edit Wall panel
+
+- **Dimensions** — width, height, align (center/left/right) and offset, each
+  with a reference diagram. These are the wall defaults; segments follow them
+  unless they override.
+- **Sketch & claims** — the base sketch, which segment (if any) is the
+  fallback segment, and a live count of claimed vs. unclaimed sketch edges.
+- **Metadata** — tag / mark.
+
+### Edit Segment panel
+
+- **Overrides** — width and height with per-field checkboxes (unchecked =
+  inherit, the field shows the inherited value); align with an **Inherit**
+  option in its combo.
+- **Claims** — a read-only summary of the sketch edges the segment claims.
+
+### Usage
+
+BIM workbench → select a sketch → **ArchPlus** toolbar → **Wall** → set the
+default dimensions → **OK**. Double-click the wall or a segment to edit it.
+With the wall built, click one or more wall faces in the 3D view (the entry
+stays greyed out otherwise), open the **Walls** drop-down on the **ArchPlus**
+toolbar, choose **Split / move segment…**, then pick **<new segment>** or an
+existing segment to move the faces' runs into.
+
+### Known limitations
+
+- Collinear runs that belong to *different* groups butt with coplanar faces
+  and can flicker in the 3D view (z-fighting — the same cosmetic artifact as
+  any two touching solids in FreeCAD).
+- **Split / move segment** maps each clicked face to the claimed run nearest
+  to the click point (within one wall width); a clicked face that matches no
+  run is reported in the Report view and nothing is split for it.
 
 ## Regenerating the images
 

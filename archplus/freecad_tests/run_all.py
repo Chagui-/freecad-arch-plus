@@ -29,6 +29,7 @@ from archplus.freecad_tests import verify_reload
 from archplus.freecad_tests import verify_rendering
 from archplus.freecad_tests import verify_openings
 from archplus.freecad_tests import verify_sketch_visibility
+from archplus.freecad_tests import verify_walls
 
 # FreeCAD can process the command-line script more than once per session.
 # The first pass creates this marker; later passes skip the work (and exit),
@@ -56,6 +57,7 @@ def main():
     with open(_MARKER, "w") as marker:
         marker.write("running\n")
 
+    h.reset_log()
     FreeCAD.Console.PrintMessage("ArchPlus FreeCAD verification\n")
     h._log_file("ArchPlus FreeCAD verification")
     _run_one("verify_browser", verify_browser.run)
@@ -67,6 +69,7 @@ def main():
     _run_one("verify_rendering", verify_rendering.run)
     _run_one("verify_openings", verify_openings.run)
     _run_one("verify_sketch_visibility", verify_sketch_visibility.run)
+    _run_one("verify_walls", verify_walls.run)
     h.report_exceptions()
 
     failed = h.failures()

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="118" viewBox="0 0 310 118">
+  <text x="8" y="14" font-size="10" fill="#8a8783">PLAN (top view)</text>
+  <rect x="90" y="40" width="130" height="36" fill="#dbe7f2" stroke="#4a7bab" stroke-width="1.2"/>
+  <line x1="100" y1="58" x2="250" y2="58" stroke="#a00" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="250" y="74" font-size="9" fill="#a00" text-anchor="middle">baseline</text>
+  <line x1="80" y1="40" x2="80" y2="76" stroke="#333" stroke-width="1"/>
+  <line x1="80" y1="40" x2="90" y2="40" stroke="#333" stroke-width="1"/>
+  <line x1="80" y1="76" x2="90" y2="76" stroke="#333" stroke-width="1"/>
+  <polygon points="85,44 75,44 80,36" fill="#333"/>
+  <polygon points="85,72 75,72 80,80" fill="#333"/>
+  <text x="66" y="61" font-size="10" fill="#333" text-anchor="end">W</text>
+  <text x="150" y="100" font-size="9" fill="#555">Align: Center — the wall straddles the baseline</text>
+</svg>

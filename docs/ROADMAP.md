@@ -1,5 +1,20 @@
 # Roadmap
 
+## Walls
+
+- [x] Shipped — sketch-based segmented walls with inherited overrides,
+  fallback segment, hosted doors and windows, and interactive splitting
+  (see [TOOLS.md](TOOLS.md#walls)).
+- [x] Shipped — on-select length dimensions in the 3D view: a dimension
+  line with oblique end ticks and a length label drawn above the selected
+  face's wall run (one per run when the whole segment is selected; Coin
+  overlay, no document objects; tracks reflows; see
+  [TOOLS.md](TOOLS.md#walls)).
+- [ ] Backlog — interactive in-view controls: endpoint handles that edit
+  the shared sketch (whole connected runs only; plane-projected drags,
+  min-length clamps, opening-embedding validation since hosted openings
+  do not follow the wall, one undo transaction per drag).
+
 ## Stairs
 
 - [ ] Add balusters and extend railing support to turns (railing links and
