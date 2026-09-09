@@ -7,7 +7,7 @@ It currently provides enhanced parametric **Stairs**, **Walls**, **Doors**,
 and **Windows** tools, a **Parts Library** for inserting catalog
 furnishings, and a first-person **Walk Through** mode.
 
-<img src="docs/images/toolbar.jpg" alt="The ArchPlus toolbar in the BIM workbench" height="50">
+<img src="docs/images/toolbar.png" alt="The ArchPlus toolbar in the BIM workbench, with the Walls dropdown menu open" width="350">
 
 ## What's inside
 
