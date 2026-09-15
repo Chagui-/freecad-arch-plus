@@ -941,6 +941,7 @@ def repositionDoor(door, reopen=False):
     tracker.on()
 
     def _move(point, info):
+        from archplus.tools.walls import object as walls_object
         if info and "Face" in info.get("Component", ""):
             o = doc.getObject(info["Object"])
             try:
@@ -948,8 +949,13 @@ def repositionDoor(door, reopen=False):
             except (ValueError, IndexError):
                 state["face"] = None
             else:
-                state["face"] = [o, fi]
-        _placeTracker(tracker, _doorPlacement(point, state["face"], width),
+                # A wall root owns the pick of its claimed segments' faces and
+                # has none of its own; map it onto the segment that does.
+                state["face"] = walls_object.resolvePickedFace(
+                    o, fi, info.get("x"), info.get("y"), info.get("z"))
+        state["snap"] = point
+        state["place"] = walls_object.placementPoint(point, state["face"], info)
+        _placeTracker(tracker, _doorPlacement(state["place"], state["face"], width),
                       width, height)
 
     def _place(point=None, obj=None):
@@ -959,6 +965,8 @@ def repositionDoor(door, reopen=False):
             if point is None:
                 return                       # cancelled
             doc.openTransaction("Reposition Door")
+            if point != state.get("snap"):
+                point = state.get("place") or point
             door.Base.Placement = _doorPlacement(point, state["face"], width)
             if state["face"] is not None:
                 import Draft
@@ -1022,6 +1030,8 @@ class DoorsPlusCommand:
         self.doc = FreeCAD.ActiveDocument
         self.sel = FreeCADGui.Selection.getSelection()
         self.baseFace = None
+        self.placePoint = None
+        self.snapPoint = None
         self.width = self.WIDTH
         self.height = self.HEIGHT
         self.frameDepth = self.FRAME_D
@@ -1054,6 +1064,7 @@ class DoorsPlusCommand:
         The box is positioned from the SAME _doorPlacement used on click, so the
         preview shows exactly where the door will land — centred on the cursor
         and sitting on the floor — rather than off to one side."""
+        from archplus.tools.walls import object as walls_object
         if info and "Face" in info.get("Component", ""):
             o = self.doc.getObject(info["Object"])
             try:
@@ -1061,9 +1072,13 @@ class DoorsPlusCommand:
             except (ValueError, IndexError):
                 self.baseFace = None
             else:
-                self.baseFace = [o, fi]
-
-        pl = _doorPlacement(point, self.baseFace, self.width,
+                # A wall root owns the pick of its claimed segments' faces and
+                # has none of its own; map it onto the segment that does.
+                self.baseFace = walls_object.resolvePickedFace(
+                    o, fi, info.get("x"), info.get("y"), info.get("z"))
+        self.snapPoint = point
+        self.placePoint = walls_object.placementPoint(point, self.baseFace, info)
+        pl = _doorPlacement(self.placePoint, self.baseFace, self.width,
                             self.snapBase, self.baseOffset)
         _placeTracker(self.tracker, pl, self.width, self.height)
 
@@ -1071,10 +1086,13 @@ class DoorsPlusCommand:
         """Called when the user clicks: create door, then schedule config panel."""
         FreeCADGui.Snapper.off()
         self.tracker.off()
-
         if point is None:
             self.tracker.finalize()
             return
+
+        if getattr(self, "placePoint", None) is not None and (
+                self.snapPoint is None or point == self.snapPoint):
+            point = self.placePoint
 
         import Draft
 

@@ -921,6 +921,29 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
                         if len(obj.CloneOf.ViewObject.DiffuseColor) > 1:
                             obj.ViewObject.DiffuseColor = obj.CloneOf.ViewObject.DiffuseColor
                             obj.ViewObject.update()
+        elif prop == "Visibility" and obj.Hosts:
+            # Follow the host wall: the wall's own view-provider cascade
+            # is unreliable for the show direction (the wall root has no
+            # shape, so the GUI often skips routing Visibility back
+            # through it), leaving hosted openings floating when a level
+            # or the wall is hidden — reading as a phantom storey.
+            try:
+                from archplus.tools.walls import object as walls_object
+                walls_object.followHostVisibility(obj)
+            except ImportError:
+                pass
+        elif prop == "Hosts":
+            # Keep the host wall's segments linked to this opening: the
+            # segments' Subtractions links are the dependency that makes
+            # the segments recompute when this opening changes — without
+            # the link a host touch cascade was needed, which re-entered
+            # the group-touched chain and froze the UI after recompute.
+            for host in obj.Hosts:
+                proxy = getattr(host, "Proxy", None)
+                sync = getattr(proxy, "syncSegmentSubtractions", None)
+                if sync is not None:
+                    sync(host)
+
 
     def onDelete(self, vobj, subelements):
 

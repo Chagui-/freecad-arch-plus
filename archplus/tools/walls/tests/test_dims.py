@@ -201,7 +201,7 @@ def _reset_overlay_state():
 def _root(*segments):
     root = types.SimpleNamespace(
         Name="Wall", Label="Wall",
-        Proxy=types.SimpleNamespace(Type="Wall"),
+        Proxy=types.SimpleNamespace(Type="Wall", WALLS_PLUS=True),
         Group=list(segments), InList=[])
     for seg in segments:
         seg.Wall = root

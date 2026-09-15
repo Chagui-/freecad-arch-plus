@@ -22,7 +22,7 @@ def _segment(name="Segments"):
 def _root(*segments):
     root = types.SimpleNamespace(
         Name="Wall", Label="Wall",
-        Proxy=types.SimpleNamespace(Type="Wall"),
+        Proxy=types.SimpleNamespace(Type="Wall", WALLS_PLUS=True),
         Group=list(segments), InList=[])
     for seg in segments:
         seg.Wall = root
@@ -31,8 +31,15 @@ def _root(*segments):
 
 
 class _FakeFace:
+    """A face modelled by its plane's x, so the box spans y and z to keep the
+    suite's 1-D distance model intact."""
+
     def __init__(self, x):
         self.x = x
+        self.BoundBox = types.SimpleNamespace(
+            XMin=x, XMax=x,
+            YMin=float("-inf"), YMax=float("inf"),
+            ZMin=float("-inf"), ZMax=float("inf"))
 
 
 class _FakeShape:
@@ -71,6 +78,11 @@ def test_is_root_distinguishes_wall_roots():
     assert walls_object.is_root(_root())
     assert not walls_object.is_root(_segment())
     assert not walls_object.is_root(types.SimpleNamespace(Name="Box"))
+    # A regular Arch wall is typed "Wall" as well — its proxy class is even
+    # called _Wall — but it owns the faces its picks report, so it must not
+    # be taken for one of ours.
+    assert not walls_object.is_root(types.SimpleNamespace(
+        Name="Wall001", Proxy=types.SimpleNamespace(Type="Wall")))
 
 
 def test_resolve_root_face_picks_nearest_segment(monkeypatch):
@@ -175,7 +187,7 @@ def test_target_options_exclude_sources_and_ancestors():
     cmd = wg.WallSplitCommand()
     root = types.SimpleNamespace(
         Name="Wall", Label="Wall",
-        Proxy=types.SimpleNamespace(Type="Wall"),
+        Proxy=types.SimpleNamespace(Type="Wall", WALLS_PLUS=True),
         Group=[], InList=[])
     fallback = _segment("Segments")
     a = _segment("a")
@@ -250,9 +262,9 @@ class _RecordingDoc:
 def test_activated_aborts_when_sources_span_several_walls(monkeypatch):
     cmd = wg.WallSplitCommand()
     root_a = types.SimpleNamespace(Name="Wall", Proxy=types.SimpleNamespace(
-        Type="Wall"), Group=[], InList=[])
+        Type="Wall", WALLS_PLUS=True), Group=[], InList=[])
     root_b = types.SimpleNamespace(Name="Wall2", Proxy=types.SimpleNamespace(
-        Type="Wall"), Group=[], InList=[])
+        Type="Wall", WALLS_PLUS=True), Group=[], InList=[])
     a = _segment("a")
     a.Wall = root_a
     b = _segment("b")
@@ -276,7 +288,7 @@ def test_activated_aborts_when_sources_span_several_walls(monkeypatch):
 def test_activated_cancels_before_opening_a_transaction(monkeypatch):
     cmd = wg.WallSplitCommand()
     root = types.SimpleNamespace(Name="Wall", Proxy=types.SimpleNamespace(
-        Type="Wall"), Group=[], InList=[])
+        Type="Wall", WALLS_PLUS=True), Group=[], InList=[])
     a = _segment("a")
     a.Wall = root
     doc = _RecordingDoc()

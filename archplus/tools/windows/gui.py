@@ -1137,6 +1137,7 @@ def repositionWindow(window, reopen=False):
     tracker.on()
 
     def _move(point, info):
+        from archplus.tools.walls import object as walls_object
         if info and "Face" in info.get("Component", ""):
             o = doc.getObject(info["Object"])
             try:
@@ -1144,8 +1145,13 @@ def repositionWindow(window, reopen=False):
             except (ValueError, IndexError):
                 state["face"] = None
             else:
-                state["face"] = [o, fi]
-        _placeTracker(tracker, _windowPlacement(point, state["face"], width),
+                # A wall root owns the pick of its claimed segments' faces and
+                # has none of its own; map it onto the segment that does.
+                state["face"] = walls_object.resolvePickedFace(
+                    o, fi, info.get("x"), info.get("y"), info.get("z"))
+        state["snap"] = point
+        state["place"] = walls_object.placementPoint(point, state["face"], info)
+        _placeTracker(tracker, _windowPlacement(state["place"], state["face"], width),
                       width, height)
 
     def _place(point=None, obj=None):
@@ -1154,7 +1160,8 @@ def repositionWindow(window, reopen=False):
         try:
             if point is None:
                 return                       # cancelled
-            doc.openTransaction("Reposition Window")
+            if point != state.get("snap"):
+                point = state.get("place") or point
             window.Base.Placement = _windowPlacement(point, state["face"], width)
             if state["face"] is not None:
                 import Draft
@@ -1220,6 +1227,8 @@ class WindowsPlusCommand:
         self.doc = FreeCAD.ActiveDocument
         self.sel = FreeCADGui.Selection.getSelection()
         self.baseFace = None
+        self.placePoint = None
+        self.snapPoint = None
         self.width = self.WIDTH
         self.height = self.HEIGHT
         self.frameDepth = self.FRAME_D
@@ -1248,6 +1257,7 @@ class WindowsPlusCommand:
         )
 
     def update(self, point, info):
+        from archplus.tools.walls import object as walls_object
         """Move the preview box as the mouse moves.
 
         The box is positioned from the SAME _windowPlacement used on click, so
@@ -1260,10 +1270,15 @@ class WindowsPlusCommand:
             except (ValueError, IndexError):
                 self.baseFace = None
             else:
-                self.baseFace = [o, fi]
+                # A wall root owns the pick of its claimed segments' faces and
+                # has none of its own; map it onto the segment that does.
+                self.baseFace = walls_object.resolvePickedFace(
+                    o, fi, info.get("x"), info.get("y"), info.get("z"))
 
-        pl = _windowPlacement(point, self.baseFace, self.width,
-                              self.snapBase, self.baseOffset)
+        self.snapPoint = point
+        self.placePoint = walls_object.placementPoint(point, self.baseFace, info)
+        pl = _windowPlacement(self.placePoint, self.baseFace, self.width,
+                            self.snapBase, self.baseOffset)
         _placeTracker(self.tracker, pl, self.width, self.height)
 
     def getPoint(self, point=None, obj=None):
@@ -1274,6 +1289,9 @@ class WindowsPlusCommand:
         if point is None:
             self.tracker.finalize()
             return
+        if getattr(self, "placePoint", None) is not None and (
+                self.snapPoint is None or point == self.snapPoint):
+            point = self.placePoint
 
         import Draft
 
