@@ -81,7 +81,7 @@ what makes per-tool `resources/` viable rather than merely tidy.
 | `tools/windows/resources/icons/` | `WindowsPlus.svg`, `dimensions_ref_window.svg` |
 | `tools/stairs/resources/icons/` | `StairsPlus.svg`, `dimensions_ref_straight.svg`, `dimensions_ref_quarterturn.svg`, `dimensions_ref_halfturn.svg`, `steps_ref.svg` |
 | `tools/partslib/resources/icons/` | `PartsLibrary.svg`, `facets/` (32 files) |
-| `docs/images/` | `toolbar.jpg`, `stairs_dialog_1.jpg`, `stairs_dialog_2.jpg`, `stairs_quarter_turn.jpg`, `doors_dialog_1.jpg`, `doors_dialog_2.jpg`, `doors_double_swing.jpg` |
+| `docs/images/` | `toolbar.png`, `stairs_dialog_1.jpg`, `stairs_dialog_2.jpg`, `stairs_quarter_turn.jpg`, `doors_dialog_1.jpg`, `doors_dialog_2.jpg`, `doors_double_swing.jpg` |
 
 The `.jpg` files are README screenshots, never loaded by code, so they belong
 with the documentation rather than in a code package.

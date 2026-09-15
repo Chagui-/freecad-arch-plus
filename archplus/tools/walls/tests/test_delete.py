@@ -55,6 +55,8 @@ def test_viewprovider_visibility_cascades_to_segments():
     nested = _segment("nested", doc)
     a = _segment("a", doc, [nested])
     root = _root(doc, [a])
+    root.Subtractions = []
+    root.InList = []
     vobj = types.SimpleNamespace(Object=root, Visibility=True)
     vp = _vp()
     vos = {}
@@ -63,13 +65,42 @@ def test_viewprovider_visibility_cascades_to_segments():
         seg.ViewObject = vo
         vos[seg.Name] = vo
     vp.onChanged(vobj, "Visibility")
-    assert all(vo.Visibility for vo in vos.values())
     vobj.Visibility = False
     vp.onChanged(vobj, "Visibility")
     assert not any(vo.Visibility for vo in vos.values())
     vobj.Visibility = True
     vp.onChanged(vobj, "Visibility")
     assert all(vo.Visibility for vo in vos.values())
+
+
+def test_viewprovider_visibility_cascades_to_hosted_openings():
+    """Hiding the wall root must also hide the doors/windows hosted via
+    Hosts: their tree parent is the wall root, so a level hiding the wall
+    would otherwise leave the openings floating - reading as a phantom
+    storey."""
+    doc, _removed = _doc()
+    seg = _segment("a", doc)
+    opening = types.SimpleNamespace(Name="Win", Label="Win")
+    root = _root(doc, [seg])
+    vobj = types.SimpleNamespace(Object=root, Visibility=True)
+    vp = _vp()
+    seg_vo = types.SimpleNamespace(Visibility=True)
+    seg.ViewObject = seg_vo
+    opening_vo = types.SimpleNamespace(Visibility=True)
+    opening.ViewObject = opening_vo
+    original = walls_object._hostedOpenings
+    walls_object._hostedOpenings = lambda obj: [opening] if obj is root else []
+    try:
+        vp.onChanged(vobj, "Visibility")
+        assert seg_vo.Visibility and opening_vo.Visibility
+        vobj.Visibility = False
+        vp.onChanged(vobj, "Visibility")
+        assert not seg_vo.Visibility and not opening_vo.Visibility
+        vobj.Visibility = True
+        vp.onChanged(vobj, "Visibility")
+        assert seg_vo.Visibility and opening_vo.Visibility
+    finally:
+        walls_object._hostedOpenings = original
 
 
 def test_delete_root_cascades_to_all_segments():

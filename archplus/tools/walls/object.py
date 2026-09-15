@@ -24,6 +24,12 @@ ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
 class _Wall:
     """Proxy for both roles: the root wall and its segments."""
 
+    # An Arch wall reports Type "Wall" as well — its proxy class is even called
+    # _Wall — so the type alone cannot say whether an object is one of ours.
+    # It matters: an Arch wall owns the faces a pick reports, while a root here
+    # has none and claims its segments'. is_root() checks this marker.
+    WALLS_PLUS = True
+
     def __init__(self, obj, root=False):
         self.Type = TYPE_WALL if root else TYPE_SEGMENT
         obj.Proxy = self
@@ -76,6 +82,10 @@ class _Wall:
             if "Height" not in pl:
                 obj.addProperty("App::PropertyLength", "Height", "Wall",
                                 "0 = inherit from the wall/group")
+            if "Subtractions" not in pl:
+                obj.addProperty("App::PropertyLinkListHidden", "Subtractions",
+                                "Wall",
+                                "Hosted doors/windows cutting this segment")
             if "Align" not in pl:
                 obj.addProperty("App::PropertyEnumeration", "Align", "Wall",
                                 "Inherit = use the wall/group alignment")
@@ -96,7 +106,7 @@ class _Wall:
                 for seg in all_segments(root):
                     seg.touch()
         if self.Type == TYPE_WALL and prop in (
-                "Width", "Height", "Align", "Offset", "Subtractions"):
+                "Width", "Height", "Align", "Offset"):
             for seg in all_segments(obj):
                 seg.touch()
         if self.Type == TYPE_SEGMENT and prop in (
@@ -110,21 +120,40 @@ class _Wall:
         if self.Type == TYPE_SEGMENT and "Rest" in obj.PropertiesList:
             obj.Fallback = obj.Rest
             obj.removeProperty("Rest")
+        if self.Type == TYPE_WALL and not obj.Placement.isIdentity():
+            # Roots have no shape; a non-identity placement would displace
+            # every claimed child's scene node (segments and hosted
+            # openings) by that offset — a phantom extra storey. Position
+            # walls through the sketch placement instead.
+            obj.Placement = App.Placement()
 
     def execute(self, obj):
-        """Root: clear the placeholder shape, report claims, and re-mark the
-        segments when hosted openings exist — Hosts-only windows reach the
-        root through no dependency or property change, so without this their
-        cuts never reach the segments. Segment: build."""
+        """Root: clear the placeholder shape and report claims. Segment:
+        build. The openings reach the segments through the segments' own
+        Subtractions links (kept in sync by the Hosts onChanged below), so
+        no touch cascade runs here — a root touch loop re-enters through
+        the group-touched chain and left everything 'still touched after
+        recompute', rebuilding every opening cut on every pass (the
+        multi-second UI freeze after closing a task panel)."""
         import Part
         if self.Type == TYPE_WALL:
             obj.Shape = Part.Shape()
             self._reportClaims(obj)
-            if _hostedOpenings(obj):
-                for seg in all_segments(obj):
-                    seg.touch()
             return
         self._buildSegment(obj)
+
+    def syncSegmentSubtractions(self, obj):
+        """Mirror the hosted openings into every segment's Subtractions so
+        the dependency graph re-runs the segments when an opening changes.
+        Called from the opening side (Hosts link set/removed) via the wall
+        root, and once at wall creation."""
+        openings = _hostedOpenings(obj)
+        changed = False
+        for seg in all_segments(obj):
+            if list(getattr(seg, "Subtractions", None) or []) != list(openings):
+                seg.Subtractions = openings
+                changed = True
+        return changed
 
     def _reportClaims(self, obj):
         sketch = obj.Base
@@ -175,7 +204,13 @@ class _Wall:
         if height <= 0:
             obj.Shape = empty
             return
-        normal = sketch.getGlobalPlacement().Rotation.multVec(Vector(0, 0, 1))
+        # Build in the sketch's GLOBAL frame: edges come from the sketch
+        # shape (which carries the sketch placement), the wall rises along
+        # the sketch plane normal, and the segment keeps an identity
+        # placement. With identity-placed wall roots (required — see
+        # makeWall) the rendered position is exactly the built position;
+        # level placements stay at zero for this file's absolute authoring.
+        normal = sketch.Placement.Rotation.multVec(Vector(0, 0, 1))
         edges = []
         for sub in subnames:
             try:
@@ -268,6 +303,7 @@ class _Wall:
                 except Exception:
                     pass
         obj.Shape = shape
+        obj.Placement = FreeCAD.Placement()
 
     def _claimedEdges(self, obj):
         root = obj.Wall or obj
@@ -299,7 +335,9 @@ def is_segment(obj):
 
 
 def is_root(obj):
-    return getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_WALL
+    proxy = getattr(obj, "Proxy", None)
+    return (getattr(proxy, "Type", None) == TYPE_WALL
+            and getattr(proxy, "WALLS_PLUS", False))
 
 
 def wall_root(segment):
@@ -313,6 +351,19 @@ def all_segments(root):
             out.append(o)
             out.extend(all_segments(o))
     return out
+
+
+def _pointBoxDistance(box, point):
+    """Distance from `point` to a bounding box (0 inside).
+
+    The OCC distance in resolveRootFace dominates a wall-wide face scan — a
+    wall with two segments is ~70 faces, tens of ms per mouse move from the
+    placement tools' hover path. A face whose box is further than the
+    tolerance cannot hold the point, so the cheap test rules it out first."""
+    dx = max(box.XMin - point.x, 0.0, point.x - box.XMax)
+    dy = max(box.YMin - point.y, 0.0, point.y - box.YMax)
+    dz = max(box.ZMin - point.z, 0.0, point.z - box.ZMax)
+    return (dx * dx + dy * dy + dz * dz) ** 0.5
 
 
 def resolveRootFace(root, subname, point):
@@ -351,6 +402,8 @@ def resolveRootFace(root, subname, point):
     for seg in segments:
         faces = seg.Shape.Faces
         for i, face in enumerate(faces):
+            if _pointBoxDistance(face.BoundBox, point) > 1.0:
+                continue
             try:
                 dist = vertex.distToShape(face)[0]
             except Exception:
@@ -363,6 +416,92 @@ def resolveRootFace(root, subname, point):
     if best is None:
         return None
     return (best, [best_name])
+
+
+def resolvePickedFace(obj, index, x=None, y=None, z=None):
+    """(object, face index) to use for a 0-based face index from a 3D pick.
+
+    A pick usually carries the face it hit, so callers index Shape directly.
+    A wall pick does not: FreeCAD attributes the face to the wall's claim
+    parent — the root or, for a nested pick, a segment — and counts the
+    index across the faces of EVERY object the wall claims, not just the one
+    named. So for a wall the index is meaningless twice over: the root has
+    no faces at all, and a segment's own faces do not line up with it. Map
+    such a pick onto the segment that owns the face at the pick point.
+
+    Returns None when no shape holds the face, so callers fall back to the
+    working plane instead of indexing a shape that lacks it. Picks on
+    anything outside a wall come back unchanged when their shape can carry
+    the index, which covers Arch walls, stairs, doors and library parts."""
+    if obj is None:
+        return None
+    if not (is_root(obj) or is_segment(obj)):
+        faces = getattr(getattr(obj, "Shape", None), "Faces", None)
+        if faces is not None and 0 <= index < len(faces):
+            return (obj, index)
+        return None
+    root = obj if is_root(obj) else (wall_root(obj) or obj)
+    point = None
+    if all(v is not None for v in (x, y, z)):
+        try:
+            point = FreeCAD.Vector(float(x), float(y), float(z))
+        except (TypeError, ValueError):
+            point = None
+    hit = resolveRootFace(root, "Face%d" % (index + 1), point)
+    if hit is None:
+        return None
+    segment, subnames = hit
+    try:
+        return (segment, int(subnames[0][4:]) - 1)
+    except (IndexError, ValueError):
+        return None
+
+
+def followHostVisibility(obj):
+    """Keep a hosted opening's visibility in step with its host walls:
+    when every host is hidden the opening hides; when any host shows,
+    the opening shows. Called from the opening's own view provider
+    updateData on each visibility change of a host, because the wall's
+    onChanged proves unreliable for the show direction."""
+    hosts = getattr(obj, "Hosts", None) or []
+    if not hosts:
+        return
+    vo = obj.ViewObject
+    if vo is None:
+        return
+    if all(not h.ViewObject.Visibility for h in hosts
+           if h.ViewObject is not None):
+        vo.Visibility = False
+    else:
+        vo.Visibility = True
+
+
+def placementPoint(point, baseFace, info):
+    """Where to place: the Snapper's snap if it landed on the picked face,
+    else the picked surface point.
+
+    Draft's Snapper resolves its snap through the shape of the object the pick
+    names, then falls back to the working plane when that fails. An ArchPlus
+    wall's root has no shape of its own — it claims its segments' — and a
+    segment pick carries an index counted across every claimed child, so no
+    snap setting can land on an ArchPlus wall: the plane point is metres away
+    in an angled view and the door would sit on the floor beside it. The pick
+    point is on the picked face by construction, so it is where the user is
+    aiming."""
+    if baseFace is None or not info:
+        return point
+    import Part
+    try:
+        face = baseFace[0].Shape.Faces[baseFace[1]]
+        if Part.Vertex(point).distToShape(face)[0] <= 1.0:
+            return point
+    except Exception:
+        return point
+    try:
+        return FreeCAD.Vector(float(info["x"]), float(info["y"]),
+                              float(info["z"]))
+    except (KeyError, TypeError, ValueError):
+        return point
 
 
 def claimedEdges(obj):
@@ -987,19 +1126,43 @@ class _ViewProviderWall:
         return ICON
 
     def claimChildren(self):
+        """Tree children of a wall root: its segments plus the doors and
+        windows hosted on it (Hosts links plus Subtractions). Claiming
+        the openings matters for more than tree tidiness — the tree eye
+        toggle cascades to claimed children natively, and the wall root
+        has no shape of its own, so without the claim the openings sit
+        unattached and keep floating when the wall or its level is
+        hidden."""
         obj = getattr(self, "Object", None)
-        return list(getattr(obj, "Group", None) or [])
+        if obj is None:
+            return []
+        children = list(getattr(obj, "Group", None) or [])
+        for opening in _hostedOpenings(obj):
+            if opening not in children:
+                children.append(opening)
+        return children
 
     def onChanged(self, vobj, prop):
-        """Cascade visibility to the claimed segments: the wall root
-        itself has no shape, so hiding it must hide the segments or the
-        wall would still read as visible. Arch levels hide their direct
-        children, and this closes the chain down to the segments."""
+        """Cascade visibility to the claimed segments and the hosted
+        openings: the wall root itself has no shape, so hiding it must
+        hide the segments or the wall would still read as visible. Arch
+        levels hide their direct children, and this closes the chain down
+        to the segments — and through it to the doors/windows hosted via
+        Hosts, whose tree parent is the wall root; without this they
+        would stay visible when a level hides the wall, reading as a
+        phantom storey. claimChildren alone can't do this: the root has
+        no shape, so the GUI only routes the eye-toggle through here
+        unreliably (hide may fire, show often doesn't) — the openings'
+        own updateData hook below is what makes the follow deterministic
+        in both directions."""
         if prop == "Visibility":
             obj = getattr(self, "Object", None) or vobj.Object
             for seg in all_segments(obj):
                 if seg.ViewObject is not None:
                     seg.ViewObject.Visibility = vobj.Visibility
+            for opening in _hostedOpenings(obj):
+                if opening.ViewObject is not None:
+                    opening.ViewObject.Visibility = vobj.Visibility
 
     def onDelete(self, vobj, subelements):
         """GUI deletes cascade: FreeCAD's own delete never removes
@@ -1050,7 +1213,13 @@ class _ViewProviderWall:
 
 
 def makeWall(doc=None, sketch=None, name="Wall"):
-    """Create the wall root plus one fallback child. Returns the root."""
+    """Create the wall root plus one fallback child. Returns the root.
+
+    The root keeps an identity Placement: it has no shape of its own, but
+    FreeCAD parents claimed children's scene nodes under the root's node
+    carrying the root transform — a non-identity placement here would lift
+    every segment and hosted opening by that offset (a phantom extra
+    storey). Position walls by their sketch placement instead."""
     doc = doc or FreeCAD.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", name)
     obj.addExtension("App::GroupExtensionPython")

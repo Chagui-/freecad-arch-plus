@@ -2,7 +2,13 @@
 #
 # Tests for the Doors tool: geometry generation and the edit round-trip.
 
+import types
+
+import FreeCAD
+import Part
+
 from archplus.tools.doors import gui as dg
+from archplus.tools.walls import object as walls_object
 from conftest import FakeObj, FakeCombo, FakeNum, FakeCheck, quantity, fake_base
 
 
@@ -28,6 +34,49 @@ def _spec(**over):
     )
     spec.update(over)
     return spec
+
+
+def _face(x, y, z):
+    """A picked face standing in for a plane at one point — the helper only
+    measures distance to it."""
+    return types.SimpleNamespace(point=(x, y, z))
+
+
+class _Vertex:
+    def __init__(self, point):
+        self.point = (point.x, point.y, point.z)
+
+    def distToShape(self, face):
+        dist = sum((a - b) ** 2 for a, b in zip(self.point, face.point)) ** 0.5
+        return (dist, [], [])
+
+
+def _host(*faces):
+    return types.SimpleNamespace(
+        Shape=types.SimpleNamespace(Faces=[_face(*f) for f in faces]))
+
+
+def test_placement_point_keeps_a_snap_that_landed_on_the_picked_face(monkeypatch):
+    monkeypatch.setattr(Part, "Vertex", _Vertex, raising=False)
+    host = _host((0, 0, 0), (150, 150, 1200))
+    on_face = FreeCAD.Vector(150, 150, 1200)
+    info = {"x": 150.0, "y": 150.0, "z": 1200.0}
+    assert walls_object.placementPoint(on_face, (host, 1), info) is on_face
+
+
+def test_placement_point_falls_back_to_the_pick_when_the_snap_missed(monkeypatch):
+    # Draft's Snapper hands over a working-plane point when it cannot snap to
+    # the picked object. On an ArchPlus wall it never can: the pick names the
+    # shapeless root (or a segment with a cross-child index), so the plane
+    # point is metres away and the door used to land on the floor beside it.
+    monkeypatch.setattr(Part, "Vertex", _Vertex, raising=False)
+    host = _host((150, 150, 1200))
+    on_plane = FreeCAD.Vector(5000, 5000, 0)
+    info = {"x": 150.0, "y": 150.0, "z": 1200.0}
+    picked = walls_object.placementPoint(on_plane, (host, 0), info)
+    assert (picked.x, picked.y, picked.z) == (150.0, 150.0, 1200.0)
+    # Without a picked face there is nothing to prefer it to.
+    assert walls_object.placementPoint(on_plane, None, info) is on_plane
 
 
 # --- geometry -------------------------------------------------------------

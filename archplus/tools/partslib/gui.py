@@ -1212,7 +1212,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         # back on click, exactly as repositionDoor does
         # (doors/gui.py:922-934).
         doc = FreeCAD.ActiveDocument
-        state = {"face": None, "placed": False}
+        from archplus.tools.walls import object as walls_object
+
 
         def moved(point, info):
             if info and "Face" in info.get("Component", ""):
@@ -1222,12 +1223,17 @@ class PartsLibraryPanel(QtGui.QWidget):
                 except (ValueError, IndexError):
                     state["face"] = None
                 else:
-                    state["face"] = [target, index]
+                    # A wall root owns the pick of its claimed segments' faces
+                    # and has none of its own; map it onto the segment.
+                    state["face"] = walls_object.resolvePickedFace(
+                        target, index, info.get("x"), info.get("y"), info.get("z"))
             else:
                 state["face"] = None
+            state["place"] = walls_object.placementPoint(
+                point, state["face"], info)
             if tracker is not None:
                 preview = partslib_placement.partPlacement(
-                    point, state["face"], host, offset)
+                    state["place"], state["face"], host, offset)
                 tracker.setRotation(preview.Rotation)
                 tracker.pos(preview.multVec(trackerCentre))
 
@@ -1239,7 +1245,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                 if point is None:
                     return  # Esc/cancel - end the placement loop
                 placement = partslib_placement.partPlacement(
-                    point, state["face"], host, offset)
+                    state.get("place") or point, state["face"], host, offset)
                 doc.openTransaction("Place library part")
                 try:
                     partslib_object.makePart(

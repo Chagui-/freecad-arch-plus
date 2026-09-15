@@ -1094,3 +1094,7 @@ class _WallGroupCommand:
 
 
 FreeCADGui.addCommand("ArchPlus_WallTools", _WallGroupCommand())
+
+
+
+
