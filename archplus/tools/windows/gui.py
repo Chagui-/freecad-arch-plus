@@ -1165,8 +1165,9 @@ def repositionWindow(window, reopen=False):
             window.Base.Placement = _windowPlacement(point, state["face"], width)
             if state["face"] is not None:
                 import Draft
+                from archplus.tools.walls import object as walls_object
                 host = state["face"][0]
-                if Draft.getType(host) == "WallSegment":
+                if walls_object.is_segment(host):
                     host = getattr(host, "Wall", host)
                 if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                     window.Hosts = [host]
@@ -1343,8 +1344,9 @@ class WindowsPlusCommand:
 
         # Try to auto-host if a wall was clicked
         if self.baseFace is not None:
+            from archplus.tools.walls import object as walls_object
             host = self.baseFace[0]
-            if Draft.getType(host) == "WallSegment":
+            if walls_object.is_segment(host):
                 host = getattr(host, "Wall", host)
             if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                 window.Hosts = [host]

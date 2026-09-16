@@ -46,7 +46,8 @@ def vertex(monkeypatch):
 
 def _segment(name, faces):
     return types.SimpleNamespace(
-        Name=name, Label=name, Proxy=_proxy("WallSegment"),
+        Name=name, Label=name,
+        Proxy=types.SimpleNamespace(Type="Wall", Segment=True),
         Shape=types.SimpleNamespace(isNull=lambda: False, Faces=list(faces)),
         Group=[])
 

@@ -778,6 +778,9 @@ class _Window(ArchComponent.Component):
                 if orig.HoleDepth.Value:
                     width = orig.HoleDepth.Value
         if not width:
+            from archplus.tools.walls import object as walls_object
+            if walls_object.is_segment(host):
+                host = walls_object.wall_root(host)
             if host and Draft.getType(host) == "Wall":
                 # TODO More robust approach :  With ArchSketch, on which wall segment an ArchObject is attached to is declared by user and saved.
                 #      The extrusion of each wall segment could be done per segment, and punch hole in the exact wall segment before fusing them all. No need to care about each wall segment thickness.

@@ -6,6 +6,12 @@
 # WallSegment children (fused extrusions minus intersecting openings). The
 # view provider lives here too, so factories attach it with or without the
 # gui module — the stairs precedent.
+#
+# Both roles report Proxy.Type "Wall" (the role lives in the proxy's Segment
+# flag): FreeCAD's section/SVG fuse paths only fuse objects whose Draft type
+# is "Wall" or "Structure" (Shape2DView.FuseArch, ArchSectionPlane joinArch),
+# so a "WallSegment" type makes segments invisible to them and they cut
+# through the section individually, unfused.
 
 import os
 
@@ -15,6 +21,8 @@ from FreeCAD import Vector
 from archplus.tools.walls import model
 
 TYPE_WALL = "Wall"
+# Legacy role marker kept only for the onDocumentRestored migration of
+# documents saved before segments reported Type "Wall".
 TYPE_SEGMENT = "WallSegment"
 
 ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
@@ -22,7 +30,15 @@ ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
 
 
 class _Wall:
-    """Proxy for both roles: the root wall and its segments."""
+    def _is_segment_role(self):
+        """Role discriminator tolerant of pre-retype proxies: a legacy
+        segment instance carries Type 'WallSegment' and no Segment flag,
+        and restore-time callbacks (onChanged/execute) can fire before
+        onDocumentRestored migrates it — read the role through here."""
+        seg = getattr(self, "Segment", None)
+        if seg is None:
+            return self.Type == TYPE_SEGMENT
+        return seg
 
     # An Arch wall reports Type "Wall" as well — its proxy class is even called
     # _Wall — so the type alone cannot say whether an object is one of ours.
@@ -31,7 +47,8 @@ class _Wall:
     WALLS_PLUS = True
 
     def __init__(self, obj, root=False):
-        self.Type = TYPE_WALL if root else TYPE_SEGMENT
+        self.Type = TYPE_WALL
+        self.Segment = not root
         obj.Proxy = self
         self.setProperties(obj, root)
 
@@ -93,7 +110,7 @@ class _Wall:
                 obj.Align = "Inherit"
 
     def onChanged(self, obj, prop):
-        if prop == "Base" and obj.Base is not None and self.Type == TYPE_WALL:
+        if prop == "Base" and obj.Base is not None and not self._is_segment_role():
             for seg in all_segments(obj):
                 seg.Base = obj.Base
         if prop == "Group":
@@ -105,27 +122,35 @@ class _Wall:
             if root is not None:
                 for seg in all_segments(root):
                     seg.touch()
-        if self.Type == TYPE_WALL and prop in (
+        if not self._is_segment_role() and prop in (
                 "Width", "Height", "Align", "Offset"):
             for seg in all_segments(obj):
                 seg.touch()
-        if self.Type == TYPE_SEGMENT and prop in (
+        if self._is_segment_role() and prop in (
                 "Width", "Height", "Align", "Offset"):
             root = wall_root(obj)
             for seg in all_segments(root or obj):
                 seg.touch()
 
     def onDocumentRestored(self, obj):
-        self.setProperties(obj, self.Type == TYPE_WALL)
-        if self.Type == TYPE_SEGMENT and "Rest" in obj.PropertiesList:
+        # Documents saved before the retype carry the role in Type
+        # ("Wall"/"WallSegment") and lack the Segment flag.
+        if not hasattr(self, "Segment"):
+            self.Segment = (self.Type == TYPE_SEGMENT)
+            self.Type = TYPE_WALL
+            # Rebuild: restore-time callbacks may have run the root path
+            # while the legacy proxy still carried the old role marker.
+            obj.touch()
+        self.setProperties(obj, not self.Segment)
+        if self.Segment and "Rest" in obj.PropertiesList:
             obj.Fallback = obj.Rest
             obj.removeProperty("Rest")
-        if self.Type == TYPE_WALL and not obj.Placement.isIdentity():
+        if not self.Segment and not obj.Placement.isIdentity():
             # Roots have no shape; a non-identity placement would displace
             # every claimed child's scene node (segments and hosted
             # openings) by that offset — a phantom extra storey. Position
             # walls through the sketch placement instead.
-            obj.Placement = App.Placement()
+            obj.Placement = FreeCAD.Placement()
 
     def execute(self, obj):
         """Root: clear the placeholder shape and report claims. Segment:
@@ -136,7 +161,7 @@ class _Wall:
         recompute', rebuilding every opening cut on every pass (the
         multi-second UI freeze after closing a task panel)."""
         import Part
-        if self.Type == TYPE_WALL:
+        if not self._is_segment_role():
             obj.Shape = Part.Shape()
             self._reportClaims(obj)
             return
@@ -331,13 +356,16 @@ def _sketchEdgeNames(sketch):
 
 
 def is_segment(obj):
-    return getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_SEGMENT
+    proxy = getattr(obj, "Proxy", None)
+    return (getattr(proxy, "Type", None) == TYPE_WALL
+            and bool(getattr(proxy, "Segment", False)))
 
 
 def is_root(obj):
     proxy = getattr(obj, "Proxy", None)
     return (getattr(proxy, "Type", None) == TYPE_WALL
-            and getattr(proxy, "WALLS_PLUS", False))
+            and getattr(proxy, "WALLS_PLUS", False)
+            and not getattr(proxy, "Segment", False))
 
 
 def wall_root(segment):
@@ -1200,10 +1228,10 @@ class _ViewProviderWall:
     def setEdit(self, vobj, mode=0):
         from archplus.tools.walls import gui
         obj = vobj.Object
-        if getattr(getattr(obj, "Proxy", None), "Type", None) == TYPE_WALL:
-            gui.showWallPanel(obj)
-        else:
+        if is_segment(obj):
             gui.showSegmentPanel(obj)
+        else:
+            gui.showWallPanel(obj)
         return True
 
     def unsetEdit(self, vobj, mode=0):

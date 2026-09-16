@@ -970,8 +970,9 @@ def repositionDoor(door, reopen=False):
             door.Base.Placement = _doorPlacement(point, state["face"], width)
             if state["face"] is not None:
                 import Draft
+                from archplus.tools.walls import object as walls_object
                 host = state["face"][0]
-                if Draft.getType(host) == "WallSegment":
+                if walls_object.is_segment(host):
                     host = getattr(host, "Wall", host)
                 if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                     door.Hosts = [host]
@@ -1145,8 +1146,9 @@ class DoorsPlusCommand:
 
         # Try to auto-host if a wall was clicked
         if self.baseFace is not None:
+            from archplus.tools.walls import object as walls_object
             host = self.baseFace[0]
-            if Draft.getType(host) == "WallSegment":
+            if walls_object.is_segment(host):
                 host = getattr(host, "Wall", host)
             if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                 door.Hosts = [host]
