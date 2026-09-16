@@ -166,6 +166,78 @@ def _reposition_checks(doc):
     _reposition_target(doc, door, "door")
 
 
+def _segment_rebuild_checks(doc):
+    """A reposition rebuilds only the segments the opening reached, and a
+    move onto another wall drops the cut left behind on the old one."""
+    plan = doc.addObject("Sketcher::SketchObject", "RebuildPlan")
+    runs = 6
+    for i in range(runs):
+        plan.addGeometry(Part.LineSegment(FreeCAD.Vector(i * 4000, 0, 0),
+                                          FreeCAD.Vector((i + 1) * 4000, 0, 0)),
+                         False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=plan)
+    doc.recompute()
+    for i in range(1, runs):
+        seg = walls_object.makeSegment(wall, name="R%d" % i)
+        seg.Edges = [(plan, ("Edge%d" % (i + 1),))]
+    doc.recompute()
+    segments = walls_object.all_segments(wall)
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="RebuildWin")
+    # sit it inside the first run
+    wsk.Placement = FreeCAD.Placement(FreeCAD.Vector(1500, 0, 0),
+                                      FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    rebuilt = []
+    original = walls_object._Wall._buildSegment
+
+    def recording_build(self, obj):
+        rebuilt.append(obj.Name)
+        return original(self, obj)
+
+    walls_object._Wall._buildSegment = recording_build
+    try:
+        old_pl = FreeCAD.Placement(win.Base.Placement)
+        win.Base.Placement = FreeCAD.Placement(
+            FreeCAD.Vector(2500, 0, 0), old_pl.Rotation)
+        swept = wg._opening_sweep(win, old_pl, win.Base.Placement)
+        wg._recomputeWithHosts(win, swept)
+    finally:
+        walls_object._Wall._buildSegment = original
+    h.check("a reposition rebuilds only the segments it reached",
+            len(rebuilt) == 1 and rebuilt[0] == segments[0].Name,
+            detail="rebuilt %r of %d segments" % (rebuilt, len(segments)))
+    cut = segments[0].Shape.Volume
+
+    # ... and moving it onto another wall leaves no cut behind
+    other = doc.addObject("Sketcher::SketchObject", "OtherPlan")
+    other.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 6000, 0),
+                                       FreeCAD.Vector(4000, 6000, 0)), False)
+    doc.recompute()
+    wall2 = walls_object.makeWall(doc, sketch=other, name="Wall2")
+    doc.recompute()
+    win.Base.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 6000, 0), FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall2]
+    wall2.Subtractions = [win]
+    wall.Subtractions = []
+    wg._recomputeWithHosts(win)
+    untouched = abs(segments[0].Shape.Volume
+                    - 300.0 * 2800.0 * 4000.0) < 1e-3
+    h.check("moving a window to another wall restores the old segment",
+            untouched and segments[0].Shape.Volume > cut,
+            detail="volume %.3e (cut was %.3e, full %.3e)"
+            % (segments[0].Shape.Volume, cut, 300.0 * 2800.0 * 4000.0))
+
+
 def run():
     doc = h.fresh_doc()
 
@@ -231,5 +303,6 @@ def run():
            "the leaf frame's transform)")
 
     _reposition_checks(h.fresh_doc())
+    _segment_rebuild_checks(h.fresh_doc())
 
     return h.failures()

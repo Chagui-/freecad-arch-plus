@@ -467,7 +467,54 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
     return obj
 
 
-def _recomputeWithHosts(obj):
+def _opening_sweep(obj, old_pl, new_pl):
+    """The bounding box an opening occupied across a move (old + new).
+
+    A reposition must rebuild the segments the opening touched in either
+    position: the new one grows the cut, the old one has to drop the stale
+    one. obj.Shape is still the pre-recompute shape, so its box is the old
+    position and the placement pair gives the new one. Returns None when the
+    shape carries no usable box, which callers read as "touch every
+    segment"."""
+    try:
+        bb = obj.Shape.BoundBox
+        if obj.Shape.isNull() or not bb.isValid():
+            return None
+        region = FreeCAD.BoundBox(bb.XMin, bb.YMin, bb.ZMin,
+                                  bb.XMax, bb.YMax, bb.ZMax)
+        delta = new_pl.multiply(old_pl.inverse())
+        moved = FreeCAD.BoundBox()
+        for x in (bb.XMin, bb.XMax):
+            for y in (bb.YMin, bb.YMax):
+                for z in (bb.ZMin, bb.ZMax):
+                    moved.add(delta.multVec(FreeCAD.Vector(x, y, z)))
+        region.add(moved)
+        region.enlarge(1.0)          # bboxes that merely touch still count
+    except Exception:
+        return None
+    return [region]
+
+
+def _segment_may_cut(seg, boxes):
+    """True when `seg` could hold any of `boxes`.
+
+    A rebuild costs a chain fuse plus a boolean per hosted opening, so
+    touching a segment the opening never reached is pure waste. Segments
+    with no shape yet always rebuild — they may be the ones that now have
+    to cut it."""
+    try:
+        shape = seg.Shape
+        if shape is None or shape.isNull():
+            return True
+        bb = shape.BoundBox
+        if not bb.isValid():
+            return True
+    except Exception:
+        return True
+    return any(bb.intersect(b) for b in boxes)
+
+
+def _recomputeWithHosts(obj, swept=None):
     """Recompute the window, then re-cut its host walls in the same edit.
 
     A hosted window is computed BEFORE its host wall in the dependency graph,
@@ -475,7 +522,14 @@ def _recomputeWithHosts(obj):
     and position — the change only appears after some later recompute. Touching
     the hosts and recomputing again makes the wall opening follow the window
     now. Wall segments hang off their root through a dependency-free hidden
-    link, so they are touched explicitly or their opening cuts go stale."""
+    link, so they are touched explicitly or their opening cuts go stale.
+
+    `swept` narrows which segments get touched: the boxes the opening
+    occupied, from _opening_sweep. Every segment of a multi-segment wall
+    otherwise rebuilds on any opening change, which is what made a
+    reposition cost grow with the wall. None (the default) touches them
+    all — right for edits whose reach we cannot bound, like a rebuilt
+    window shape or an unhosting."""
     if obj is None:
         return
     doc = obj.Document
@@ -486,7 +540,8 @@ def _recomputeWithHosts(obj):
         try:
             h.touch()
             for seg in walls_object.all_segments(h):
-                seg.touch()
+                if swept is None or _segment_may_cut(seg, swept):
+                    seg.touch()
             touched = True
         except Exception:
             pass
@@ -1170,7 +1225,11 @@ def repositionWindow(window, reopen=False):
             if state.get("place") is not None and (
                     state.get("snap") is None or point == state.get("snap")):
                 point = state["place"]
+            # Bound the move before the shape is rebuilt, so the re-cut only
+            # rebuilds the segments the window actually touched.
+            old_pl = FreeCAD.Placement(window.Base.Placement)
             window.Base.Placement = _windowPlacement(point, state["face"], width)
+            swept = _opening_sweep(window, old_pl, window.Base.Placement)
             if state["face"] is not None:
                 import Draft
                 from archplus.tools.walls import object as walls_object
@@ -1183,7 +1242,7 @@ def repositionWindow(window, reopen=False):
             # so the old opening would linger. Force the window, then re-cut
             # wall(s).
             window.touch()
-            _recomputeWithHosts(window)
+            _recomputeWithHosts(window, swept)
             doc.commitTransaction()
         finally:
             tracker.finalize()
