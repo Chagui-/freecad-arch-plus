@@ -941,7 +941,13 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
             # the segments recompute when this opening changes — without
             # the link a host touch cascade was needed, which re-entered
             # the group-touched chain and froze the UI after recompute.
-            for host in obj.Hosts:
+            # The pre-change list matters as much as the new one: unhosting
+            # empties obj.Hosts, so the wall it left would never be told to
+            # drop the link and its segments would keep the old opening cut.
+            # onBeforeChange stashes the old value as proxy.Hosts.
+            hosts = list(getattr(obj.Proxy, "Hosts", None) or [])
+            hosts += list(obj.Hosts or [])
+            for host in hosts:
                 proxy = getattr(host, "Proxy", None)
                 sync = getattr(proxy, "syncSegmentSubtractions", None)
                 if sync is not None:

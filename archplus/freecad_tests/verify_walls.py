@@ -1209,11 +1209,26 @@ def _w28_mixed_direction_chain(doc):
     finally:
         FreeCAD.Console.PrintWarning = orig
     seg = wall.Group[0]
-    volume = 300.0 * 2800.0 * (4000.0 * 3000.0 - 3400.0 * 2400.0)
+    # Centered ring: the band straddles each centerline, so the mitered
+    # corners reach (L+W) x (D+W) outside and (L-W) x (D-W) inside — the
+    # same convention W12 asserts (the old expectation multiplied the ring
+    # band area by the thickness again, which no geometry can satisfy).
+    length, depth, width, height = 4000.0, 3000.0, 300.0, 2800.0
+    volume = ((length + width) * (depth + width)
+              - (length - width) * (depth - width)) * height
     h.check("W28 mixed-direction chain miters without fallback",
-            abs(seg.Shape.Volume - volume) < 1e-3
+            abs(seg.Shape.Volume - volume) < 1e-6 * volume
             and len(seg.Shape.Solids) == 1
-            and not any("travel direction" in m for m in captured))
+            and not any("travel direction" in m for m in captured),
+            "volume %.3f expected %.3f solids %d warnings %r"
+            % (seg.Shape.Volume, volume, len(seg.Shape.Solids), captured))
+    bb = seg.Shape.BoundBox
+    h.check("W28 mitered corners reach half a width past the sketch",
+            abs(bb.XMin + width / 2) < 1e-3
+            and abs(bb.YMin + width / 2) < 1e-3
+            and abs(bb.XMax - (length + width / 2)) < 1e-3
+            and abs(bb.YMax - (depth + width / 2)) < 1e-3,
+            "bbox %s" % bb)
 
 
 def _w29_branched_plan(doc):

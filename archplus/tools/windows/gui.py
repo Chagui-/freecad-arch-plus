@@ -1160,8 +1160,16 @@ def repositionWindow(window, reopen=False):
         try:
             if point is None:
                 return                       # cancelled
-            if point != state.get("snap"):
-                point = state.get("place") or point
+            doc.openTransaction("Reposition Window")
+            # The Snapper's point is unusable on an Arch Plus wall (the root
+            # has no shape, so Draft intersects an infinite plane and hands
+            # back a point thousands of kilometres out); placementPoint()
+            # already recovered the real pick point from the snap info. Use
+            # it whenever the click came from the mouse — a typed coordinate
+            # arrives as a point that differs from the last snapped one.
+            if state.get("place") is not None and (
+                    state.get("snap") is None or point == state.get("snap")):
+                point = state["place"]
             window.Base.Placement = _windowPlacement(point, state["face"], width)
             if state["face"] is not None:
                 import Draft

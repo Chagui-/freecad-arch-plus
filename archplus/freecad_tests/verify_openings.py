@@ -18,9 +18,12 @@
 from archplus.freecad_tests import _harness as h
 
 import FreeCAD
+import FreeCADGui
+import Part
 
 from archplus.tools.doors import gui as dg
 from archplus.tools.doors import object as do
+from archplus.tools.walls import object as walls_object
 from archplus.tools.windows import gui as wg
 from archplus.tools.windows import object as wo
 
@@ -51,6 +54,116 @@ def _close(obj, z_plane, xmin, xmax, label):
     h.check(label, ok,
             detail="expected X span %.1f..%.1f at z=%.1f, measured %r"
             % (xmin, xmax, z_plane, span))
+
+
+def _drive_pick(pos):
+    """Drive one mouse move + left click through the Snapper's own handlers.
+
+    The reposition tools run their pick inside Draft's point session, so the
+    only faithful way to exercise them headlessly is to feed the coin event
+    callbacks the session registers. Returns nothing; raises if the session
+    was never armed."""
+    import pivy.coin as coin
+
+    class _Event:
+        def __init__(self, pos):
+            self._pos = pos
+
+        def getPosition(self):
+            return self._pos
+
+        def wasCtrlDown(self):
+            return False
+
+        def wasShiftDown(self):
+            return False
+
+        def getButton(self):
+            return 1
+
+        def getState(self):
+            return coin.SoMouseButtonEvent.DOWN
+
+    class _Cb:
+        def __init__(self, pos):
+            self._ev = _Event(pos)
+
+        def getEvent(self):
+            return self._ev
+
+    if FreeCADGui.Snapper.callbackMove is None:
+        raise RuntimeError("the pick session was never armed")
+    FreeCADGui.Snapper.callbackMove(_Cb(pos))
+    FreeCADGui.Snapper.callbackClick(_Cb(pos))
+    h.process_events(300)
+
+
+def _reposition_target(doc, obj, label):
+    """Reposition `obj` with a mouse pick over the wall and check where it
+    lands.
+
+    Draft's Snapper cannot resolve an ArchPlus wall root (it has no shape),
+    so it intersects an infinite plane and hands the tool a point thousands
+    of kilometres out; the pick's own surface coordinates are the usable
+    ones. This check aims at the middle of the wall's front face, where the
+    opening must end up — a regression to the raw Snapper point throws the
+    window/door off the drawing entirely."""
+    view = FreeCADGui.ActiveDocument.ActiveView
+    view.viewFront()
+    h.process_events(300)
+    view.fitAll()
+    h.process_events(300)
+    w, ht = view.getSize()
+
+    if getattr(FreeCADGui, "Snapper", None) is None:
+        FreeCADGui.activateWorkbench("DraftWorkbench")
+        h.process_events(300)
+
+    if label.startswith("window"):
+        wg.repositionWindow(obj, reopen=False)
+    else:
+        dg.repositionDoor(obj, reopen=False)
+    h.process_events(300)
+    _drive_pick((int(w * 0.5), int(ht * 0.5)))
+
+    pl = obj.Base.Placement
+    half = obj.Width.Value / 2.0
+    on_face = abs(pl.Base.y + 150.0) < 1.0          # wall front face plane
+    along = abs(pl.Base.x - (2000.0 - half)) < 200.0  # centred on the aim
+    at_base = abs(pl.Base.z) < 1.0                  # snapped to the wall base
+    h.check("%s repositioning lands on the picked wall face" % label,
+            on_face and along and at_base,
+            detail="base %s (want y=-150, x=%.1f, z=0)" % (pl.Base, 2000.0 - half))
+
+
+def _reposition_checks(doc):
+    sk = doc.addObject("Sketcher::SketchObject", "RepositionPlan")
+    sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0),
+                                    FreeCAD.Vector(4000, 0, 0)), False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="RepositionWin")
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+    _reposition_target(doc, win, "window")
+
+    dspec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
+                 height=2100.0, frameWidth=70.0, panelThk=45.0,
+                 frameDepth=100.0, swingSide="Left", swingDir="Inward",
+                 panelPos="Centered")
+    dsk, dwp = dg._makeDoorGeometry(dspec)
+    door = do.makeWindow(dsk, 900.0, 2100.0, dwp, name="RepositionDoor")
+    door.Hosts = [wall]
+    wall.Subtractions = [win, door]
+    doc.recompute()
+    _reposition_target(doc, door, "door")
 
 
 def run():
@@ -116,5 +229,7 @@ def run():
     _close(door, glass2_z, glass2_left, glass2_right,
            "sliding door glass travels exactly with its leaf (inherits "
            "the leaf frame's transform)")
+
+    _reposition_checks(h.fresh_doc())
 
     return h.failures()

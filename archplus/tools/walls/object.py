@@ -123,7 +123,11 @@ class _Wall:
                 for seg in all_segments(root):
                     seg.touch()
         if not self._is_segment_role() and prop in (
-                "Width", "Height", "Align", "Offset"):
+                "Width", "Height", "Align", "Offset", "Subtractions"):
+            # Subtractions too: the segments cut the root's hosted openings,
+            # so unhooking one there (or from a Hosts link, which the opening
+            # side syncs through this property) must re-run them or the old
+            # opening stays cut out of the wall.
             for seg in all_segments(obj):
                 seg.touch()
         if self._is_segment_role() and prop in (
