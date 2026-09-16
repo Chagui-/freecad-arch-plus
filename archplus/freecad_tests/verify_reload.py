@@ -167,4 +167,69 @@ def run():
             len(doc.Objects) == 0,
             detail="objects=%d" % len(doc.Objects))
 
+    _rebuild_all_checks()
+
     return h.failures()
+
+
+def _rebuild_all_checks():
+    """F6/F7: the document-wide rebuild - one action instead of a right-click
+    per part, and it must not be a disguised Reload (which reseeds the
+    parameters a file's parts were dimensioned with)."""
+    import FreeCADGui
+    from archplus.tools.partslib import gui as partslib_gui
+    from archplus.tools.partslib import object as partslib_object
+
+    doc = h.fresh_doc()
+    bed = _make("basic/king-bed")
+    chest = _make("basic/chest-of-drawers")
+    box = doc.addObject("Part::Box", "NotALibraryPart")
+    box.Length = 500
+    doc.recompute()
+    box_faces = len(box.Shape.Faces)
+
+    # a hand-edited dimension is what a document-wide rebuild must preserve
+    bed.Width = 1650.0
+    doc.recompute()
+
+    rebuilt = []
+    original = partslib_object._LibraryPart.execute
+
+    def counting_execute(self, obj):
+        rebuilt.append(obj.Name)
+        return original(self, obj)
+
+    partslib_object._LibraryPart.execute = counting_execute
+    try:
+        FreeCADGui.Selection.clearSelection()
+        h.process_events(200)
+        FreeCADGui.runCommand("ArchPlus_RebuildParts", 0)
+        h.process_events(300)
+    finally:
+        partslib_object._LibraryPart.execute = original
+
+    h.check("F6 the document-wide rebuild rebuilds every placed part",
+            rebuilt == [bed.Name, chest.Name],
+            detail="rebuilt=%r (expected both parts)" % (rebuilt,))
+    h.check("F6 it keeps the dimensions the file's parts were edited to",
+            bed.Width.Value == 1650.0 and bed.Shape.isValid(),
+            detail="Width=%.0f valid=%r"
+            % (bed.Width.Value, bed.Shape.isValid()))
+    h.check("F6 it leaves everything else alone",
+            box.Name not in rebuilt and len(box.Shape.Faces) == box_faces,
+            detail="rebuilt=%r box faces %d/%d"
+            % (rebuilt, len(box.Shape.Faces), box_faces))
+
+    # selecting parts narrows it to those
+    rebuilt.clear()
+    FreeCADGui.Selection.addSelection(doc.Name, chest.Name)
+    partslib_object._LibraryPart.execute = counting_execute
+    try:
+        FreeCADGui.runCommand("ArchPlus_RebuildParts", 0)
+        h.process_events(300)
+    finally:
+        partslib_object._LibraryPart.execute = original
+        FreeCADGui.Selection.clearSelection()
+    h.check("F7 a selection narrows the rebuild to the selected parts",
+            rebuilt == [chest.Name],
+            detail="rebuilt=%r" % (rebuilt,))
