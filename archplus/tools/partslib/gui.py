@@ -1530,12 +1530,11 @@ def editPart(obj):
 def rebuildPlacedParts():
     """Rebuild every placed library part in the active document.
 
-    One document-wide action instead of a right-click per part: after the
-    library's geometry changes, this is what catches an existing file up. It
-    rebuilds from each object's own Parameter values - the parts keep their
-    dimensions - where "Reload from library" reseeds those from the manifest.
-    With library parts selected, only those are rebuilt. Returns the number
-    rebuilt, or 0 when there was nothing to do."""
+    Document-wide, and deliberately ignoring the selection: the context-menu
+    entry that calls this is reached by right-clicking a part, which selects
+    it, so a "selected parts only" reading of the same entry would rebuild
+    the one part you clicked and quietly skip the other eighteen. Returns the
+    number rebuilt, or 0 when there was nothing to do."""
     from . import object as partslib_object
 
     doc = FreeCAD.ActiveDocument
@@ -1543,9 +1542,7 @@ def rebuildPlacedParts():
         FreeCAD.Console.PrintError(
             "ArchPlus: no active document to rebuild parts in\n")
         return 0
-    selected = partslib_object.libraryPartsIn(
-        FreeCADGui.Selection.getSelection())
-    targets = selected or partslib_object.libraryPartsIn(doc.Objects)
+    targets = partslib_object.libraryPartsIn(doc.Objects)
     if not targets:
         FreeCAD.Console.PrintMessage(
             "ArchPlus: no placed library parts in this document\n")

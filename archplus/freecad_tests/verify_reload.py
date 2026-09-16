@@ -220,7 +220,10 @@ def _rebuild_all_checks():
             detail="rebuilt=%r box faces %d/%d"
             % (rebuilt, len(box.Shape.Faces), box_faces))
 
-    # selecting parts narrows it to those
+    # A selection must NOT narrow it: the context-menu entry is reached by
+    # right-clicking a part, which selects that part, so a selection-scoped
+    # reading would rebuild the one you clicked and skip the rest - the bug
+    # this check exists for.
     rebuilt.clear()
     FreeCADGui.Selection.addSelection(doc.Name, chest.Name)
     partslib_object._LibraryPart.execute = counting_execute
@@ -230,6 +233,6 @@ def _rebuild_all_checks():
     finally:
         partslib_object._LibraryPart.execute = original
         FreeCADGui.Selection.clearSelection()
-    h.check("F7 a selection narrows the rebuild to the selected parts",
-            rebuilt == [chest.Name],
-            detail="rebuilt=%r" % (rebuilt,))
+    h.check("F7 a selection does not narrow the document-wide rebuild",
+            rebuilt == [bed.Name, chest.Name],
+            detail="rebuilt=%r with one part selected" % (rebuilt,))
