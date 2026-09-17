@@ -98,16 +98,21 @@ def _drive_pick(pos):
     h.process_events(300)
 
 
-def _reposition_target(doc, obj, label):
+def _reposition_target(doc, obj, label, sill):
     """Reposition `obj` with a mouse pick over the wall and check where it
-    lands.
+    lands, and at what height.
 
     Draft's Snapper cannot resolve an ArchPlus wall root (it has no shape),
     so it intersects an infinite plane and hands the tool a point thousands
     of kilometres out; the pick's own surface coordinates are the usable
     ones. This check aims at the middle of the wall's front face, where the
     opening must end up — a regression to the raw Snapper point throws the
-    window/door off the drawing entirely."""
+    window/door off the drawing entirely.
+
+    `sill` is the height above the wall base the opening is placed at before
+    the move, and the height it must still be at after: a reposition used to
+    snap the base straight onto the wall base, which read as "the sill went
+    to zero"."""
     view = FreeCADGui.ActiveDocument.ActiveView
     view.viewFront()
     h.process_events(300)
@@ -119,21 +124,50 @@ def _reposition_target(doc, obj, label):
         FreeCADGui.activateWorkbench("DraftWorkbench")
         h.process_events(300)
 
+    # put it at a known sill first, then reposition it
+    pl = FreeCAD.Placement(obj.Base.Placement)
+    pl.Base.z = sill
+    obj.Base.Placement = pl
+    doc.recompute()
+
+    # Aim at bare wall, clear of the openings already on it: a pick that lands
+    # on another opening tests that path (the sill reference then comes from
+    # its host wall too), not the wall face these checks are about.
+    target = FreeCAD.Vector(3500.0, -150.0, 1400.0)
+    try:
+        px = view.getPointOnScreen(target)
+        pos = (int(px[0]), int(px[1]))
+    except Exception:
+        pos = (int(w * 0.5), int(ht * 0.5))
+
     if label.startswith("window"):
         wg.repositionWindow(obj, reopen=False)
     else:
         dg.repositionDoor(obj, reopen=False)
     h.process_events(300)
-    _drive_pick((int(w * 0.5), int(ht * 0.5)))
+    _drive_pick(pos)
 
     pl = obj.Base.Placement
     half = obj.Width.Value / 2.0
-    on_face = abs(pl.Base.y + 150.0) < 1.0          # wall front face plane
-    along = abs(pl.Base.x - (2000.0 - half)) < 200.0  # centred on the aim
-    at_base = abs(pl.Base.z) < 1.0                  # snapped to the wall base
-    h.check("%s repositioning lands on the picked wall face" % label,
-            on_face and along and at_base,
-            detail="base %s (want y=-150, x=%.1f, z=0)" % (pl.Base, 2000.0 - half))
+    # The opening must end up in the picked wall, near the picked face.
+    # Deliberately not an equality on the origin's y: each tool's geometry
+    # puts its own origin somewhere within the frame depth (a door's body
+    # starts half a panel in from the face, a window's flush with it), so the
+    # contract is that the body sits inside the wall's thickness and reaches
+    # its picked side.
+    bb = obj.Shape.BoundBox
+    in_wall = bb.YMin >= -150.0 - 1.0 and bb.YMax <= 150.0 + 1.0
+    on_picked_side = min(abs(bb.YMin + 150.0), abs(bb.YMax + 150.0)) < 30.0
+    along = abs(pl.Base.x - (3500.0 - half)) < 200.0   # centred on the aim
+    kept_sill = abs(pl.Base.z - sill) < 1.0
+    h.check("%s repositioning lands in the picked wall" % label,
+            in_wall and on_picked_side and along,
+            detail="base %s bbox y %.1f..%.1f (want inside -150..150 and near "
+                   "the -150 face, x=%.1f)"
+                   % (pl.Base, bb.YMin, bb.YMax, 3500.0 - half))
+    h.check("%s repositioning keeps its height above the wall base" % label,
+            kept_sill,
+            detail="z=%.1f after the move, was %.1f" % (pl.Base.z, sill))
 
 
 def _reposition_checks(doc):
@@ -152,7 +186,7 @@ def _reposition_checks(doc):
     win.Hosts = [wall]
     wall.Subtractions = [win]
     doc.recompute()
-    _reposition_target(doc, win, "window")
+    _reposition_target(doc, win, "window", sill=900.0)   # the window default
 
     dspec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
                  height=2100.0, frameWidth=70.0, panelThk=45.0,
@@ -163,7 +197,9 @@ def _reposition_checks(doc):
     door.Hosts = [wall]
     wall.Subtractions = [win, door]
     doc.recompute()
-    _reposition_target(doc, door, "door")
+    # a door sits on the floor by default, so give it a threshold: that is the
+    # case a reposition used to flatten
+    _reposition_target(doc, door, "door", sill=120.0)
 
 
 def _segment_rebuild_checks(doc):

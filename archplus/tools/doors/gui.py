@@ -922,6 +922,49 @@ class DoorsPlusTaskPanel:
 # ---------------------------------------------------------------------------
 # Mouse placement helpers (shared by create + reposition)
 # ---------------------------------------------------------------------------
+def _base_level(obj):
+    """The floor level a pick on `obj` refers to, or None.
+
+    A wall segment picks as itself and its shape starts at the wall base; a
+    wall root has no shape, so its base comes from its sketch placement (the
+    same rule the panel's sill field uses); and an *opening* picks as itself
+    too — pointing at a window while placing a door must not measure the
+    threshold from that window's bounding box. Mirrors the window side."""
+    if obj is None:
+        return None
+    hosts = getattr(obj, "Hosts", None) or []
+    if hosts:
+        levels = [l for l in (_base_level(h) for h in hosts) if l is not None]
+        return min(levels) if levels else None
+    try:
+        shape = getattr(obj, "Shape", None)
+        if shape is not None and not shape.isNull():
+            return shape.BoundBox.ZMin
+    except Exception:
+        pass
+    base = getattr(obj, "Base", None)
+    if base is not None:
+        try:
+            return base.Placement.Base.z
+        except Exception:
+            pass
+    return None
+
+
+def _current_sill(door):
+    """How far the door's base sits above its wall's floor - its threshold.
+
+    What a reposition has to preserve: _doorPlacement's default baseOffset of
+    0 puts the base ON the wall base, so a raised door dropped to the floor
+    when it was moved."""
+    try:
+        z = door.Base.Placement.Base.z
+    except Exception:
+        return 0.0
+    level = _base_level(door)
+    return z - (level if level is not None else 0.0)
+
+
 def _doorPlacement(point, baseFace, width, snapBase=True, baseOffset=0.0):
     """Build the door placement for a picked point.
 
@@ -944,8 +987,10 @@ def _doorPlacement(point, baseFace, width, snapBase=True, baseOffset=0.0):
     host = baseFace[0] if baseFace is not None else None
     if snapBase and host is not None:
         try:
-            point = FreeCAD.Vector(point.x, point.y,
-                                   host.Shape.BoundBox.ZMin + float(baseOffset))
+            level = _base_level(host)
+            if level is not None:
+                point = FreeCAD.Vector(point.x, point.y,
+                                       level + float(baseOffset))
         except Exception:
             pass
 
@@ -1032,7 +1077,11 @@ def repositionDoor(door, reopen=False):
             # Bound the move before the shape is rebuilt, so the re-cut only
             # rebuilds the segments the door actually touched.
             old_pl = FreeCAD.Placement(door.Base.Placement)
-            door.Base.Placement = _doorPlacement(point, state["face"], width)
+            # Keep the door's own threshold: the placement helper's default
+            # would drop it onto the wall base.
+            sill = _current_sill(door)
+            door.Base.Placement = _doorPlacement(point, state["face"], width,
+                                                baseOffset=sill)
             swept = _opening_sweep(door, old_pl, door.Base.Placement)
             if state["face"] is not None:
                 import Draft
