@@ -187,6 +187,47 @@ def thumbnail_path(part_dir):
     return os.path.join(part_dir, THUMBNAIL_FILENAME)
 
 
+def _geometry_sources(part_dir):
+    """The files whose change can change a part's built geometry.
+
+    The part's own folder, plus the two shared modules every builder eases
+    its edges through: a change there (the chamfer that replaced fillets, say)
+    re-shapes every part at once, and no part folder records that."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return (os.path.join(part_dir, "builder.py"),
+            os.path.join(part_dir, "part.json"),
+            os.path.join(here, "shapes.py"),
+            os.path.join(here, "library", "basic", "_shared.py"))
+
+
+def newest_geometry_source(part_dir):
+    """mtime of the newest file that decides this part's geometry, or None."""
+    stamps = []
+    for src in _geometry_sources(part_dir):
+        try:
+            stamps.append(os.path.getmtime(src))
+        except OSError:
+            continue
+    return max(stamps) if stamps else None
+
+
+def thumbnail_is_stale(part_dir, path=None):
+    """True when the part's geometry sources are newer than its thumbnail.
+
+    A committed thumbnail is a picture of the geometry the library produced
+    when it was rendered. Since a thumbnail that exists is otherwise never
+    re-rendered, a change to a builder - or to the shared easing helpers, as
+    when eased edges became chamfers - would keep every card showing a shape
+    the library no longer builds."""
+    path = path or thumbnail_path(part_dir)
+    try:
+        stamp = os.path.getmtime(path)
+    except OSError:
+        return False          # missing file: that is ensure_thumbnail's job
+    newest = newest_geometry_source(part_dir)
+    return newest is not None and newest > stamp
+
+
 def preview_plan(pristine, has_derived_fields, thumbnail_usable):
     """What a detail-pane refresh actually has to do.
 
@@ -417,19 +458,25 @@ def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
 
 
 def ensure_thumbnail(entry, resolved):
-    """Path to the part's thumbnail, rendering one if it is missing.
+    """Path to the part's thumbnail, rendering one when it is missing or
+    shows geometry the library no longer builds.
 
     Checks the session failure cache BEFORE building anything: the build
-    step (real Part booleans/fillets) is exactly the expensive half of this,
-    so a part already known to fail must skip it entirely, not just skip
-    the render call."""
+    step (real Part booleans and eased edges) is exactly the expensive half
+    of this, so a part already known to fail must skip it entirely, not just
+    skip the render call.
+
+    A stale thumbnail that will not re-render keeps being shown: an out-of-
+    date picture of the part beats an empty card, and the failure is
+    remembered so the attempt is not repeated all session."""
     from . import geometry as partslib_geometry
 
     path = thumbnail_path(entry["dir"])
-    if os.path.exists(path):
+    exists = os.path.exists(path)
+    if exists and not thumbnail_is_stale(entry["dir"], path):
         return path
     if render_failed_before(path):
-        return None
+        return path if exists else None
 
     timer = Timer("first thumbnail for %r" % (entry["id"],))
     try:
@@ -438,7 +485,7 @@ def ensure_thumbnail(entry, resolved):
         mark_render_failed(path, (
             "ArchPlus: cannot build %r for a thumbnail; will not retry "
             "this session: %s\n" % (entry["id"], exc)))
-        return None
+        return path if exists else None
     timer.mark("build")
 
     rendered = render_shape(shape, path, timer=timer)
@@ -448,4 +495,4 @@ def ensure_thumbnail(entry, resolved):
     mark_render_failed(path, (
         "ArchPlus: cannot render a thumbnail for %r; will not retry this "
         "session\n" % (entry["id"],)))
-    return None
+    return path if exists else None

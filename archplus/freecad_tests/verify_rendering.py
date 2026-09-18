@@ -49,8 +49,15 @@ def run():
     before = len(doc.Objects)
     shape = partslib_geometry.build_shape(resolved, part_dir)
     measured = partslib_geometry.measure(shape)
+    # The advertised dimensions are the contract, not bit-exact floats: a
+    # bounding box comes back from the kernel with noise in its last digits
+    # (400.0000000000001 for a 400mm part), so any toleranced comparison has
+    # to be a micron rather than an equality.
+    advertised = {"Width": 400.0, "Depth": 350.0, "Height": 500.0}
     h.check("J2 the built shape measures what the manifest advertises",
-            measured == {"Width": 400.0, "Depth": 350.0, "Height": 500.0},
+            set(measured) == set(advertised)
+            and all(abs(measured[k] - advertised[k]) < 1e-6
+                    for k in advertised),
             detail="measured=%r" % (measured,))
     h.check("J3 building a shape adds nothing to the document",
             len(doc.Objects) == before,

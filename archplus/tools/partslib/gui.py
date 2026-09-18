@@ -1527,6 +1527,39 @@ def editPart(obj):
     return True
 
 
+def rebuildPlacedParts():
+    """Rebuild every placed library part in the active document.
+
+    Document-wide, and deliberately ignoring the selection: the context-menu
+    entry that calls this is reached by right-clicking a part, which selects
+    it, so a "selected parts only" reading of the same entry would rebuild
+    the one part you clicked and quietly skip the other eighteen. Returns the
+    number rebuilt, or 0 when there was nothing to do."""
+    from . import object as partslib_object
+
+    doc = FreeCAD.ActiveDocument
+    if doc is None:
+        FreeCAD.Console.PrintError(
+            "ArchPlus: no active document to rebuild parts in\n")
+        return 0
+    targets = partslib_object.libraryPartsIn(doc.Objects)
+    if not targets:
+        FreeCAD.Console.PrintMessage(
+            "ArchPlus: no placed library parts in this document\n")
+        return 0
+
+    doc.openTransaction("Rebuild library parts")
+    try:
+        count = partslib_object.rebuildFromLibrary(targets)
+        doc.recompute()
+    finally:
+        doc.commitTransaction()
+    FreeCAD.Console.PrintMessage(
+        "ArchPlus: rebuilt %d library part%s from the library\n"
+        % (count, "" if count == 1 else "s"))
+    return count
+
+
 class PartsLibraryCommand:
     """ArchPlus_PartsLibrary - open the parts library browser."""
 
@@ -1545,7 +1578,30 @@ class PartsLibraryCommand:
         showPanel()
 
 
-# Register the command (FreeCAD 1.1 has no removeCommand; addCommand is a
+class RebuildPartsCommand:
+    """ArchPlus_RebuildParts - rebuild every placed part from the library.
+
+    Deliberately not on the ArchPlus toolbar (that strip is the creation
+    tools); it is reachable from a placed part's context menu, from the
+    toolbar customiser, and by name from the console."""
+
+    def GetResources(self):
+        return {"Pixmap": ICON,
+                "MenuText": "Rebuild parts from library",
+                "ToolTip": "Rebuild every placed part in this document from "
+                           "the library's current geometry, keeping each "
+                           "part's own parameter values"}
+
+    def IsActive(self):
+        return FreeCAD.ActiveDocument is not None
+
+    def Activated(self):
+        rebuildPlacedParts()
+
+
+# Register the commands (FreeCAD 1.1 has no removeCommand; addCommand is a
 # no-op if it's already registered, so guard to stay reload-safe).
 if "ArchPlus_PartsLibrary" not in FreeCADGui.listCommands():
     FreeCADGui.addCommand("ArchPlus_PartsLibrary", PartsLibraryCommand())
+if "ArchPlus_RebuildParts" not in FreeCADGui.listCommands():
+    FreeCADGui.addCommand("ArchPlus_RebuildParts", RebuildPartsCommand())

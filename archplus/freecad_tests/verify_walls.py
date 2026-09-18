@@ -3,6 +3,9 @@
 # Wall checks: creation, claims, config inheritance, split, sketch edits,
 # hosted openings, reload. Mirrors the spec's verify list.
 
+import os
+import tempfile
+
 from archplus.freecad_tests import _harness as h
 
 import FreeCAD
@@ -41,8 +44,11 @@ def _w1_creation(doc):
             wall.Proxy.Type == "Wall" and len(wall.Group) == 1)
     seg = wall.Group[0]
     h.check("W1 fallback child defaults",
-            seg.Proxy.Type == "WallSegment" and seg.Fallback
+            seg.Proxy.Type == "Wall" and seg.Proxy.Segment and seg.Fallback
             and seg.Wall is wall)
+    import Draft
+    h.check("W1 both roles report Draft type Wall (FuseArch fuse filter)",
+            Draft.getType(wall) == "Wall" and Draft.getType(seg) == "Wall")
     h.check("W1 fallback child builds 2 edges, construction excluded",
             abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000, 4000])) < 1e-3)
     return wall, sk
@@ -75,8 +81,8 @@ def _w2_inheritance(doc):
     doc.recompute()
     h.check("W2 nested child overrides height and inherits width",
             abs(short.Shape.Volume - _expected_volume(400, 2200, [4000])) < 1e-3)
-    h.check("W2 ancestor excludes descendant claims (rest builds nothing)",
-            rest.Shape.Volume < 1e-3)
+    h.check("W2 ancestor excludes descendant claims (fallback builds nothing)",
+            fallback.Shape.Volume < 1e-3)
     h.check("W2 sibling unaffected by nested child",
             abs(ext.Shape.Volume - _expected_volume(400, 2800, [4000])) < 1e-3)
     return wall, sk
@@ -224,7 +230,7 @@ def _w6_hosting(doc):
     doc.recompute()
     a, b = wall2.Group[0], walls_object.makeSegment(wall2, name="b")
     a.Edges = [(sk2, ("Edge1",))]
-    a.Rest = False
+    a.Fallback = False
     b.Edges = [(sk2, ("Edge2",))]
     doc.recompute()
     fa, fb = a.Shape.Volume, b.Shape.Volume
@@ -273,7 +279,7 @@ def _w7_reload(doc):
     ok = wall2 is not None and len(wall2.Group) == 2
     for seg in (wall2.Group if ok else []):
         ok = ok and abs(seg.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3
-        ok = ok and seg.Proxy.Type == "WallSegment" and seg.Wall is wall2
+        ok = ok and seg.Proxy.Type == "Wall" and seg.Proxy.Segment and seg.Wall is wall2
     h.check("W7 reload preserves tree, claims and inheritance", ok)
     h.check("W7 restored view provider nests the segments",
             wall2 is not None
@@ -530,7 +536,7 @@ def _w16_split_ux(doc):
     doc.recompute()
     a = walls_object.makeSegment(wall2, name="a")
     a.Edges = [(sk2, ("Edge1",))]
-    a.Rest = False
+    a.Fallback = False
     b = walls_object.makeSegment(wall2, name="b")
     b.Edges = [(sk2, ("Edge2",))]
     doc.recompute()
@@ -1203,11 +1209,26 @@ def _w28_mixed_direction_chain(doc):
     finally:
         FreeCAD.Console.PrintWarning = orig
     seg = wall.Group[0]
-    volume = 300.0 * 2800.0 * (4000.0 * 3000.0 - 3400.0 * 2400.0)
+    # Centered ring: the band straddles each centerline, so the mitered
+    # corners reach (L+W) x (D+W) outside and (L-W) x (D-W) inside — the
+    # same convention W12 asserts (the old expectation multiplied the ring
+    # band area by the thickness again, which no geometry can satisfy).
+    length, depth, width, height = 4000.0, 3000.0, 300.0, 2800.0
+    volume = ((length + width) * (depth + width)
+              - (length - width) * (depth - width)) * height
     h.check("W28 mixed-direction chain miters without fallback",
-            abs(seg.Shape.Volume - volume) < 1e-3
+            abs(seg.Shape.Volume - volume) < 1e-6 * volume
             and len(seg.Shape.Solids) == 1
-            and not any("travel direction" in m for m in captured))
+            and not any("travel direction" in m for m in captured),
+            "volume %.3f expected %.3f solids %d warnings %r"
+            % (seg.Shape.Volume, volume, len(seg.Shape.Solids), captured))
+    bb = seg.Shape.BoundBox
+    h.check("W28 mitered corners reach half a width past the sketch",
+            abs(bb.XMin + width / 2) < 1e-3
+            and abs(bb.YMin + width / 2) < 1e-3
+            and abs(bb.XMax - (length + width / 2)) < 1e-3
+            and abs(bb.YMax - (depth + width / 2)) < 1e-3,
+            "bbox %s" % bb)
 
 
 def _w29_branched_plan(doc):
@@ -1276,5 +1297,6 @@ def run():
     _w7_reload(doc)
     doc = h.fresh_doc()
     _w27_fallback_migration(doc)
+    doc = h.fresh_doc()   # W27 saves and closes the document it was given
     _w28_mixed_direction_chain(doc)
     _w29_branched_plan(doc)

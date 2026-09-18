@@ -467,7 +467,101 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
     return obj
 
 
-def _recomputeWithHosts(obj):
+def _recompute_only(objects):
+    """Recompute just `objects`, falling back to the whole document.
+
+    FreeCAD 1.1's Document.recompute(objs) is what makes a live edit cheap;
+    older builds only take the document-wide form, and a failed call must
+    still leave the model built rather than silently stale."""
+    doc = FreeCAD.ActiveDocument
+    try:
+        return doc.recompute(objects)
+    except TypeError:
+        return doc.recompute()
+
+
+def _refreshLive(obj):
+    """Recompute only what a live edit changes: the opening, and the wall cuts
+    it makes.
+
+    The panel's live path used whole-document recomputes, so every keystroke
+    re-ran whatever else the edit invalidated - on a real plan the two section
+    views alone were 1.9s of the 3.6s a single width change cost. Those
+    drawings only need the finished state, which accept()'s document
+    recompute provides, so while the panel is open the wall is kept right and
+    the drawings are left alone.
+
+    Document.recompute(objs) takes the list; if a FreeCAD build ever refuses
+    it, fall back to the whole document rather than leave the edit unbuilt."""
+    if obj is None:
+        return
+    doc = obj.Document
+    from archplus.tools.walls import object as walls_object
+    # The segments must be touched, not merely recomputed: an opening changing
+    # does not invalidate the wall that cuts it (the same stale-cut behaviour
+    # _recomputeWithHosts compensates for), so a targeted recompute without
+    # this leaves the old opening in the wall.
+    targets = [obj]
+    for h in (getattr(obj, "Hosts", None) or []):
+        try:
+            h.touch()
+        except Exception:
+            pass
+        targets.append(h)
+        for seg in walls_object.all_segments(h):
+            seg.touch()
+            targets.append(seg)
+    _recompute_only(targets)
+
+
+def _opening_sweep(obj, old_pl, new_pl):
+    """The bounding box an opening occupied across a move (old + new).
+
+    A reposition must rebuild the segments the opening touched in either
+    position: the new one grows the cut, the old one has to drop the stale
+    one. obj.Shape is still the pre-recompute shape, so its box is the old
+    position and the placement pair gives the new one. Returns None when the
+    shape carries no usable box, which callers read as "touch every
+    segment"."""
+    try:
+        bb = obj.Shape.BoundBox
+        if obj.Shape.isNull() or not bb.isValid():
+            return None
+        region = FreeCAD.BoundBox(bb.XMin, bb.YMin, bb.ZMin,
+                                  bb.XMax, bb.YMax, bb.ZMax)
+        delta = new_pl.multiply(old_pl.inverse())
+        moved = FreeCAD.BoundBox()
+        for x in (bb.XMin, bb.XMax):
+            for y in (bb.YMin, bb.YMax):
+                for z in (bb.ZMin, bb.ZMax):
+                    moved.add(delta.multVec(FreeCAD.Vector(x, y, z)))
+        region.add(moved)
+        region.enlarge(1.0)          # bboxes that merely touch still count
+    except Exception:
+        return None
+    return [region]
+
+
+def _segment_may_cut(seg, boxes):
+    """True when `seg` could hold any of `boxes`.
+
+    A rebuild costs a chain fuse plus a boolean per hosted opening, so
+    touching a segment the opening never reached is pure waste. Segments
+    with no shape yet always rebuild — they may be the ones that now have
+    to cut it."""
+    try:
+        shape = seg.Shape
+        if shape is None or shape.isNull():
+            return True
+        bb = shape.BoundBox
+        if not bb.isValid():
+            return True
+    except Exception:
+        return True
+    return any(bb.intersect(b) for b in boxes)
+
+
+def _recomputeWithHosts(obj, swept=None):
     """Recompute the window, then re-cut its host walls in the same edit.
 
     A hosted window is computed BEFORE its host wall in the dependency graph,
@@ -475,7 +569,14 @@ def _recomputeWithHosts(obj):
     and position — the change only appears after some later recompute. Touching
     the hosts and recomputing again makes the wall opening follow the window
     now. Wall segments hang off their root through a dependency-free hidden
-    link, so they are touched explicitly or their opening cuts go stale."""
+    link, so they are touched explicitly or their opening cuts go stale.
+
+    `swept` narrows which segments get touched: the boxes the opening
+    occupied, from _opening_sweep. Every segment of a multi-segment wall
+    otherwise rebuilds on any opening change, which is what made a
+    reposition cost grow with the wall. None (the default) touches them
+    all — right for edits whose reach we cannot bound, like a rebuilt
+    window shape or an unhosting."""
     if obj is None:
         return
     doc = obj.Document
@@ -486,7 +587,8 @@ def _recomputeWithHosts(obj):
         try:
             h.touch()
             for seg in walls_object.all_segments(h):
-                seg.touch()
+                if swept is None or _segment_may_cut(seg, swept):
+                    seg.touch()
             touched = True
         except Exception:
             pass
@@ -645,7 +747,10 @@ class WindowsPlusTaskPanel:
         # Debounce timer
         self._timer = QtCore.QTimer()
         self._timer.setSingleShot(True)
-        self._timer.setInterval(200)
+        # Long enough that a run of spinner clicks or a typed number is one
+        # rebuild rather than one per click, short enough that the model
+        # follows a drag while it happens.
+        self._timer.setInterval(450)
         self._timer.timeout.connect(self._apply)
 
         # Connect widgets to live-update scheduler
@@ -809,7 +914,7 @@ class WindowsPlusTaskPanel:
                     self._timer.stop()
                     self._apply()
                 self.obj.Opening = val
-                FreeCAD.ActiveDocument.recompute()
+                _refreshLive(self.obj)
             except Exception:
                 pass
 
@@ -818,7 +923,7 @@ class WindowsPlusTaskPanel:
             try:
                 self.obj.SymbolPlan = self.symbolPlan.isChecked()
                 self.obj.SymbolElevation = self.symbolElev.isChecked()
-                FreeCAD.ActiveDocument.recompute()
+                _refreshLive(self.obj)
             except Exception:
                 pass
 
@@ -861,7 +966,7 @@ class WindowsPlusTaskPanel:
         newPl.Base = FreeCAD.Vector(pl.Base.x, pl.Base.y,
                                     baseZ + self._mm(self.sill))
         self._sketch.Placement = newPl
-        _recomputeWithHosts(self.obj)
+        _refreshLive(self.obj)
 
     # ---- repositioning ----------------------------------------------------
     def _reposition(self):
@@ -953,7 +1058,7 @@ class WindowsPlusTaskPanel:
             # sketch.  Without this, the wall host can get a null subvolume
             # and report "Wall: null shape" — especially when switching to
             # Fixed, where the sketch drops from 4 wires to 2.
-            FreeCAD.ActiveDocument.recompute()
+            _recompute_only([sketch])
 
             # Swap the base sketch in one step (no Base=None first — that
             # creates an intermediate null-shape state that can propagate to
@@ -983,9 +1088,11 @@ class WindowsPlusTaskPanel:
             storeSpec(self.obj, spec)
 
             # Touch the object so recompute is guaranteed to rebuild it, then
-            # re-cut the host wall so the change is visible immediately.
+            # re-cut the host wall so the change is visible immediately — the
+            # two of them only, so an open panel does not re-run the drawings
+            # on every keystroke (accept() recomputes the document).
             self.obj.touch()
-            _recomputeWithHosts(self.obj)
+            _refreshLive(self.obj)
 
             # Now that the new sketch is fully in use, remove the old one.
             if old_sketch is not None and old_sketch != sketch:
@@ -1045,6 +1152,8 @@ class WindowsPlusTaskPanel:
         self._timer.stop()
         self._apply()
         FreeCAD.ActiveDocument.commitTransaction()
+        # The document-wide recompute the live path deliberately skipped: the
+        # drawings and anything else downstream catch up here, once.
         FreeCAD.ActiveDocument.recompute()
         self.obj = None
         FreeCADGui.Control.closeDialog()
@@ -1062,6 +1171,50 @@ class WindowsPlusTaskPanel:
 # ---------------------------------------------------------------------------
 # Mouse placement helpers (shared by create + reposition)
 # ---------------------------------------------------------------------------
+def _base_level(obj):
+    """The floor level a pick on `obj` refers to, or None.
+
+    A wall segment picks as itself and its shape starts at the wall base; a
+    wall root has no shape, so its base comes from its sketch placement (the
+    same rule the panel's sill field uses); and an *opening* picks as itself
+    too — pointing at a window while placing the next one must not measure the
+    sill from that window's bounding box, which is how a reposition that
+    landed on a neighbouring window came out 900mm too high."""
+    if obj is None:
+        return None
+    hosts = getattr(obj, "Hosts", None) or []
+    if hosts:
+        levels = [l for l in (_base_level(h) for h in hosts) if l is not None]
+        return min(levels) if levels else None
+    try:
+        shape = getattr(obj, "Shape", None)
+        if shape is not None and not shape.isNull():
+            return shape.BoundBox.ZMin
+    except Exception:
+        pass
+    base = getattr(obj, "Base", None)
+    if base is not None:
+        try:
+            return base.Placement.Base.z
+        except Exception:
+            pass
+    return None
+
+
+def _current_sill(window):
+    """How far the window's base sits above its wall's floor.
+
+    The sill the panel shows, and the one a reposition has to preserve:
+    _windowPlacement's default baseOffset of 0 puts the base ON the wall base,
+    which is where a repositioned window's sill went."""
+    try:
+        z = window.Base.Placement.Base.z
+    except Exception:
+        return 0.0
+    level = _base_level(window)
+    return z - (level if level is not None else 0.0)
+
+
 def _windowPlacement(point, baseFace, width, snapBase=True, baseOffset=0.0):
     """Build the window placement for a picked point.
 
@@ -1085,8 +1238,10 @@ def _windowPlacement(point, baseFace, width, snapBase=True, baseOffset=0.0):
     host = baseFace[0] if baseFace is not None else None
     if snapBase and host is not None:
         try:
-            point = FreeCAD.Vector(point.x, point.y,
-                                   host.Shape.BoundBox.ZMin + float(baseOffset))
+            level = _base_level(host)
+            if level is not None:
+                point = FreeCAD.Vector(point.x, point.y,
+                                       level + float(baseOffset))
         except Exception:
             pass
 
@@ -1160,13 +1315,31 @@ def repositionWindow(window, reopen=False):
         try:
             if point is None:
                 return                       # cancelled
-            if point != state.get("snap"):
-                point = state.get("place") or point
-            window.Base.Placement = _windowPlacement(point, state["face"], width)
+            doc.openTransaction("Reposition Window")
+            # The Snapper's point is unusable on an Arch Plus wall (the root
+            # has no shape, so Draft intersects an infinite plane and hands
+            # back a point thousands of kilometres out); placementPoint()
+            # already recovered the real pick point from the snap info. Use
+            # it whenever the click came from the mouse — a typed coordinate
+            # arrives as a point that differs from the last snapped one.
+            if state.get("place") is not None and (
+                    state.get("snap") is None or point == state.get("snap")):
+                point = state["place"]
+            # Bound the move before the shape is rebuilt, so the re-cut only
+            # rebuilds the segments the window actually touched.
+            old_pl = FreeCAD.Placement(window.Base.Placement)
+            # The sill the window is at now: without it the placement helper
+            # snaps the base to the wall base and the window drops to the
+            # floor, which is what a reposition did to every window.
+            sill = _current_sill(window)
+            window.Base.Placement = _windowPlacement(point, state["face"], width,
+                                                    baseOffset=sill)
+            swept = _opening_sweep(window, old_pl, window.Base.Placement)
             if state["face"] is not None:
                 import Draft
+                from archplus.tools.walls import object as walls_object
                 host = state["face"][0]
-                if Draft.getType(host) == "WallSegment":
+                if walls_object.is_segment(host):
                     host = getattr(host, "Wall", host)
                 if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                     window.Hosts = [host]
@@ -1174,7 +1347,7 @@ def repositionWindow(window, reopen=False):
             # so the old opening would linger. Force the window, then re-cut
             # wall(s).
             window.touch()
-            _recomputeWithHosts(window)
+            _recomputeWithHosts(window, swept)
             doc.commitTransaction()
         finally:
             tracker.finalize()
@@ -1343,8 +1516,9 @@ class WindowsPlusCommand:
 
         # Try to auto-host if a wall was clicked
         if self.baseFace is not None:
+            from archplus.tools.walls import object as walls_object
             host = self.baseFace[0]
-            if Draft.getType(host) == "WallSegment":
+            if walls_object.is_segment(host):
                 host = getattr(host, "Wall", host)
             if Draft.getType(host) in ("Wall", "Structure", "Roof"):
                 window.Hosts = [host]

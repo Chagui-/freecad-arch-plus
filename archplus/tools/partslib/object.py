@@ -514,8 +514,20 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
         menu.addAction(editAction)
 
         action = QtGui.QAction("Reload from library", menu)
+        action.setToolTip("Rebuild this part and reset its parameters to the "
+                          "library's defaults")
         action.triggered.connect(lambda: reloadFromLibrary(vobj.Object))
         menu.addAction(action)
+
+        # The document-wide counterpart: one right-click catches every placed
+        # part up after the library's geometry changes, and keeps the
+        # dimensions this file's parts carry.
+        rebuildAll = QtGui.QAction("Rebuild all parts from library", menu)
+        rebuildAll.setToolTip(
+            "Rebuild every placed part in this document from the library's "
+            "current geometry, keeping each part's own parameter values")
+        rebuildAll.triggered.connect(lambda: rebuildAllFromLibrary())
+        menu.addAction(rebuildAll)
 
 
 def isLibraryPart(obj):
@@ -546,6 +558,41 @@ def panelValues(obj, specs):
     return values, auto
 
 
+def libraryPartsIn(objects):
+    """The placed library parts among `objects`, order preserved."""
+    return [o for o in (objects or []) if o is not None and isLibraryPart(o)]
+
+
+def rebuildFromLibrary(objects):
+    """Rebuild placed library parts from the library's current contents.
+
+    The bulk counterpart of reloadFromLibrary, and deliberately not the same
+    thing: reloadFromLibrary reseeds every Parameter from the manifest - "take
+    the library's truth" - while this keeps each object's own values and only
+    re-runs the build. That is the path you want when the library's *geometry*
+    changed (a helper now eases edges differently, say) and the parts already
+    in a file should catch up without losing hand-edited dimensions.
+
+    It calls each part's execute() directly, which is what reloadFromLibrary
+    does too: a parameter *edit* reaches the build through onChanged, but
+    touching an object and recomputing does not re-run execute here (measured:
+    Touched -> Up-to-date with no execute call), so nothing here waits on the
+    dependency graph to notice. Returns how many were rebuilt; the caller owns
+    the recompute that carries the new shapes on to whatever depends on
+    them."""
+    rebuilt = 0
+    for obj in libraryPartsIn(objects):
+        execute = getattr(getattr(obj, "Proxy", None), "execute", None)
+        if execute is None:
+            continue
+        try:
+            execute(obj)
+        except Exception:
+            continue
+        rebuilt += 1
+    return rebuilt
+
+
 def editLibraryPart(obj):
     """Open the library panel to edit a placed part.
 
@@ -554,6 +601,17 @@ def editLibraryPart(obj):
     from . import gui as partslib_gui
 
     partslib_gui.editPart(obj)
+
+
+def rebuildAllFromLibrary():
+    """Rebuild every placed library part in the active document, or the
+    selected ones when library parts are selected.
+
+    The document-wide recovery action: after a library update, one call
+    catches every placed part up instead of right-clicking each of them."""
+    from . import gui as partslib_gui
+
+    return partslib_gui.rebuildPlacedParts()
 
 
 def _applyMetadata(obj, resolved, facets):

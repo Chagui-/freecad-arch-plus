@@ -132,8 +132,8 @@ right-click → **Reposition (pick point)** to move it with the mouse.
 ## Walls
 
 - **Sketch-based segments** — a wall references its base sketch (never owns
-  it): each straight run of the sketch is claimed by a `WallSegment` group
-  that extrudes it separately, so segments can be edited, split and
+  it): each straight run of the sketch is claimed by a *segment* child that
+  extrudes it separately, so segments can be edited, split and
   overridden independently. Connected runs build as one mitered chain —
   corners join cleanly and closed loops build as a single ring — exactly
   like an Arch Wall. The `Wall` root holds the default dimensions and
@@ -160,6 +160,11 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
   opening's `Hosts`, and an opening that spans two segments is cut from both.
+- **Section views and *Fuse Arch*** — wall segments report the `Wall` draft
+  type (the root/segment distinction lives in an internal flag), so the stock
+  fuse paths (`FuseArch` on a Draft Shape2DView / *Section View*, `JoinArch`
+  on a TechDraw View) group a wall's segments by material and fuse them into
+  one solid, exactly as they do for Arch walls.
 - **Split / move segment** — the **Split / move segment…** entry lives in
   the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
   button (there is no tree or 3D context-menu entry), greyed out until a
