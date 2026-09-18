@@ -202,6 +202,86 @@ def _reposition_checks(doc):
     _reposition_target(doc, door, "door", sill=120.0)
 
 
+def _live_edit_checks(doc):
+    """Editing an opening keeps the wall right without re-running the
+    drawings.
+
+    The panel's live path used whole-document recomputes, so every spinner
+    click re-ran the section views - seconds each on a plan that has any.
+    The contract is: while the panel is open, the opening and the wall cuts
+    follow, and the drawings wait for accept()."""
+    import Draft
+    import Arch
+    from draftobjects import shape2dview as s2dmod
+    from archplus.tools.windows import gui as wg
+
+    sk = doc.addObject("Sketcher::SketchObject", "LiveEditPlan")
+    sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0),
+                                    FreeCAD.Vector(4000, 0, 0)), False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="LiveEditWin")
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    # The plane lists the opening as well as the wall, which is how a real
+    # plan's planes are set up - and it is what makes the drawing a dependent
+    # of the edit (a Shape2DView links its Base globally, so a plane it does
+    # not list leaves the view untouched and stale either way).
+    plane = Arch.makeSectionPlane([wall, win])
+    view = Draft.make_shape2dview(plane)
+    doc.recompute()
+
+    segment = walls_object.all_segments(wall)[0]
+    cut_before = segment.Shape.Volume
+
+    executed = []
+    original_view_execute = s2dmod.Shape2DView.execute
+
+    def counting_view_execute(self, obj):
+        executed.append(obj.Name)
+        return original_view_execute(self, obj)
+
+    panel = wg.WindowsPlusTaskPanel(win)
+    FreeCADGui.Control.showDialog(panel)
+    h.process_events(300)
+
+    s2dmod.Shape2DView.execute = counting_view_execute
+    try:
+        wg.WindowsPlusTaskPanel._setmm(panel.width, 1600.0)   # a spinner click
+        h.process_events(900)                                 # past the debounce
+        live_views = list(executed)
+        cut_after = segment.Shape.Volume
+    finally:
+        s2dmod.Shape2DView.execute = original_view_execute
+
+    h.check("a live panel edit re-cuts the wall",
+            abs(cut_after - cut_before) > 1.0,
+            detail="segment volume %.6g -> %.6g" % (cut_before, cut_after))
+    h.check("a live panel edit leaves the drawings alone",
+            live_views == [],
+            detail="section views re-run during the edit: %r" % (live_views,))
+
+    # Accepting goes back to the document-wide recompute the live path
+    # skipped. (Whether a given Shape2DView re-runs is FreeCAD's business -
+    # a manual touch cannot force one in 1.1 - so this asserts the panel's
+    # side of the bargain: it no longer rebuilds the wall gate-kept by a
+    # stale drawing, and the commit recomputes the document.)
+    panel.accept()
+    h.process_events(400)
+    h.check("accepting the panel recomputes the document",
+            panel.obj is None and win.Shape.isValid(),
+            detail="panel obj=%r win valid=%s"
+            % (getattr(panel, "obj", None), win.Shape.isValid()))
+
+
 def _segment_rebuild_checks(doc):
     """A reposition rebuilds only the segments the opening reached, and a
     move onto another wall drops the cut left behind on the old one."""
@@ -340,5 +420,6 @@ def run():
 
     _reposition_checks(h.fresh_doc())
     _segment_rebuild_checks(h.fresh_doc())
+    _live_edit_checks(h.fresh_doc())
 
     return h.failures()

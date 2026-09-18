@@ -467,6 +467,53 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
     return obj
 
 
+def _recompute_only(objects):
+    """Recompute just `objects`, falling back to the whole document.
+
+    FreeCAD 1.1's Document.recompute(objs) is what makes a live edit cheap;
+    older builds only take the document-wide form, and a failed call must
+    still leave the model built rather than silently stale."""
+    doc = FreeCAD.ActiveDocument
+    try:
+        return doc.recompute(objects)
+    except TypeError:
+        return doc.recompute()
+
+
+def _refreshLive(obj):
+    """Recompute only what a live edit changes: the opening, and the wall cuts
+    it makes.
+
+    The panel's live path used whole-document recomputes, so every keystroke
+    re-ran whatever else the edit invalidated - on a real plan the two section
+    views alone were 1.9s of the 3.6s a single width change cost. Those
+    drawings only need the finished state, which accept()'s document
+    recompute provides, so while the panel is open the wall is kept right and
+    the drawings are left alone.
+
+    Document.recompute(objs) takes the list; if a FreeCAD build ever refuses
+    it, fall back to the whole document rather than leave the edit unbuilt."""
+    if obj is None:
+        return
+    doc = obj.Document
+    from archplus.tools.walls import object as walls_object
+    # The segments must be touched, not merely recomputed: an opening changing
+    # does not invalidate the wall that cuts it (the same stale-cut behaviour
+    # _recomputeWithHosts compensates for), so a targeted recompute without
+    # this leaves the old opening in the wall.
+    targets = [obj]
+    for h in (getattr(obj, "Hosts", None) or []):
+        try:
+            h.touch()
+        except Exception:
+            pass
+        targets.append(h)
+        for seg in walls_object.all_segments(h):
+            seg.touch()
+            targets.append(seg)
+    _recompute_only(targets)
+
+
 def _opening_sweep(obj, old_pl, new_pl):
     """The bounding box an opening occupied across a move (old + new).
 
@@ -700,7 +747,10 @@ class WindowsPlusTaskPanel:
         # Debounce timer
         self._timer = QtCore.QTimer()
         self._timer.setSingleShot(True)
-        self._timer.setInterval(200)
+        # Long enough that a run of spinner clicks or a typed number is one
+        # rebuild rather than one per click, short enough that the model
+        # follows a drag while it happens.
+        self._timer.setInterval(450)
         self._timer.timeout.connect(self._apply)
 
         # Connect widgets to live-update scheduler
@@ -864,7 +914,7 @@ class WindowsPlusTaskPanel:
                     self._timer.stop()
                     self._apply()
                 self.obj.Opening = val
-                FreeCAD.ActiveDocument.recompute()
+                _refreshLive(self.obj)
             except Exception:
                 pass
 
@@ -873,7 +923,7 @@ class WindowsPlusTaskPanel:
             try:
                 self.obj.SymbolPlan = self.symbolPlan.isChecked()
                 self.obj.SymbolElevation = self.symbolElev.isChecked()
-                FreeCAD.ActiveDocument.recompute()
+                _refreshLive(self.obj)
             except Exception:
                 pass
 
@@ -916,7 +966,7 @@ class WindowsPlusTaskPanel:
         newPl.Base = FreeCAD.Vector(pl.Base.x, pl.Base.y,
                                     baseZ + self._mm(self.sill))
         self._sketch.Placement = newPl
-        _recomputeWithHosts(self.obj)
+        _refreshLive(self.obj)
 
     # ---- repositioning ----------------------------------------------------
     def _reposition(self):
@@ -1008,7 +1058,7 @@ class WindowsPlusTaskPanel:
             # sketch.  Without this, the wall host can get a null subvolume
             # and report "Wall: null shape" — especially when switching to
             # Fixed, where the sketch drops from 4 wires to 2.
-            FreeCAD.ActiveDocument.recompute()
+            _recompute_only([sketch])
 
             # Swap the base sketch in one step (no Base=None first — that
             # creates an intermediate null-shape state that can propagate to
@@ -1038,9 +1088,11 @@ class WindowsPlusTaskPanel:
             storeSpec(self.obj, spec)
 
             # Touch the object so recompute is guaranteed to rebuild it, then
-            # re-cut the host wall so the change is visible immediately.
+            # re-cut the host wall so the change is visible immediately — the
+            # two of them only, so an open panel does not re-run the drawings
+            # on every keystroke (accept() recomputes the document).
             self.obj.touch()
-            _recomputeWithHosts(self.obj)
+            _refreshLive(self.obj)
 
             # Now that the new sketch is fully in use, remove the old one.
             if old_sketch is not None and old_sketch != sketch:
@@ -1100,6 +1152,8 @@ class WindowsPlusTaskPanel:
         self._timer.stop()
         self._apply()
         FreeCAD.ActiveDocument.commitTransaction()
+        # The document-wide recompute the live path deliberately skipped: the
+        # drawings and anything else downstream catch up here, once.
         FreeCAD.ActiveDocument.recompute()
         self.obj = None
         FreeCADGui.Control.closeDialog()
