@@ -778,6 +778,9 @@ class _Window(ArchComponent.Component):
                 if orig.HoleDepth.Value:
                     width = orig.HoleDepth.Value
         if not width:
+            from archplus.tools.walls import object as walls_object
+            if walls_object.is_segment(host):
+                host = walls_object.wall_root(host)
             if host and Draft.getType(host) == "Wall":
                 # TODO More robust approach :  With ArchSketch, on which wall segment an ArchObject is attached to is declared by user and saved.
                 #      The extrusion of each wall segment could be done per segment, and punch hole in the exact wall segment before fusing them all. No need to care about each wall segment thickness.
@@ -938,7 +941,13 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
             # the segments recompute when this opening changes — without
             # the link a host touch cascade was needed, which re-entered
             # the group-touched chain and froze the UI after recompute.
-            for host in obj.Hosts:
+            # The pre-change list matters as much as the new one: unhosting
+            # empties obj.Hosts, so the wall it left would never be told to
+            # drop the link and its segments would keep the old opening cut.
+            # onBeforeChange stashes the old value as proxy.Hosts.
+            hosts = list(getattr(obj.Proxy, "Hosts", None) or [])
+            hosts += list(obj.Hosts or [])
+            for host in hosts:
                 proxy = getattr(host, "Proxy", None)
                 sync = getattr(proxy, "syncSegmentSubtractions", None)
                 if sync is not None:

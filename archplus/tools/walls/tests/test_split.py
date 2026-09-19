@@ -16,7 +16,7 @@ from archplus.tools.walls import object as walls_object
 def _segment(name="Segments"):
     return types.SimpleNamespace(
         Name=name, Label=name, Group=[], InList=[], Wall=None,
-        Proxy=types.SimpleNamespace(Type="WallSegment"))
+        Proxy=types.SimpleNamespace(Type="Wall", Segment=True))
 
 
 def _root(*segments):

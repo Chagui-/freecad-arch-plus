@@ -189,3 +189,99 @@ def test_a_part_with_no_committed_thumbnail_falls_back_to_rendering():
                            thumbnail_usable=False)
     assert plan == {"build": True, "measure": False, "render": True,
                     "use_thumbnail": False}
+
+
+# --- thumbnail freshness ---------------------------------------------------
+#
+# A committed thumbnail is never re-rendered once it exists, so without a
+# freshness check the grid keeps showing a shape the library no longer builds
+# (the case that prompted this: eased edges became chamfers, and every card
+# still showed filleted parts).
+
+
+def _part_dir(tmp_path, thumbnail_age=0.0, builder_age=0.0):
+    import os
+    part_dir = tmp_path / "part"
+    part_dir.mkdir()
+    (part_dir / "part.json").write_text("{}", encoding="utf-8")
+    (part_dir / "builder.py").write_text("def build(*a): pass",
+                                         encoding="utf-8")
+    thumb = pt.thumbnail_path(str(part_dir))
+    open(thumb, "w").close()
+    now = __import__("time").time()
+    os.utime(thumb, (now - thumbnail_age, now - thumbnail_age))
+    os.utime(str(part_dir / "builder.py"),
+             (now - builder_age, now - builder_age))
+    return str(part_dir), thumb
+
+
+def test_a_thumbnail_newer_than_its_builder_is_fresh(tmp_path):
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=0.0, builder_age=60.0)
+    assert pt.thumbnail_is_stale(part_dir, thumb) is False
+
+
+def test_a_thumbnail_older_than_its_builder_is_stale(tmp_path):
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=600.0, builder_age=60.0)
+    assert pt.thumbnail_is_stale(part_dir, thumb) is True
+
+
+def test_a_thumbnail_older_than_the_shared_easing_helpers_is_stale(tmp_path, monkeypatch):
+    # The case that bit: nothing in the part's own folder changed, but
+    # shapes.py did, and every part's geometry moved with it. The shared
+    # helper's mtime is injected rather than touched on disk, so running the
+    # suite cannot disturb the real library's freshness.
+    import os
+    import time
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=0.0, builder_age=0.0)
+    shared = tmp_path / "shapes.py"
+    shared.write_text("", encoding="utf-8")
+    now = time.time()
+    os.utime(str(shared), (now - 600.0, now - 600.0))
+    sources = tuple(pt._geometry_sources(part_dir)) + (str(shared),)
+    monkeypatch.setattr(pt, "_geometry_sources", lambda d: sources)
+    assert pt.thumbnail_is_stale(part_dir, thumb) is False
+    os.utime(str(shared), (now + 60.0, now + 60.0))
+    assert pt.thumbnail_is_stale(part_dir, thumb) is True
+
+
+def test_a_missing_thumbnail_is_not_stale(tmp_path):
+    # Missing is ensure_thumbnail's own case; reporting it as stale too would
+    # put two pieces of code on one decision.
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=0.0, builder_age=0.0)
+    import os
+    os.remove(thumb)
+    assert pt.thumbnail_is_stale(part_dir, thumb) is False
+
+
+def test_a_stale_thumbnail_that_cannot_render_keeps_being_shown(tmp_path, monkeypatch):
+    # An out-of-date picture beats an empty card: re-rendering a stale
+    # thumbnail must not turn a present image into no image, on machines
+    # where offscreen rendering is unavailable.
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=600.0, builder_age=60.0)
+    entry = {"id": "stale", "dir": part_dir}
+    resolved = {"geometry": {}, "params": {}}
+    monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())
+    monkeypatch.setattr(pt, "render_shape", lambda *a, **k: False)
+    assert pt.ensure_thumbnail(entry, resolved) == thumb
+    assert pt.render_failed_before(thumb) is True
+
+
+def test_a_stale_thumbnail_is_re_rendered(tmp_path, monkeypatch):
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=600.0, builder_age=60.0)
+    entry = {"id": "stale", "dir": part_dir}
+    resolved = {"geometry": {}, "params": {}}
+    monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())
+    monkeypatch.setattr(pt, "render_shape", lambda shape, path, **k: True)
+    assert pt.ensure_thumbnail(entry, resolved) == thumb
+
+
+def test_a_fresh_thumbnail_is_returned_without_building(tmp_path, monkeypatch):
+    part_dir, thumb = _part_dir(tmp_path, thumbnail_age=0.0, builder_age=600.0)
+    entry = {"id": "fresh", "dir": part_dir}
+    resolved = {"geometry": {}, "params": {}}
+
+    def _must_not_run(*a, **k):
+        raise AssertionError("a fresh thumbnail must not rebuild the part")
+
+    monkeypatch.setattr(pg, "build_shape", _must_not_run)
+    assert pt.ensure_thumbnail(entry, resolved) == thumb

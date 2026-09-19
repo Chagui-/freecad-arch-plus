@@ -18,9 +18,12 @@
 from archplus.freecad_tests import _harness as h
 
 import FreeCAD
+import FreeCADGui
+import Part
 
 from archplus.tools.doors import gui as dg
 from archplus.tools.doors import object as do
+from archplus.tools.walls import object as walls_object
 from archplus.tools.windows import gui as wg
 from archplus.tools.windows import object as wo
 
@@ -51,6 +54,304 @@ def _close(obj, z_plane, xmin, xmax, label):
     h.check(label, ok,
             detail="expected X span %.1f..%.1f at z=%.1f, measured %r"
             % (xmin, xmax, z_plane, span))
+
+
+def _drive_pick(pos):
+    """Drive one mouse move + left click through the Snapper's own handlers.
+
+    The reposition tools run their pick inside Draft's point session, so the
+    only faithful way to exercise them headlessly is to feed the coin event
+    callbacks the session registers. Returns nothing; raises if the session
+    was never armed."""
+    import pivy.coin as coin
+
+    class _Event:
+        def __init__(self, pos):
+            self._pos = pos
+
+        def getPosition(self):
+            return self._pos
+
+        def wasCtrlDown(self):
+            return False
+
+        def wasShiftDown(self):
+            return False
+
+        def getButton(self):
+            return 1
+
+        def getState(self):
+            return coin.SoMouseButtonEvent.DOWN
+
+    class _Cb:
+        def __init__(self, pos):
+            self._ev = _Event(pos)
+
+        def getEvent(self):
+            return self._ev
+
+    if FreeCADGui.Snapper.callbackMove is None:
+        raise RuntimeError("the pick session was never armed")
+    FreeCADGui.Snapper.callbackMove(_Cb(pos))
+    FreeCADGui.Snapper.callbackClick(_Cb(pos))
+    h.process_events(300)
+
+
+def _reposition_target(doc, obj, label, sill):
+    """Reposition `obj` with a mouse pick over the wall and check where it
+    lands, and at what height.
+
+    Draft's Snapper cannot resolve an ArchPlus wall root (it has no shape),
+    so it intersects an infinite plane and hands the tool a point thousands
+    of kilometres out; the pick's own surface coordinates are the usable
+    ones. This check aims at the middle of the wall's front face, where the
+    opening must end up — a regression to the raw Snapper point throws the
+    window/door off the drawing entirely.
+
+    `sill` is the height above the wall base the opening is placed at before
+    the move, and the height it must still be at after: a reposition used to
+    snap the base straight onto the wall base, which read as "the sill went
+    to zero"."""
+    view = FreeCADGui.ActiveDocument.ActiveView
+    view.viewFront()
+    h.process_events(300)
+    view.fitAll()
+    h.process_events(300)
+    w, ht = view.getSize()
+
+    if getattr(FreeCADGui, "Snapper", None) is None:
+        FreeCADGui.activateWorkbench("DraftWorkbench")
+        h.process_events(300)
+
+    # put it at a known sill first, then reposition it
+    pl = FreeCAD.Placement(obj.Base.Placement)
+    pl.Base.z = sill
+    obj.Base.Placement = pl
+    doc.recompute()
+
+    # Aim at bare wall, clear of the openings already on it: a pick that lands
+    # on another opening tests that path (the sill reference then comes from
+    # its host wall too), not the wall face these checks are about.
+    target = FreeCAD.Vector(3500.0, -150.0, 1400.0)
+    try:
+        px = view.getPointOnScreen(target)
+        pos = (int(px[0]), int(px[1]))
+    except Exception:
+        pos = (int(w * 0.5), int(ht * 0.5))
+
+    if label.startswith("window"):
+        wg.repositionWindow(obj, reopen=False)
+    else:
+        dg.repositionDoor(obj, reopen=False)
+    h.process_events(300)
+    _drive_pick(pos)
+
+    pl = obj.Base.Placement
+    half = obj.Width.Value / 2.0
+    # The opening must end up in the picked wall, near the picked face.
+    # Deliberately not an equality on the origin's y: each tool's geometry
+    # puts its own origin somewhere within the frame depth (a door's body
+    # starts half a panel in from the face, a window's flush with it), so the
+    # contract is that the body sits inside the wall's thickness and reaches
+    # its picked side.
+    bb = obj.Shape.BoundBox
+    in_wall = bb.YMin >= -150.0 - 1.0 and bb.YMax <= 150.0 + 1.0
+    on_picked_side = min(abs(bb.YMin + 150.0), abs(bb.YMax + 150.0)) < 30.0
+    along = abs(pl.Base.x - (3500.0 - half)) < 200.0   # centred on the aim
+    kept_sill = abs(pl.Base.z - sill) < 1.0
+    h.check("%s repositioning lands in the picked wall" % label,
+            in_wall and on_picked_side and along,
+            detail="base %s bbox y %.1f..%.1f (want inside -150..150 and near "
+                   "the -150 face, x=%.1f)"
+                   % (pl.Base, bb.YMin, bb.YMax, 3500.0 - half))
+    h.check("%s repositioning keeps its height above the wall base" % label,
+            kept_sill,
+            detail="z=%.1f after the move, was %.1f" % (pl.Base.z, sill))
+
+
+def _reposition_checks(doc):
+    sk = doc.addObject("Sketcher::SketchObject", "RepositionPlan")
+    sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0),
+                                    FreeCAD.Vector(4000, 0, 0)), False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="RepositionWin")
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+    _reposition_target(doc, win, "window", sill=900.0)   # the window default
+
+    dspec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
+                 height=2100.0, frameWidth=70.0, panelThk=45.0,
+                 frameDepth=100.0, swingSide="Left", swingDir="Inward",
+                 panelPos="Centered")
+    dsk, dwp = dg._makeDoorGeometry(dspec)
+    door = do.makeWindow(dsk, 900.0, 2100.0, dwp, name="RepositionDoor")
+    door.Hosts = [wall]
+    wall.Subtractions = [win, door]
+    doc.recompute()
+    # a door sits on the floor by default, so give it a threshold: that is the
+    # case a reposition used to flatten
+    _reposition_target(doc, door, "door", sill=120.0)
+
+
+def _live_edit_checks(doc):
+    """Editing an opening keeps the wall right without re-running the
+    drawings.
+
+    The panel's live path used whole-document recomputes, so every spinner
+    click re-ran the section views - seconds each on a plan that has any.
+    The contract is: while the panel is open, the opening and the wall cuts
+    follow, and the drawings wait for accept()."""
+    import Draft
+    import Arch
+    from draftobjects import shape2dview as s2dmod
+    from archplus.tools.windows import gui as wg
+
+    sk = doc.addObject("Sketcher::SketchObject", "LiveEditPlan")
+    sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0),
+                                    FreeCAD.Vector(4000, 0, 0)), False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="LiveEditWin")
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    # The plane lists the opening as well as the wall, which is how a real
+    # plan's planes are set up - and it is what makes the drawing a dependent
+    # of the edit (a Shape2DView links its Base globally, so a plane it does
+    # not list leaves the view untouched and stale either way).
+    plane = Arch.makeSectionPlane([wall, win])
+    view = Draft.make_shape2dview(plane)
+    doc.recompute()
+
+    segment = walls_object.all_segments(wall)[0]
+    cut_before = segment.Shape.Volume
+
+    executed = []
+    original_view_execute = s2dmod.Shape2DView.execute
+
+    def counting_view_execute(self, obj):
+        executed.append(obj.Name)
+        return original_view_execute(self, obj)
+
+    panel = wg.WindowsPlusTaskPanel(win)
+    FreeCADGui.Control.showDialog(panel)
+    h.process_events(300)
+
+    s2dmod.Shape2DView.execute = counting_view_execute
+    try:
+        wg.WindowsPlusTaskPanel._setmm(panel.width, 1600.0)   # a spinner click
+        h.process_events(900)                                 # past the debounce
+        live_views = list(executed)
+        cut_after = segment.Shape.Volume
+    finally:
+        s2dmod.Shape2DView.execute = original_view_execute
+
+    h.check("a live panel edit re-cuts the wall",
+            abs(cut_after - cut_before) > 1.0,
+            detail="segment volume %.6g -> %.6g" % (cut_before, cut_after))
+    h.check("a live panel edit leaves the drawings alone",
+            live_views == [],
+            detail="section views re-run during the edit: %r" % (live_views,))
+
+    # Accepting goes back to the document-wide recompute the live path
+    # skipped. (Whether a given Shape2DView re-runs is FreeCAD's business -
+    # a manual touch cannot force one in 1.1 - so this asserts the panel's
+    # side of the bargain: it no longer rebuilds the wall gate-kept by a
+    # stale drawing, and the commit recomputes the document.)
+    panel.accept()
+    h.process_events(400)
+    h.check("accepting the panel recomputes the document",
+            panel.obj is None and win.Shape.isValid(),
+            detail="panel obj=%r win valid=%s"
+            % (getattr(panel, "obj", None), win.Shape.isValid()))
+
+
+def _segment_rebuild_checks(doc):
+    """A reposition rebuilds only the segments the opening reached, and a
+    move onto another wall drops the cut left behind on the old one."""
+    plan = doc.addObject("Sketcher::SketchObject", "RebuildPlan")
+    runs = 6
+    for i in range(runs):
+        plan.addGeometry(Part.LineSegment(FreeCAD.Vector(i * 4000, 0, 0),
+                                          FreeCAD.Vector((i + 1) * 4000, 0, 0)),
+                         False)
+    doc.recompute()
+    wall = walls_object.makeWall(doc, sketch=plan)
+    doc.recompute()
+    for i in range(1, runs):
+        seg = walls_object.makeSegment(wall, name="R%d" % i)
+        seg.Edges = [(plan, ("Edge%d" % (i + 1),))]
+    doc.recompute()
+    segments = walls_object.all_segments(wall)
+
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000.0, 1000.0, wp, name="RebuildWin")
+    # sit it inside the first run
+    wsk.Placement = FreeCAD.Placement(FreeCAD.Vector(1500, 0, 0),
+                                      FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+
+    rebuilt = []
+    original = walls_object._Wall._buildSegment
+
+    def recording_build(self, obj):
+        rebuilt.append(obj.Name)
+        return original(self, obj)
+
+    walls_object._Wall._buildSegment = recording_build
+    try:
+        old_pl = FreeCAD.Placement(win.Base.Placement)
+        win.Base.Placement = FreeCAD.Placement(
+            FreeCAD.Vector(2500, 0, 0), old_pl.Rotation)
+        swept = wg._opening_sweep(win, old_pl, win.Base.Placement)
+        wg._recomputeWithHosts(win, swept)
+    finally:
+        walls_object._Wall._buildSegment = original
+    h.check("a reposition rebuilds only the segments it reached",
+            len(rebuilt) == 1 and rebuilt[0] == segments[0].Name,
+            detail="rebuilt %r of %d segments" % (rebuilt, len(segments)))
+    cut = segments[0].Shape.Volume
+
+    # ... and moving it onto another wall leaves no cut behind
+    other = doc.addObject("Sketcher::SketchObject", "OtherPlan")
+    other.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 6000, 0),
+                                       FreeCAD.Vector(4000, 6000, 0)), False)
+    doc.recompute()
+    wall2 = walls_object.makeWall(doc, sketch=other, name="Wall2")
+    doc.recompute()
+    win.Base.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 6000, 0), FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall2]
+    wall2.Subtractions = [win]
+    wall.Subtractions = []
+    wg._recomputeWithHosts(win)
+    untouched = abs(segments[0].Shape.Volume
+                    - 300.0 * 2800.0 * 4000.0) < 1e-3
+    h.check("moving a window to another wall restores the old segment",
+            untouched and segments[0].Shape.Volume > cut,
+            detail="volume %.3e (cut was %.3e, full %.3e)"
+            % (segments[0].Shape.Volume, cut, 300.0 * 2800.0 * 4000.0))
 
 
 def run():
@@ -116,5 +417,9 @@ def run():
     _close(door, glass2_z, glass2_left, glass2_right,
            "sliding door glass travels exactly with its leaf (inherits "
            "the leaf frame's transform)")
+
+    _reposition_checks(h.fresh_doc())
+    _segment_rebuild_checks(h.fresh_doc())
+    _live_edit_checks(h.fresh_doc())
 
     return h.failures()

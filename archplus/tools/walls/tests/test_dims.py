@@ -98,7 +98,7 @@ def _segment(name="Segments"):
             "Face3": types.SimpleNamespace(
                 CenterOfGravity=FreeCAD.Vector(1000.0, 1000.0, 1400.0)),
         }),
-        Proxy=types.SimpleNamespace(Type="WallSegment"))
+        Proxy=types.SimpleNamespace(Type="Wall", Segment=True))
 
 
 # A square wall's two first runs: along +X, then along +Y.

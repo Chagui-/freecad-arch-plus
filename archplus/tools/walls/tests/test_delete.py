@@ -26,9 +26,10 @@ def _doc():
 
 
 def _segment(name, doc, children=()):
-    seg = types.SimpleNamespace(Name=name, Label=name,
-                                Proxy=_proxy("WallSegment"),
-                                Document=doc, Group=list(children))
+    seg = types.SimpleNamespace(
+        Name=name, Label=name,
+        Proxy=types.SimpleNamespace(Type="Wall", Segment=True),
+        Document=doc, Group=list(children))
     for child in children:
         child.Wall = seg
     return seg
