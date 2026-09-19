@@ -9,8 +9,8 @@ loads and exposes a callable `build()`, every declared parameter and
 placement host is valid, every facet icon exists on disk) — everything below
 is what that suite cannot see.
 
-The library ships 31 parametric parts across six rooms (Kitchen, Dining
-Room, Bedroom, Living Room, Bathroom, Office). All 31 ship a committed
+The library ships 36 parametric parts across six rooms (Kitchen, Dining
+Room, Bedroom, Living Room, Bathroom, Office). All 36 ship a committed
 `thumbnail.jpg` and a `builder.py`; none uses the model-file (assets) path.
 
 Everything scriptable runs inside FreeCAD via
@@ -24,7 +24,7 @@ points (L7-L9).
 
 | Room | Parts |
 |---|---|
-| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner) |
+| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (fridge/fridge-freezer), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
@@ -120,6 +120,36 @@ placed part stay in millimetres.
       clicking. Confirm: (1) the ghost tracker box disappears — no leftover
       geometry in the 3D view; (2) no further object is placed; (3) the MDI
       area switches back to the ArchPlus Library tab automatically.
+
+## Part K — the kitchen additions (K1-K5)
+
+Five parts added to the Kitchen room after the first pass: `basic/sink`,
+`basic/fridge`, `basic/tall-pantry`, `basic/tall-oven-unit` and
+`basic/waste-bin`. Their heights and offsets are the part of a new part that
+only a real placement click can show.
+
+- [ ] **K1 (the sink drops into the worktop).** Select **Sink**, click
+      **Place**, then click the floor in front of a placed Base cabinet. The
+      rim's top face lands at 900 mm — the base unit's finished worktop
+      height — with the bowl hanging into the carcass behind the doors.
+      Switch **Bowls** to *Double bowl*: the sink widens to 1000 mm and the
+      tap stays centred behind the two bowls.
+- [ ] **K2 (the fridge configuration is not a size).** Place a **Fridge**,
+      type 700 into **Width** in the property editor, then switch **Doors**
+      to *Fridge-freezer*. The width stays 700; the front gains a second
+      door over the bottom third of its height, with its own shorter handle.
+- [ ] **K3 (the tall units are tall).** Place **Tall pantry cabinet** and
+      **Tall unit with oven and microwave**. Both stand on the floor (they
+      are floor-hosted, not lifted like the wall cabinet) and measure
+      2100 mm high: the pantry shows four door leaves in two tiers, the oven
+      unit a cupboard below two appliance fronts and another above them.
+- [ ] **K4 (the appliance recesses read).** On the tall oven unit, confirm
+      the oven and microwave fronts are recessed into the door line rather
+      than outlined on it — each should carry a shadow on all four sides,
+      the way the base cabinet with oven's front does.
+- [ ] **K5 (the bin is not a cabinet).** Place **Pedal bin**: it stands on
+      the floor, measures 300 × 300 × 700, the lid overhangs the body on
+      every side, and the foot pedal shows at the front of the floor.
 
 ## Part L — Editing placed parts
 

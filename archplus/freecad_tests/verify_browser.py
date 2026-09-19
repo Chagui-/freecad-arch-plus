@@ -96,8 +96,8 @@ def run():
                type(panel.parentWidget()).__name__))
 
     # B2 - the chip row.
-    expected = ["All · 31", "Bathroom · 8", "Bedroom · 10",
-                "Dining Room · 2", "Kitchen · 6", "Living Room · 8",
+    expected = ["All · 36", "Bathroom · 8", "Bedroom · 10",
+                "Dining Room · 2", "Kitchen · 11", "Living Room · 8",
                 "Office · 2"]
     h.check("B2 chip row labels and counts",
             sorted(_chip_texts(panel)) == sorted(expected),
@@ -110,10 +110,10 @@ def run():
             clicked and len(_grid_names(panel)) == 8,
             detail="clicked=%r count=%d" % (clicked,
                                             len(_grid_names(panel))))
-    clicked = _click_chip(panel, "All · 31")
+    clicked = _click_chip(panel, "All · 36")
     h.process_events(100)
-    h.check("B4 All chip restores 31 parts",
-            clicked and len(_grid_names(panel)) == 31,
+    h.check("B4 All chip restores 36 parts",
+            clicked and len(_grid_names(panel)) == 36,
             detail="clicked=%r count=%d" % (clicked,
                                             len(_grid_names(panel))))
 
@@ -140,7 +140,7 @@ def run():
 
     # B6 - debounced search (back on All, so the room filter cannot hide
     # a match from another room).
-    _click_chip(panel, "All · 31")
+    _click_chip(panel, "All · 36")
     h.process_events(100)
     _search(panel, "toilet")
     names = _grid_names(panel)

@@ -126,7 +126,7 @@ def test_every_part_lives_under_a_family_folder():
     # The library tree is also the import tree: a part's builder.py is
     # imported by the part's path. A part directly at the library root is
     # allowed by the rules (reserved for one-off imports) but nothing
-    # shipped today is one - all 31 are the house style.
+    # shipped today is one - all 36 are the house style.
     for path in partslib_index.manifest_paths(LIBRARY_DIR):
         relative = os.path.relpath(os.path.dirname(path), LIBRARY_DIR)
         segments = relative.replace(os.sep, "/").split("/")
@@ -153,7 +153,7 @@ def test_shipped_ids_are_unique():
     index = _scan()
     ids = [e["id"] for e in index["entries"]]
     assert len(ids) == len(set(ids))
-    assert len(ids) == 31
+    assert len(ids) == 36
 
 
 def test_every_local_builder_imports_and_exposes_build():

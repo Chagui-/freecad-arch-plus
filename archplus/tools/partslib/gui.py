@@ -745,7 +745,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # Only where the collection declares a label. An unlabelled
         # collection - which is what library/basic/ is - leaves the card at
         # thumbnail-plus-name and correspondingly shorter, because an
-        # identical "Basic" under all 31 generic parts would be exactly the
+        # identical "Basic" under all 36 generic parts would be exactly the
         # noise the parameter line was removed for.
         family = entry.get("family")
         if family:

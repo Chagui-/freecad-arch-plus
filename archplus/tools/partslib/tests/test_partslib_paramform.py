@@ -229,7 +229,7 @@ def test_editing_a_driver_without_resets_leaves_other_fields_pinned():
 
 
 def test_has_derived_fields_is_false_without_auto_params():
-    # 27 of the 31 bundled parts. This is what spares them measure(), whose
+    # 31 of the 36 bundled parts. This is what spares them measure(), whose
     # optimalBoundingBox costs about as much as building the shape.
     assert not _bare_form().hasDerivedFields()
 

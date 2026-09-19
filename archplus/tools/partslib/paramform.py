@@ -121,7 +121,7 @@ class ParamForm(QtGui.QWidget):
         measuring the shape is pure waste - and measuring is not cheap:
         geometry.measure() calls optimalBoundingBox(), which costs about as
         much as building the shape (0.913s of the king bed's 1.76s click).
-        27 of the 31 bundled parts declare no "auto" param at all."""
+        31 of the 36 bundled parts declare no "auto" param at all."""
         return bool(self._auto)
 
     def setDerived(self, values):

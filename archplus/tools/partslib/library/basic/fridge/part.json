@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "name": "Fridge",
+  "description": "Freestanding fridge or fridge-freezer; the configuration sets the door split, never the size.",
+  "keywords": [
+    "kitchen",
+    "fridge",
+    "refrigerator",
+    "freezer",
+    "cold",
+    "appliance",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Refrigerator",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Configuration": {
+      "type": "Choice",
+      "default": "fridge",
+      "label": "Doors",
+      "options": {
+        "fridge": {
+          "label": "Fridge"
+        },
+        "fridge-freezer": {
+          "label": "Fridge-freezer"
+        }
+      }
+    },
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 650
+    },
+    "Height": {
+      "type": "Length",
+      "default": 1850
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {}
+}

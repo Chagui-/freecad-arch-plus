@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "name": "Tall unit with oven and microwave",
+  "description": "Tall housing with a built-in oven at the 600 line and a microwave above it.",
+  "keywords": [
+    "kitchen",
+    "oven",
+    "microwave",
+    "tall",
+    "unit",
+    "housing",
+    "appliance",
+    "built-in",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Oven",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 2100
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {}
+}

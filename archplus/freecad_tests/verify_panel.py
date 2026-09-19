@@ -83,7 +83,7 @@ def run():
     panel = partslib_gui.showPanel()
     h.process_events(300)
     panel.search.setText("")
-    _click_chip(panel, "All · 31")
+    _click_chip(panel, "All · 36")
     h.process_events(300)
 
     # --- H1: close the tab; the toolbar path brings it back. Closing an
@@ -116,7 +116,7 @@ def run():
         cycles_ok = cycles_ok and _mdi_tab_count() == 1
     h.check("H3 each close/reopen cycle yields exactly one tab",
             cycles_ok, detail="tabs=%d" % _mdi_tab_count())
-    _click_chip(partslib_gui.showPanel(), "All · 31")
+    _click_chip(partslib_gui.showPanel(), "All · 36")
     h.process_events(100)
 
     # --- H2: the tab survives a document switch, keeping its state.
@@ -140,7 +140,7 @@ def run():
             % (sub.isVisible(), len(_grid_names(panel)),
                panel.search.text(), panel.grid.currentRow()))
     _search(panel, "")
-    _click_chip(panel, "All · 31")
+    _click_chip(panel, "All · 36")
     h.process_events(100)
     FreeCAD.closeDocument(doc2.Name)
     h.process_events(200)
@@ -180,7 +180,7 @@ def run():
         _select(panel, "base cabinet")
         sidebar_line = panel.detailFamily.text()
         _search(panel, "Demo Collection")
-        family_matches = len(_grid_names(panel)) == 31
+        family_matches = len(_grid_names(panel)) == 36
         card_line = any(
             "Demo Collection" in
             [label.text() for label in card.findChildren(QtGui.QLabel)]
@@ -212,14 +212,14 @@ def run():
 
     # --- D5: the tab stays open across placements.
     panel = partslib_gui.showPanel()
-    _click_chip(panel, "All · 31")
+    _click_chip(panel, "All · 36")
     _search(panel, "")
     h.fresh_doc()
     _make("basic/base-cabinet")
     partslib_gui.showPanel()
     h.process_events(200)
     h.check("D5 the tab stays open across placements",
-            _mdi_tab_count() == 1 and len(_grid_names(panel)) == 31,
+            _mdi_tab_count() == 1 and len(_grid_names(panel)) == 36,
             detail="tabs=%d count=%d"
             % (_mdi_tab_count(), len(_grid_names(panel))))
 

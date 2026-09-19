@@ -17,6 +17,11 @@
 
 from archplus.tools.partslib import shapes as sh
 
+# The radius of every door pull in this family, and so the clearance a
+# carcass needs from the origin for the handles it hangs to stay inside the
+# depth its manifest advertises.
+PULL_RADIUS = 7.0
+
 
 def carcass(width, depth, height, kick_height, kick_depth, radius=8.0):
     """A cabinet box standing on a recessed plinth."""
@@ -63,10 +68,10 @@ def pulls(width, height, door_count, base_z, y, vertical=True):
         x = (i * door_width + door_width - inset if i < door_count / 2.0
              else i * door_width + inset)
         if vertical:
-            pulls.append(sh.place(sh.bar(length, 7.0, along="z"), x, y,
+            pulls.append(sh.place(sh.bar(length, PULL_RADIUS, along="z"), x, y,
                                   base_z + (height - base_z - length) / 2.0))
         else:
-            pulls.append(sh.place(sh.bar(length, 7.0, along="x"),
+            pulls.append(sh.place(sh.bar(length, PULL_RADIUS, along="x"),
                                   i * door_width + (door_width - length) / 2.0,
                                   y, height - 60.0))
     return pulls
