@@ -1,33 +1,80 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# A freestanding fridge. Reading as a fridge and not as a tall cabinet is a
+# massing problem, not a detailing one, and it comes down to two things no
+# cabinet in this library has: its front is an APPLIED door slab standing
+# proud of the body, with the body's own front face showing as a frame round
+# it, and its handles are long grab bars standing off the door on posts
+# rather than pulls lying on it.
 
 from archplus.tools.partslib import shapes as sh
 
 # The freezer's share of the front, taken off the bottom. The door split is
 # the only thing a fridge-freezer changes about the box it stands in.
 _FREEZER_SHARE = 0.3
-# The gap two stacked doors leave between them, the height of the seam
-# `_shared.doors()` cuts between columns.
-_DOOR_SEAM = 4.0
-# Handle hardware: bar radius, how far the pull's centre sits from the
-# opening edge, and the longest pull that still looks like a fridge handle.
-_HANDLE_RADIUS = 8.0
-_HANDLE_INSET = 45.0
-_HANDLE_MAX = 240.0
+# The gasket: the body's front face stays visible this wide all round each
+# door slab. A door cut flush to the cabinet's edges is a cabinet door.
+_GASKET = 12.0
+_DOOR_THICKNESS = 60.0
+_DOOR_SEAM = 6.0
+# Handle hardware: a flat 42mm grab bar standing 35mm off the door face on
+# two posts. Flat, because the bar is what says "fridge" from the front and a
+# 30mm cylinder is a bare line at thumbnail scale.
+_HANDLE_WIDTH = 42.0
+_HANDLE_DEPTH = 26.0
+_HANDLE_STANDOFF = 35.0
+_POST_RADIUS = 8.0
+_HANDLE_EDGE_INSET = 55.0
+# A fridge door's handle is a long grab, not a cabinet pull - this share of
+# its own door, capped so the freezer's does not run the whole height.
+_HANDLE_SHARE = 0.55
+_HANDLE_MAX = 700.0
+# The plinth: a full-width recess, the vent gap a fridge stands on rather
+# than a cabinet's inset toe kick.
+_KICK_HEIGHT = 45.0
+_KICK_DEPTH = 30.0
+# The frontmost point of the part is the bar's own face, so the door plane
+# sits the bar's depth and its standoff back from the origin, and everything
+# else behind that. The advertised Depth therefore includes the handles,
+# which is how an appliance is measured.
+_DOOR_PLANE = _HANDLE_DEPTH + _HANDLE_STANDOFF
 
 
 def _row_edges(height, kick_height, configuration):
-    """The door row boundaries, top down, from the unit top to the kick."""
+    """The door row boundaries, top down, from the door head to the plinth."""
     shares = ([1.0 - _FREEZER_SHARE, _FREEZER_SHARE]
               if configuration == "fridge-freezer" else [1.0])
-    edges = [height]
+    top = height - _GASKET
+    edges = [top]
     for share in shares:
-        edges.append(edges[-1] - (height - kick_height) * share)
+        edges.append(edges[-1] - (top - kick_height) * share)
     return edges
 
 
+def _handle(door_width, slab_height, slab_bottom):
+    """One door's grab bar: a flat bar on two posts, standing off the door
+    face on the opening side so the gap between bar and door reads."""
+    length = min(_HANDLE_MAX, slab_height * _HANDLE_SHARE)
+    if length <= 0:
+        return []
+    # On the opening edge: the slab's own edge, in from it by the inset.
+    x = _GASKET + door_width - _HANDLE_EDGE_INSET
+    bottom = slab_bottom + (slab_height - length) / 2.0
+    parts = [sh.place(sh.rounded_box(_HANDLE_WIDTH, _HANDLE_DEPTH, length,
+                                     radius=6),
+                      x - _HANDLE_WIDTH / 2.0, 0.0, bottom)]
+    # The posts run from the bar's back face to a millimetre inside the slab,
+    # so the fuse has material to join rather than a coincident face.
+    post_length = _DOOR_PLANE - _HANDLE_DEPTH + 1.0
+    for fraction in (0.12, 0.88):
+        parts.append(sh.place(sh.bar(post_length, _POST_RADIUS, along="y"),
+                              x, _HANDLE_DEPTH, bottom + length * fraction))
+    return parts
+
+
 def build(params, assets, ctx):
-    """A freestanding fridge or fridge-freezer: a tall insulated box with
-    recessed door fronts, bar handles and a compressor plinth.
+    """A freestanding fridge or fridge-freezer: an insulated body with an
+    applied door slab proud of its front, on standoff grab handles.
 
     Params: Width, Depth, Height (mm), Configuration (Choice of "fridge" or
     "fridge-freezer").
@@ -42,41 +89,31 @@ def build(params, assets, ctx):
     if configuration not in ("fridge", "fridge-freezer"):
         configuration = "fridge"
 
-    # The handles are the frontmost thing on the part, so the cabinet is
-    # built one handle radius back from the origin and shifted forward at the
-    # end: the advertised Depth then includes the handles, which is how an
-    # appliance is measured.
-    body_depth = max(depth - _HANDLE_RADIUS, 1.0)
-    kick_height = min(80.0, height * 0.05)
-    margin = min(35.0, width * 0.06)
+    body_depth = max(depth - _DOOR_PLANE - _DOOR_THICKNESS, 1.0)
+    body = sh.rounded_box(width, body_depth, height, radius=12)
+    body = sh.place(body, 0, _DOOR_PLANE + _DOOR_THICKNESS, 0)
+    body = sh.cut_boxes(body, [
+        (0.0, _DOOR_PLANE + _DOOR_THICKNESS - 1.0, -1.0,
+         width, _KICK_DEPTH, _KICK_HEIGHT)])
 
-    box = sh.rounded_box(width, body_depth, height, radius=10)
-    box = sh.toe_kick(box, width, body_depth, kick_height=kick_height,
-                      kick_depth=min(40.0, body_depth * 0.07))
-
-    edges = _row_edges(height, kick_height, configuration)
-    cuts = []
-    pulls = []
+    door_width = max(width - 2.0 * _GASKET, 1.0)
+    edges = _row_edges(height, _KICK_HEIGHT, configuration)
+    doors = []
+    handles = []
     for index in range(len(edges) - 1):
         top, bottom = edges[index], edges[index + 1]
-        low = bottom + (_DOOR_SEAM / 2.0 if bottom > kick_height else margin)
-        high = top - (_DOOR_SEAM / 2.0 if top < height else margin)
-        panel_height = high - low
-        if panel_height <= 0:
+        low = bottom + (_DOOR_SEAM / 2.0 if bottom > _KICK_HEIGHT else 0.0)
+        high = top - (_DOOR_SEAM / 2.0 if top < height - _GASKET else 0.0)
+        slab_height = high - low
+        if slab_height <= 0:
             continue
-        if bottom > kick_height:
-            cuts.append((margin, -1.0, bottom - _DOOR_SEAM / 2.0,
-                         width - 2 * margin, 10.0, _DOOR_SEAM))
-        cuts.extend(sh.panel_reveal_boxes(
-            margin, low, width - 2 * margin, panel_height,
-            groove=6.0, depth=10.0))
-        # One vertical pull per door on the opening edge, sized to its own
-        # door so the freezer's short one does not look borrowed.
-        length = min(_HANDLE_MAX, panel_height * 0.3)
-        pulls.append(sh.place(
-            sh.bar(length, _HANDLE_RADIUS, along="z"),
-            width - min(_HANDLE_INSET, width * 0.08), 0.0,
-            low + (panel_height - length) / 2.0))
+        # A millimetre deeper than it shows: the slab's back face sits just
+        # inside the body rather than on it, which is the difference between
+        # one part and a body with two doors floating in front of it.
+        doors.append(sh.place(
+            sh.rounded_box(door_width, _DOOR_THICKNESS + 1.0, slab_height,
+                           radius=10),
+            _GASKET, _DOOR_PLANE, low))
+        handles.extend(_handle(door_width, slab_height, low))
 
-    box = sh.cut_boxes(box, cuts)
-    return sh.place(sh.fuse_all([box] + pulls), 0, _HANDLE_RADIUS, 0)
+    return sh.fuse_all([body] + doors + handles)
