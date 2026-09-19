@@ -148,4 +148,64 @@ def run():
             FreeCADGui.ActiveDocument.resetEdit()
         FreeCADGui.Selection.clearSelection()
 
+    _panel_placement_check()
+
     return h.failures()
+
+
+def _panel_placement_check():
+    """Placing from the library panel actually drops a part.
+
+    Drives the panel's own pick loop - the move/click callbacks the Snapper
+    invokes - because every check above calls makePart directly and so
+    bypasses it entirely. That is how a NameError in those callbacks (a
+    deleted state dict, #28) stopped panel placement with nothing noticing.
+
+    The move is fed first: the callback that records the picked face only
+    runs on a move, and the click reads what it left behind."""
+    import pivy.coin as coin
+    from archplus.tools.partslib import gui as partslib_gui
+
+    doc = h.fresh_doc()
+    before = len(doc.Objects)
+    panel = partslib_gui.showPanel()
+    h.process_events(400)
+    panel.search.setText("nightstand")
+    h.process_events(400)
+    panel.grid.setCurrentRow(0)
+    h.process_events(300)
+
+    errors = []
+    original_error = FreeCAD.Console.PrintError
+    FreeCAD.Console.PrintError = lambda *a, **k: errors.append(" ".join(map(str, a)))
+    try:
+        panel._onPlace()
+        h.process_events(300)
+
+        class _Event:
+            def getPosition(self): return (600, 400)
+            def wasCtrlDown(self): return False
+            def wasShiftDown(self): return False
+            def getButton(self): return 1
+            def getState(self): return coin.SoMouseButtonEvent.DOWN
+
+        class _Cb:
+            def getEvent(self): return _Event()
+
+        if FreeCADGui.Snapper.callbackMove is not None:
+            FreeCADGui.Snapper.callbackMove(_Cb())
+        if FreeCADGui.Snapper.callbackClick is not None:
+            FreeCADGui.Snapper.callbackClick(_Cb())
+        h.process_events(500)
+    finally:
+        FreeCAD.Console.PrintError = original_error
+
+    placed = [o for o in doc.Objects if partslib_object.isLibraryPart(o)]
+    h.check("P1 placing from the library panel drops a part",
+            len(placed) == 1 and len(doc.Objects) > before,
+            detail="objects +%d, library parts %d, console errors %r"
+                   % (len(doc.Objects) - before, len(placed), errors[:2]))
+    h.check("P2 the pick callbacks raise nothing",
+            not any("NameError" in e or "not defined" in e for e in errors),
+            detail="errors=%r" % (errors[:3],))
+    partslib_gui.closePanel() if hasattr(partslib_gui, "closePanel") else None

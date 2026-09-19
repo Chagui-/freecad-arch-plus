@@ -1210,10 +1210,13 @@ class PartsLibraryPanel(QtGui.QWidget):
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
         # back on click, exactly as repositionDoor does
-        # (doors/gui.py:922-934).
+        # (doors/gui.py:922-934). The dict below is what carries it across
+        # those two callbacks; #28 deleted it while rewiring them, which left
+        # every move and every click on a NameError.
         doc = FreeCAD.ActiveDocument
         from archplus.tools.walls import object as walls_object
 
+        state = {"face": None, "place": None, "placed": False}
 
         def moved(point, info):
             if info and "Face" in info.get("Component", ""):
