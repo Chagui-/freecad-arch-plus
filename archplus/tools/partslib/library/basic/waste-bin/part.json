@@ -31,7 +31,7 @@
     },
     "Height": {
       "type": "Length",
-      "default": 700
+      "default": 500
     }
   },
   "placement": {

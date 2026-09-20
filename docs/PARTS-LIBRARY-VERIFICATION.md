@@ -170,7 +170,7 @@ only a real placement click can show.
       than outlined on it — each should carry a shadow on all four sides,
       the way the base cabinet with oven's front does.
 - [ ] **K5 (the bin is round).** Place **Pedal bin**: it stands on the floor
-      and measures 300 × 300 × 700. A round plan is one dimension, so
+      and measures 300 × 300 × 500. A round plan is one dimension, so
       **Depth** reads derived (italic) and follows **Width** — change
       **Width** to `400` and the bin rebuilds round at 400 across, keeping
       the taper and the lid's overhang. At the defaults the body is 270

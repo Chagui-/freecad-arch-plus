@@ -41,7 +41,7 @@ def build(params, assets, ctx):
     # what the manifest advertises, never wider than it. Same rule as the
     # worktops - build the overhang inwards.
     diameter = min(width, float(depth))
-    height = float(params.get("Height", 700))
+    height = float(params.get("Height", 500))
 
     overhang = min(_LID_OVERHANG, diameter * 0.05)
     lid_height = max(height * _LID_SHARE, 20.0)
