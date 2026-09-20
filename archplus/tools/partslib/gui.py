@@ -270,7 +270,13 @@ def _clearLayout(layout):
         item = layout.takeAt(0)
         widget = item.widget()
         if widget is not None:
-            widget.setParent(None)
+            # Hide before letting go. setParent(None) on a VISIBLE widget
+            # makes it a top-level window, and Qt keeps it shown until the
+            # deferred delete runs - a real window on screen for every
+            # widget cleared, which is what a chip click flashed. Hiding
+            # first leaves nothing to show, and deleteLater() removes the
+            # widget without ever unparenting it.
+            widget.hide()
             widget.deleteLater()
         sublayout = item.layout()
         if sublayout is not None:
@@ -472,7 +478,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             else:
                 _PREVIEW_LIVE = True
                 return widget
-        label = QtGui.QLabel()
+        label = QtGui.QLabel(self)
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
@@ -546,8 +552,8 @@ class PartsLibraryPanel(QtGui.QWidget):
             item = self.chipLayout.takeAt(0)
             widget = item.widget() if item is not None else None
             if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
+                widget.hide()          # see _clearLayout: unparenting a
+                widget.deleteLater()   # visible widget shows a window
 
         groups = partslib_index.facet_groups(
             self._entries, self._facets, "room")
@@ -565,8 +571,12 @@ class PartsLibraryPanel(QtGui.QWidget):
                           group["icon"], group["value"])
 
     def _addChip(self, label, count, iconName, room):
-        """One filter chip. `room` is None for the All chip."""
-        chip = QtGui.QToolButton()
+        """One filter chip. `room` is None for the All chip.
+
+        Born with its parent: an unparented QToolButton is a top-level
+        window, and one handed to a layout only afterwards is shown as a
+        window first - a flash per chip, on every repopulate."""
+        chip = QtGui.QToolButton(self.chipRow)
         chip.setObjectName("RoomChip")
         chip.setCheckable(True)
         chip.setAutoRaise(True)
@@ -682,7 +692,8 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         empty = not self._entries
         message = QtGui.QLabel("No parts in the library yet" if empty
-                               else "No parts match this search")
+                               else "No parts match this search",
+                               self.resultsEmptyState)
         message.setAlignment(QtCore.Qt.AlignCenter)
         message.setWordWrap(True)
         message.setStyleSheet("color: %s;" % self._tokens["text"])
@@ -690,7 +701,8 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         if empty:
             path = QtGui.QLabel(
-                os.path.abspath(partslib_object.LIBRARY_DIR))
+                os.path.abspath(partslib_object.LIBRARY_DIR),
+                self.resultsEmptyState)
             path.setAlignment(QtCore.Qt.AlignCenter)
             path.setWordWrap(True)
             pathFont = path.font()
@@ -708,7 +720,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         the column headings of a form the user had not opened. A card's job
         is recognition, which the thumbnail does; the detail pane states
         dimensions properly, as editable fields."""
-        card = QtGui.QFrame()
+        # Every widget on a card is born with its parent - see _addChip:
+        # an unparented widget is a window until a layout adopts it, and the
+        # grid is rebuilt on every chip click, so these flashed in the tens.
+        card = QtGui.QFrame(self)
         card.setObjectName("PartCard")
         card.setProperty("selected", False)
         card.setToolTip(entry.get("description") or entry["name"])
@@ -716,7 +731,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.setContentsMargins(8, 8, 8, 8)
         v.setSpacing(4)
 
-        thumb = QtGui.QLabel()
+        thumb = QtGui.QLabel(card)
         thumb.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
         thumb.setAlignment(QtCore.Qt.AlignCenter)
         thumbPath = partslib_thumbs.thumbnail_path(entry["dir"])
@@ -738,7 +753,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                     QtCore.Qt.SmoothTransformation))
         v.addWidget(thumb, 0, QtCore.Qt.AlignHCenter)
 
-        name = QtGui.QLabel(entry["name"])
+        name = QtGui.QLabel(entry["name"], card)
         name.setAlignment(QtCore.Qt.AlignHCenter)
         name.setWordWrap(True)
         v.addWidget(name)
@@ -750,7 +765,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # noise the parameter line was removed for.
         family = entry.get("family")
         if family:
-            familyLabel = QtGui.QLabel(family)
+            familyLabel = QtGui.QLabel(family, card)
             familyLabel.setAlignment(QtCore.Qt.AlignHCenter)
             familyLabel.setWordWrap(True)
             familyFont = familyLabel.font()

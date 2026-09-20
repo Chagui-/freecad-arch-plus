@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # Startup, toolbar and browser checks: Parts A (A1/A2) and B
-# (B1/B2/B4/B5/B6/B7/B9/B13/B14) of docs/PARTS-LIBRARY-VERIFICATION.md.
+# (B1/B2/B4/B5/B6/B7/B9/B13-B17) of docs/PARTS-LIBRARY-VERIFICATION.md.
 
 from archplus.freecad_tests import _harness as h
 
 import FreeCADGui
-from PySide import QtGui
+from PySide import QtCore, QtGui
 
 from archplus.tools.partslib import gui as partslib_gui
 
@@ -72,6 +72,38 @@ def _click_chip(panel, text):
 def _search(panel, text):
     panel.search.setText(text)
     h.process_events(400)  # the search debounce is 250 ms
+
+
+def _flash_events(action):
+    """Run `action` and return the window Show events that went to widgets
+    which are not real windows.
+
+    An unparented QWidget IS a top-level window, and unparenting a visible
+    one keeps it on screen until the deferred delete runs - so a grid or
+    form rebuilt without parents flashes a real window per widget. The grid
+    and the parameter form are both rebuilt on a chip click, which is where
+    this showed up as a burst of windows."""
+    events = []
+    app = QtGui.QApplication.instance()
+
+    class _Watch(QtCore.QObject):
+        def eventFilter(self, obj, event):
+            try:
+                if event.type() == QtCore.QEvent.Show and obj.isWindow() \
+                        and not obj.windowTitle():
+                    events.append(obj.metaObject().className())
+            except Exception:
+                pass
+            return False
+
+    watcher = _Watch()
+    app.installEventFilter(watcher)
+    try:
+        action()
+        h.process_events(400)
+    finally:
+        app.removeEventFilter(watcher)
+    return events
 
 
 def _progress_pass(panel, chip, render_seconds):
@@ -245,7 +277,26 @@ def run():
             slow_dialogs == 1 and slow_shown >= 1,
             detail="dialogs=%d shown=%d" % (slow_dialogs, slow_shown))
 
+    # B15-B17 - a rebuild must not flash windows. Every card and every
+    # parameter field is rebuilt on a chip click, and a widget that is a
+    # top-level window - built without a parent, or unparented while visible
+    # - is a real window on screen for the instant before a layout or
+    # deleteLater() claims it. B15 arms the check: if an unparented widget
+    # ever stops counting as a window, B16/B17 would pass by measuring
+    # nothing.
+    stray = QtGui.QLabel()
+    h.check("B15 an unparented widget is a window (arms B16/B17)",
+            stray.isWindow(), detail="isWindow=%s" % stray.isWindow())
+    stray.deleteLater()
+    flashes = _flash_events(lambda: _click_chip(panel, "Living Room · 8"))
+    h.check("B16 a chip click flashes no windows",
+            flashes == [],
+            detail="%d momentary window(s): %r" % (len(flashes), flashes[:8]))
+    flashes = _flash_events(lambda: _search(panel, "zzzz"))
+    h.check("B17 an empty search flashes no windows",
+            flashes == [],
+            detail="%d momentary window(s): %r" % (len(flashes), flashes[:8]))
+    _search(panel, "")
     _click_chip(panel, "All · 36")
     h.process_events(100)
-    _search(panel, "")
     return h.failures()
