@@ -40,15 +40,21 @@ def build(params, assets, ctx):
     carcass_height = height - worktop
 
     box = _shared.carcass(width, carcass_depth, carcass_height,
-                          kick_height, min(45.0, depth * 0.08))
+                          kick_height, min(45.0, depth * 0.08),
+                          open_top=True)
     box = _shared.doors(box, width, carcass_height, door_count, kick_height)
     box = sh.place(box, 0, front, 0)
 
     parts = [box]
     if with_worktop:
-        top = sh.rounded_box(width, depth, worktop, radius=6)
+        # The top dips a millimetre into the carcass. It now lands on the
+        # box's edges rather than on a solid face, and two solids meeting on
+        # a coincident face fuse to a compound of two - a part that reads as
+        # one object and behaves as two. The extra millimetre is under the
+        # surface, so the Height it advertises is still the top's face.
+        top = sh.rounded_box(width, depth, worktop + 1.0, radius=6)
         top = sh.roll_top(top, min(worktop * 0.4, 12.0), axis="x")
-        parts.append(sh.place(top, 0, 0, carcass_height))
+        parts.append(sh.place(top, 0, 0, carcass_height - 1.0))
 
     pulls = _shared.pulls(width, carcass_height, door_count, kick_height,
                           front)

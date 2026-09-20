@@ -344,6 +344,12 @@ render:
 - **Solid, not scattered.** Where the real object is one soft mass (a sofa),
   model one mass and *cut* the cushion seams into it. Separate floating
   cushions read worse.
+- **A base unit is a box, not a block.** Its top is the worktop, or the sink
+  dropped into it, so `_shared.carcass(..., open_top=True)` hollows the
+  carcass and leaves it open at 18 mm in from every edge. A sink's body is
+  cut back to its bowls for the same reason: the bowl has to hang in the
+  cabinet's interior rather than in its material. Wall and tall units have a
+  top panel of their own and keep the default solid carcass.
 - **Don't round a solid's plan corners and its top edge.** The two fillets
   collide at the corners and leave a picture-frame rim. Use `roll_top` for a
   roll that runs through.

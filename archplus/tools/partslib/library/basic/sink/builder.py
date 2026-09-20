@@ -16,11 +16,17 @@ _DEFAULT_SIZES = {
 
 # The rim is the worktop thickness it sits in, so the manifest's offset can
 # drop the rim's top face onto the worktop's. Everything below it is bowl:
-# the pressed bowl hangs the distance into the carcass a real one does, which
-# is what makes this read as a sink rather than a tray.
+# the pressed bowl hangs the distance into the cabinet a real one does -
+# through the opening a worktopless unit leaves - which is what makes this
+# read as a sink rather than a tray.
 _RIM_THICKNESS = 40.0
 _BOWL_DEPTH = 190.0
 _BOWL_FLOOR = 12.0
+# The bowl's wall. Steel is thinner than this, but the wall is the face you
+# see hanging in a cabinet's interior when the sink drops into an open-topped
+# unit, and a bowl with no wall is a sliver OCC still has to tessellate.
+# It also sets how wide the rim reads: the bowl's margin plus this.
+_BOWL_WALL = 10.0
 # The bowl's margin at the sides and front, and the wider deck left along
 # the back: a sink's back rim is the ledge the tap is mounted on, and a bowl
 # inset evenly all round would leave the tap standing over the bowl with
@@ -41,16 +47,53 @@ def _default_size(count):
     return _DEFAULT_SIZES.get(count, _DEFAULT_SIZES[1])
 
 
-def _bowl_cutters(count, width, depth, height):
-    """One (x, y, z, length, width, height) cavity per bowl."""
+def _bowl_prisms(count, width, depth):
+    """One (x, y, length, width) per bowl: the footprint it hangs on."""
     gap = _BOWL_GAP if count > 1 else 0.0
     bowl_width = (width - 2 * _BOWL_INSET - gap * (count - 1)) / count
     bowl_depth = depth - _BOWL_INSET - _BOWL_BACK_LEDGE
     return [
-        (_BOWL_INSET + i * (bowl_width + gap), _BOWL_INSET, _BOWL_FLOOR,
-         bowl_width, bowl_depth, height - _BOWL_FLOOR + 1.0)
+        (_BOWL_INSET + i * (bowl_width + gap), _BOWL_INSET,
+         bowl_width, bowl_depth)
         for i in range(count)
     ]
+
+
+def _bowl_cutters(count, width, depth, height):
+    """One (x, y, z, length, width, height) cavity per bowl.
+
+    Inset from the bowl's prism by the wall thickness, so the bowl comes out
+    with a wall for the cabinet's interior to show."""
+    return [
+        (x + _BOWL_WALL, y + _BOWL_WALL, _BOWL_FLOOR,
+         bw - 2.0 * _BOWL_WALL, bd - 2.0 * _BOWL_WALL,
+         height - _BOWL_FLOOR + 1.0)
+        for x, y, bw, bd in _bowl_prisms(count, width, depth)
+    ]
+
+
+def _around_bowls(count, width, depth):
+    """Boxes stripping everything below the rim that is not a bowl.
+
+    The body is the rim with the bowls hanging off it, not a slab: a slab
+    would be a solid the size of the whole unit's interior, so the sink would
+    be buried in the cabinet rather than hanging in its void. The strips run
+    the full depth on either side of each bowl, and stop at the bowl's own
+    edges above and below it, so the prisms keep their material."""
+    boxes = []
+    edge = 0.0
+    for x, y, bw, bd in _bowl_prisms(count, width, depth):
+        if x > edge:
+            boxes.append((edge, -1.0, 0.0, x - edge, depth + 2.0,
+                          _BOWL_DEPTH))
+        boxes.append((x, -1.0, 0.0, bw, y + 1.0, _BOWL_DEPTH))
+        boxes.append((x, y + bd, 0.0, bw, depth - y - bd + 1.0,
+                      _BOWL_DEPTH))
+        edge = x + bw
+    if edge < width:
+        boxes.append((edge, -1.0, 0.0, width - edge, depth + 2.0,
+                      _BOWL_DEPTH))
+    return boxes
 
 
 def build(params, assets, ctx):
@@ -80,7 +123,8 @@ def build(params, assets, ctx):
 
     height = _BOWL_DEPTH + _RIM_THICKNESS
     body = sh.rounded_box(width, depth, height, radius=8)
-    body = sh.cut_boxes(body, _bowl_cutters(bowl_count, width, depth, height))
+    body = sh.cut_boxes(body, _bowl_cutters(bowl_count, width, depth, height)
+                        + _around_bowls(bowl_count, width, depth))
 
     # The tap stands on the back deck with its spout reaching over the bowls.
     # Everything about it stays inside the declared Width and Depth: a spout

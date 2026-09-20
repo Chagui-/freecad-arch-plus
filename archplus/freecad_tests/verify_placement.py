@@ -195,6 +195,35 @@ def run():
             and abs(rim_top - bare.Height.Value) < 1e-6,
             detail="rim=%.1f..%.1f carcass_top=%.1f Height=%.1f"
             % (rim_underside, rim_top, carcass_top, bare.Height.Value))
+
+    # The unit is a box, not a block, and the bowl hangs inside it: that is
+    # what the worktop's absence is for, and a solid carcass would give the
+    # sink nothing to drop into. Probe the void, a wall and the floor, then
+    # the bowl's own floor and the gap between the bowl's wall and the
+    # cabinet's - air in both parts, which only a hollow unit and a body cut
+    # back to its bowls can give.
+    def solid(obj, point):
+        return obj.Shape.isInside(Vector(*point), 1e-6, False)
+
+    void = solid(bare, (300.0, 300.0, 400.0))
+    wall = solid(bare, (9.0, 300.0, 400.0))
+    floor = solid(bare, (300.0, 300.0, 60.0))
+    h.check("D13 the unit is hollow: a void, its walls, its floor",
+            not void and wall and floor,
+            detail="void=%s wall=%s floor=%s" % (void, wall, floor))
+    bowl_floor = sink_offset + 6.0
+    gap_z = sink_offset + 80.0
+    h.check("D13 the bowl hangs in that void, clear of its walls",
+            solid(sink, (300.0, 300.0, bowl_floor))
+            and not solid(bare, (300.0, 300.0, bowl_floor))
+            and not solid(bare, (24.0, 300.0, gap_z))
+            and not solid(sink, (24.0, 300.0, gap_z)),
+            detail="bowl floor: sink=%s unit=%s; gap: unit=%s sink=%s"
+            % (solid(sink, (300.0, 300.0, bowl_floor)),
+               solid(bare, (300.0, 300.0, bowl_floor)),
+               solid(bare, (24.0, 300.0, gap_z)),
+               solid(sink, (24.0, 300.0, gap_z))))
+
     for obj in (bare, sink):
         doc.removeObject(obj.Name)
 

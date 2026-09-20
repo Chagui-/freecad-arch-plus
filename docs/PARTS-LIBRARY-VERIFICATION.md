@@ -137,17 +137,20 @@ Five parts added to the Kitchen room after the first pass: `basic/sink`,
 `basic/waste-bin`. Their heights and offsets are the part of a new part that
 only a real placement click can show.
 
-- [ ] **K1 (the sink drops into the worktop).** Place a **Base cabinet** and
+- [ ] **K1 (the sink drops into the hole).** Place a **Base cabinet** and
       set its **Worktop** to *Without worktop*: the unit's top drops 40 mm
       below its Height (the top surface reads 86.0 cm while **Height** still
-      says 90.0 — that 40 mm is where the work surface goes). Select **Sink**,
-      set its **Depth** to `600` so its rim covers the whole unit (its 500 mm
-      default leaves the back 100 mm of carcass top showing), then click
-      **Place** and click the floor in front of that unit. The rim's underside
-      lands on the carcass top and its top face becomes the work surface at
-      900 mm — the unit's Height — with the bowl hanging into the cabinet and
-      the tap behind it. Switch **Bowls** to *Double bowl*: the sink widens to
-      1000 mm and the tap stays centred behind the two bowls.
+      says 90.0 — that 40 mm is where the work surface goes), and it is an
+      open-topped box rather than a block — look into it and you see its
+      walls and floor, 18 mm in from the edges. Select **Sink**, set its
+      **Depth** to `600` so its rim reaches the unit's edges (its 500 mm
+      default leaves the back 100 mm of that opening showing, which is the
+      hole at its clearest), then click **Place** and click the floor in
+      front of that unit. The rim's underside lands on the box's edges and
+      its top face becomes the work surface at 900 mm — the unit's Height —
+      with the bowl hanging in the interior and the tap behind it. Switch
+      **Bowls** to *Double bowl*: the sink widens to 1000 mm and the tap
+      stays centred behind the two bowls.
 - [ ] **K2 (the fridge's doors are its size).** Place a **Fridge**: it
       measures 600 × 650 × 1850, Width and Depth shown derived (italic).
       Switch **Doors** to *Double doors*: it rebuilds 750 wide with the

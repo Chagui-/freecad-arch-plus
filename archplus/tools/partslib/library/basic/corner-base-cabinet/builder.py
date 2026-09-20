@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 from archplus.tools.partslib import shapes as sh
+from .. import _shared
 
 
 # The two corner units are the exception and the only real geometry here.
@@ -25,7 +26,10 @@ def build(params, assets, ctx):
     `Height`, the 40mm a sink's rim fills - see base-cabinet, which explains
     why the top of a worktopless unit is where the work surface goes rather
     than where the carcass ends. Nothing else moves: the L already runs the
-    full plan, so the unit still measures the depth it advertises."""
+    full plan, so the unit still measures the depth it advertises. The L is
+    a box rather than a block, with no top panel - the worktop, or the sink
+    dropped in, is the top - so a sink's bowl hangs in its interior instead
+    of in its material."""
     width = float(params.get("Width", 900))
     depth = float(params.get("Depth", 900))
     height = float(params.get("Height", 900))
@@ -50,22 +54,42 @@ def build(params, assets, ctx):
     box = sh.toe_kick(box, width, depth, kick_height=kick_height,
                       kick_depth=min(45.0, depth * 0.05),
                       margin=width - return_width + 20.0)
-    # One door on each leg of the L, on the two faces that actually face out.
+    # The L is a box too, and a base unit has no top panel: the worktop is
+    # its top, or the sink dropped into it. Two boxes rather than one L,
+    # because an L is a union of two rectangles and a cut stays a box.
+    void_z = kick_height + _shared.PANEL
+    void_h = carcass_height - void_z + 1.0
+    box = sh.cut_boxes(box, [
+        (width - return_width + _shared.PANEL, _shared.PANEL, void_z,
+         return_width - 2.0 * _shared.PANEL, depth - 2.0 * _shared.PANEL,
+         void_h),
+        (_shared.PANEL, depth - return_depth + _shared.PANEL, void_z,
+         width - 2.0 * _shared.PANEL, return_depth - 2.0 * _shared.PANEL,
+         void_h),
+    ])
+    # A door on the face the notch leaves pointing at the room, and its
+    # handle at the door's outer edge. That plane is the only one in the
+    # notch the reveal can mark (-Y), and it is where `face_depth` already
+    # pointed: the door used to be marked a leg too far over, buried inside
+    # the return leg's mass where nothing could see it.
     inset = 40.0
-    box = sh.panel_reveal(box, width - return_width + inset,
+    box = sh.panel_reveal(box, inset,
                           kick_height + inset,
-                          return_width - 2 * inset,
+                          width - return_width - 2 * inset,
                           carcass_height - kick_height - 2 * inset,
                           groove=6.0, depth=8.0,
                           face_depth=depth - return_depth)
 
     parts = [box]
     if with_worktop:
-        top = _l_shape(width, depth, worktop, 6.0)
-        parts.append(sh.place(top, 0, 0, carcass_height))
+        # A millimetre into the carcass, as in base-cabinet: the top lands on
+        # the box's edges now, and a coincident face there fuses to a
+        # compound of two solids rather than to one part.
+        top = _l_shape(width, depth, worktop + 1.0, 6.0)
+        parts.append(sh.place(top, 0, 0, carcass_height - 1.0))
 
     pull = sh.place(sh.bar((carcass_height - kick_height) * 0.22, 7.0,
                             along="z"),
-                     width - 40.0, depth - return_depth,
+                     width - return_width - 40.0, depth - return_depth,
                      kick_height + (carcass_height - kick_height) * 0.4)
     return sh.fuse_all(parts + [pull])
