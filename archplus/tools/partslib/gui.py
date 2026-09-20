@@ -25,6 +25,7 @@
 import os
 import shutil
 import tempfile
+import time
 
 
 import FreeCAD
@@ -765,6 +766,10 @@ class PartsLibraryPanel(QtGui.QWidget):
     # Below this many missing thumbnails, a dialog is more disruptive than
     # the wait it reports on.
     PROGRESS_THRESHOLD = 3
+    # ...and below this much time, likewise: a pass that finishes inside a
+    # second is not worth a window, and one that takes longer is a freeze
+    # worth explaining. Qt's own 4s default is long past that point.
+    PROGRESS_DELAY_MS = 1000
 
     def _prerenderThumbnails(self, entries):
         """Render every missing thumbnail up front, showing progress.
@@ -780,6 +785,16 @@ class PartsLibraryPanel(QtGui.QWidget):
         the count meaningful: the total is known before the first render
         rather than discovered as the grid fills.
 
+        ONE dialog serves the whole pass - never one per part - and it is
+        not built at all until the pass has run longer than
+        PROGRESS_DELAY_MS. The first version built it up front and relied on
+        Qt's minimumDuration to keep it hidden, which does not hold: a
+        QProgressDialog with minimumDuration set still showed itself part
+        way through a pass that finished in 0.6s, so every chip click that
+        rebuilt a few thumbnails threw a modal window up and took it down
+        again before it had painted. Deciding it here means a fast pass has
+        no window to show, no repaint per part and no event pumping at all.
+
         Cancelling sets `_renderThumbnails` False, which stops the cards
         rendering the rest inline behind the dialog's back - otherwise
         "Cancel" would only dismiss the dialog and leave the freeze."""
@@ -792,18 +807,23 @@ class PartsLibraryPanel(QtGui.QWidget):
         if len(pending) < self.PROGRESS_THRESHOLD:
             return
 
-        dialog = QtGui.QProgressDialog(
-            "Building thumbnails…", "Cancel", 0, len(pending),
-            FreeCADGui.getMainWindow())
-        dialog.setWindowTitle("ArchPlus Parts Library")
-        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
-        # Show immediately: the whole point is that the UI is about to be
-        # busy for a while, so Qt's default "wait and see" defeats it.
-        dialog.setMinimumDuration(0)
-        dialog.setAutoClose(True)
-        dialog.setValue(0)
-
+        started = time.perf_counter()
+        dialog = None
         for index, entry in enumerate(pending):
+            if dialog is None:
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                if elapsed_ms < self.PROGRESS_DELAY_MS:
+                    self._ensureGridThumbnail(entry)
+                    continue
+                # Slow enough to explain. minimumDuration 0 now says "show
+                # this now" honestly, because the wait has already happened.
+                dialog = QtGui.QProgressDialog(
+                    "Building thumbnails…", "Cancel", 0, len(pending),
+                    FreeCADGui.getMainWindow())
+                dialog.setWindowTitle("ArchPlus Parts Library")
+                dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+                dialog.setMinimumDuration(0)
+                dialog.setAutoClose(True)
             if dialog.wasCanceled():
                 self._renderThumbnails = False
                 FreeCAD.Console.PrintMessage(
@@ -814,10 +834,13 @@ class PartsLibraryPanel(QtGui.QWidget):
             dialog.setLabelText("Building thumbnails: %d of %d\n%s"
                                 % (index + 1, len(pending), entry["name"]))
             dialog.setValue(index)
+            # Only while it exists: pumping events is what paints it and
+            # what keeps a long pass from freezing the window outright.
             QtGui.QApplication.processEvents()
             self._ensureGridThumbnail(entry)
-        dialog.setValue(len(pending))
-        dialog.close()
+        if dialog is not None:
+            dialog.setValue(len(pending))
+            dialog.close()
 
     def _ensureGridThumbnail(self, entry):
         """Render a fallback thumbnail for `entry`'s manifest defaults.

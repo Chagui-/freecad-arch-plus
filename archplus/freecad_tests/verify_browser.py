@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # Startup, toolbar and browser checks: Parts A (A1/A2) and B
-# (B1/B2/B4/B5/B6/B7/B9) of docs/PARTS-LIBRARY-VERIFICATION.md.
+# (B1/B2/B4/B5/B6/B7/B9/B13/B14) of docs/PARTS-LIBRARY-VERIFICATION.md.
 
 from archplus.freecad_tests import _harness as h
 
@@ -72,6 +72,61 @@ def _click_chip(panel, text):
 def _search(panel, text):
     panel.search.setText(text)
     h.process_events(400)  # the search debounce is 250 ms
+
+
+def _progress_pass(panel, chip, render_seconds):
+    """Click `chip` with every thumbnail forced missing and the render
+    stubbed to take `render_seconds`, and report what the pass did to the
+    screen as (dialogs constructed, show events delivered).
+
+    Forcing the state is the only way to time this from a check: a real pass
+    is half a second of OCC work per part, and whether a window appeared
+    must not depend on how fast the machine is. Everything patched is
+    restored before returning, so a failing check still leaves the library
+    rendering its real thumbnails."""
+    import os
+    import tempfile
+    import time
+
+    from archplus.tools.partslib import thumbs as partslib_thumbs
+
+    dialogs = []
+    shown = []
+    original_dialog = QtGui.QProgressDialog
+    original_path = partslib_thumbs.thumbnail_path
+    original_ensure = partslib_gui.PartsLibraryPanel._ensureGridThumbnail
+    missing_dir = tempfile.mkdtemp(prefix="archplus-progress-")
+
+    class _Loud(original_dialog):
+        def __init__(self, *args, **kwargs):
+            dialogs.append(args[0] if args else "")
+            original_dialog.__init__(self, *args, **kwargs)
+
+        def showEvent(self, event):
+            shown.append(True)
+            return original_dialog.showEvent(self, event)
+
+    def _stub_render(self, entry):
+        if render_seconds:
+            time.sleep(render_seconds)
+        return None
+
+    try:
+        QtGui.QProgressDialog = _Loud
+        partslib_thumbs.thumbnail_path = lambda part_dir: os.path.join(
+            missing_dir, os.path.basename(part_dir) + ".jpg")
+        partslib_gui.PartsLibraryPanel._ensureGridThumbnail = _stub_render
+        # A search left active by an earlier check would filter the room's
+        # set down to nothing, and a pass with nothing pending shows no
+        # window whatever the code does - the check would pass vacuously.
+        _search(panel, "")
+        _click_chip(panel, chip)
+        h.process_events(100)
+    finally:
+        QtGui.QProgressDialog = original_dialog
+        partslib_thumbs.thumbnail_path = original_path
+        partslib_gui.PartsLibraryPanel._ensureGridThumbnail = original_ensure
+    return len(dialogs), len(shown)
 
 
 def run():
@@ -175,5 +230,22 @@ def run():
             panel.detailFamily.text() == "",
             detail="family=%r" % (panel.detailFamily.text(),))
 
+    # B13/B14 - the thumbnail pass opens ONE window, and only when the pass
+    # is actually slow. Both halves are checks: a pass that finishes in
+    # milliseconds must not put a window on screen at all, and a slow one
+    # must not open a fresh window per part. (B11/B12 are verify_panel's.)
+    fast_dialogs, fast_shown = _progress_pass(panel, "Bathroom · 8", 0.0)
+    h.check("B13 a fast thumbnail pass shows no progress window",
+            fast_dialogs == 0 and fast_shown == 0,
+            detail="dialogs=%d shown=%d" % (fast_dialogs, fast_shown))
+    # A different room from B13's: clicking the chip that is already
+    # selected is a deliberate no-op, so reusing it would test nothing.
+    slow_dialogs, slow_shown = _progress_pass(panel, "Bedroom · 10", 0.2)
+    h.check("B14 a slow thumbnail pass shows exactly one progress window",
+            slow_dialogs == 1 and slow_shown >= 1,
+            detail="dialogs=%d shown=%d" % (slow_dialogs, slow_shown))
+
+    _click_chip(panel, "All · 36")
+    h.process_events(100)
     _search(panel, "")
     return h.failures()
