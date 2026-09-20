@@ -120,6 +120,15 @@ placed part stay in millimetres.
       clicking. Confirm: (1) the ghost tracker box disappears — no leftover
       geometry in the 3D view; (2) no further object is placed; (3) the MDI
       area switches back to the ArchPlus Library tab automatically.
+- [ ] **D12 (a wall-hosted part hangs on the wall).** Select **Wall
+      cabinet**, click **Place**, then click a wall face in the 3D view. It
+      arrives **upright** — its back against the wall, its body standing out
+      into the room, its underside at 1500 mm above the wall's base — and
+      the ghost box follows the cursor in the same orientation. Then change
+      **Height above floor** to `1200` in the property editor: the cabinet
+      moves down to 1200 without being re-placed. Click it, drag it
+      sideways, and change the height again: it keeps the new position and
+      moves only by the difference.
 
 ## Part K — the kitchen additions (K1-K5)
 

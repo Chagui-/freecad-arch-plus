@@ -164,6 +164,18 @@ a manufacturer's download, or something too organic to describe in code.
 - `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
   `offset` is millimetres from that surface — e.g. a wall cabinet uses
   `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
+- A part lands with its **contact face** on the face you click: its bottom on
+  a floor, its **back** on a wall (only yawing, so it stays upright and hangs
+  in the room in front of the wall), its top under a ceiling. The offset then
+  runs from the host object's base, so clicking a wall anywhere gives the
+  same height.
+
+Placement keys beyond `host` and `offset`:
+
+| key | meaning |
+|---|---|
+| `placement.offsetParam` | Optional. Name a `Length` param and the offset comes from it instead of the literal `offset`, which stays the fallback. This is how a *continuous* height is expressed — a wall cabinet's `MountingHeight` — where a `Choice` option's `placement` could only offer a few fixed values. Editing the param on a placed part moves it. |
+| `placement.offsetTo` | Optional, `bottom` (the default) or `top`: which end of the part the offset measures to. A cabinet's offset is to its underside; a curtain's is to its rail, and the fabric hangs below it. |
 
 | key | meaning |
 |---|---|

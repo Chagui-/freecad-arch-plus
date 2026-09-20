@@ -26,11 +26,16 @@
       "default": 600},
     "Height": {
       "type": "Length",
-      "default": 720}
+      "default": 720},
+    "MountingHeight": {
+      "type": "Length",
+      "default": 1500,
+      "label": "Height above floor"}
   },
   "placement": {
     "host": "wall",
-    "offset": 1500
+    "offset": 1500,
+    "offsetParam": "MountingHeight"
   },
   "geometry": {}
 }

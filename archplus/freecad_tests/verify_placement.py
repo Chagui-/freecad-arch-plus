@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Placement and IFC checks: Parts D (D1/D2/D3/D4/D10) and E (E1/E2) of
-# docs/PARTS-LIBRARY-VERIFICATION.md. Placement goes through the same
+# Placement and IFC checks: Parts D (D1/D2/D3/D4/D4b/D4c/D10) and E (E1/E2)
+# of docs/PARTS-LIBRARY-VERIFICATION.md. Placement goes through the same
 # code path the browser's click-to-place uses, just with a computed point
 # instead of a mouse.
 
@@ -84,16 +84,73 @@ def run():
     wall, wall_base = _make_wall(doc)
     doc.recompute()  # the wall has no faces until it is built
     entry = _entry("basic/wall-cabinet")
-    resolved = partslib_manifest.load_manifest(entry["path"])
+    manifest = partslib_manifest.load_manifest(entry["path"])
+    resolved = {"placement": partslib_manifest.resolve_placement(
+        manifest, partslib_manifest.merge_params(manifest, None))}
     host = partslib_placement.host_of(resolved)
     offset = partslib_placement.offset_of(resolved)
+    size = (600.0, 350.0, 720.0)
+    face = _front_face(wall)
+    point = Vector(1000, wall.Shape.Faces[face].CenterOfMass.y, 0)
     placement = partslib_placement.partPlacement(
-        Vector(1000, 0, 0), (wall, _front_face(wall)), host, offset)
+        point, (wall, face), host, offset, size=size,
+        offset_to=partslib_placement.offset_to_of(resolved))
     h.check("D4 wall cabinet is wall-hosted at base + 1500 mm",
             host == "wall" and offset == 1500
             and abs(placement.Base.z - 1500.0) < 1e-6,
             detail="host=%r offset=%r z=%r"
             % (host, offset, placement.Base.z))
+    # A wall's face normal is horizontal, and mapping the part's up axis onto
+    # it laid every wall-hosted part on its back with its width running
+    # through the wall. On a wall a part only yaws.
+    up = placement.Rotation.multVec(Vector(0, 0, 1))
+    back = placement.Rotation.multVec(Vector(0, 1, 0))
+    h.check("D4 a wall face leaves the part upright and facing the wall",
+            up.isEqual(Vector(0, 0, 1), 1e-6)
+            and abs(back.y) > 0.99,
+            detail="up=%r back=%r" % (tuple(up), tuple(back)))
+    h.check("D4 the picked point is the part's back, not its origin",
+            abs(placement.Base.y - (point.y - size[1])) < 1e-6,
+            detail="base.y=%r point.y=%r depth=%r"
+            % (placement.Base.y, point.y, size[1]))
+
+    # D4b - the mounting height is a param, and editing it moves the part.
+    mounted = _make("basic/wall-cabinet",
+                    placement=FreeCAD.Placement(
+                        Vector(1000, point.y - 350.0, 1500),
+                        FreeCAD.Rotation()))
+    doc.recompute()
+    h.check("D4b a wall cabinet carries its Height above floor",
+            abs(mounted.MountingHeight.Value - 1500.0) < 1e-6
+            and abs(mounted.Placement.Base.z - 1500.0) < 1e-6,
+            detail="MountingHeight=%r z=%r"
+            % (mounted.MountingHeight.Value, mounted.Placement.Base.z))
+    mounted.MountingHeight = 1200.0
+    doc.recompute()
+    h.check("D4b editing Height above floor moves the placed cabinet",
+            abs(mounted.Placement.Base.z - 1200.0) < 1e-6,
+            detail="z=%r (want 1200)" % (mounted.Placement.Base.z,))
+    mounted.MountingHeight = 1500.0
+    doc.recompute()
+
+    # D4c - an offset measured to the part's TOP keeps that end where it was
+    # placed when the part's own height changes: a curtain's rail stays put
+    # while its fabric shortens.
+    curtain = _make("basic/curtain",
+                    placement=FreeCAD.Placement(
+                        Vector(3000, point.y - 110.0, 2300.0 - 2191.0),
+                        FreeCAD.Rotation()))
+    doc.recompute()
+    rail = curtain.Shape.BoundBox.ZMax
+    curtain.Height = 1800.0
+    doc.recompute()
+    h.check("D4c the curtain's rail stays where it was placed",
+            abs(rail - 2300.0) < 2.0
+            and abs(curtain.Shape.BoundBox.ZMax - 2300.0) < 2.0,
+            detail="rail=%r after=%r" % (rail, curtain.Shape.BoundBox.ZMax))
+
+    for obj in (mounted, curtain):
+        doc.removeObject(obj.Name)
     doc.removeObject(wall.Name)
     doc.removeObject(wall_base.Name)
 

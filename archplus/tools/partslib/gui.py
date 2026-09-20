@@ -1204,6 +1204,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             manifest, params)}
         host = partslib_placement.host_of(effective)
         offset = partslib_placement.offset_of(effective)
+        offset_to = partslib_placement.offset_to_of(effective)
         # Read once, up front: the checkbox lives on the library tab, which
         # is not even the active window while picking, so a mid-session
         # change of mind is not something the user can express anyway - and
@@ -1222,6 +1223,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
         trackerCentre = None
+        metrics = None
         try:
             shape = partslib_geometry.build_shape(
                 manifest, entry["dir"], overrides)
@@ -1244,6 +1246,15 @@ class PartsLibraryPanel(QtGui.QWidget):
                 "ArchPlus: no placement preview for %s: %s\n"
                 % (entry["id"], exc))
             tracker = None
+
+        def measured_size():
+            """The built part's (width, depth, height), or None when it could
+            not be built. Placement uses it to put the part's contact face -
+            its back, for a wall - on the picked point instead of its origin;
+            without it the part keeps the origin there, as it always did."""
+            if metrics is None:
+                return None
+            return (metrics["Width"], metrics["Depth"], metrics["Height"])
 
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
@@ -1274,7 +1285,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 point, state["face"], info)
             if tracker is not None:
                 preview = partslib_placement.partPlacement(
-                    state["place"], state["face"], host, offset)
+                    state["place"], state["face"], host, offset,
+                    size=measured_size(), offset_to=offset_to)
                 tracker.setRotation(preview.Rotation)
                 tracker.pos(preview.multVec(trackerCentre))
 
@@ -1286,7 +1298,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 if point is None:
                     return  # Esc/cancel - end the placement loop
                 placement = partslib_placement.partPlacement(
-                    state.get("place") or point, state["face"], host, offset)
+                    state.get("place") or point, state["face"], host, offset,
+                    size=measured_size(), offset_to=offset_to)
                 doc.openTransaction("Place library part")
                 try:
                     partslib_object.makePart(

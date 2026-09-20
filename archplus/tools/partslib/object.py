@@ -27,8 +27,15 @@ from . import manifest as partslib_manifest
 
 PROP_PART_ID = "PartId"
 PROP_AUTO_PARAMS = "AutoParams"
+PROP_MOUNT_OFFSET = "MountOffset"
+PROP_MOUNT_HEIGHT = "MountHeight"
 _PARAM_GROUP = "Part"
 _PARAMS_GROUP = "Parameters"
+
+# "Not placed against a host yet", for MountOffset. A real offset is a
+# distance in mm and can be 0 (a part standing on the floor against a wall),
+# so 0 cannot be the marker; -1e9 mm cannot be a placement.
+_MOUNT_UNSET = -1.0e9
 
 # Manifest param `type` -> FreeCAD property type. An unlisted manifest type
 # is refused, not guessed: a mistyped dimension property would be worse than
@@ -173,6 +180,27 @@ class _LibraryPart(ArchComponent.Component):
                             "Params still derived by the builder",
                             locked=True)
         obj.setEditorMode(PROP_AUTO_PARAMS, 2)  # hidden
+        # What the object's Z was last built at, so a mounting height edited
+        # after placement can move it by the difference - see
+        # _applyMountHeight. Both are hidden: they are bookkeeping, not
+        # anything to edit.
+        if PROP_MOUNT_OFFSET not in obj.PropertiesList:
+            obj.addProperty("App::PropertyFloat", PROP_MOUNT_OFFSET,
+                            _PARAM_GROUP,
+                            "Mounting offset this object was last built at",
+                            locked=True)
+            # A new float property holds 0.0, which is a REAL offset, so the
+            # marker has to be written explicitly or the first build would
+            # read it as "last placed at 0" and apply the offset a second
+            # time as a delta.
+            setattr(obj, PROP_MOUNT_OFFSET, _MOUNT_UNSET)
+        obj.setEditorMode(PROP_MOUNT_OFFSET, 2)  # hidden
+        if PROP_MOUNT_HEIGHT not in obj.PropertiesList:
+            obj.addProperty("App::PropertyFloat", PROP_MOUNT_HEIGHT,
+                            _PARAM_GROUP,
+                            "Height the mounting offset was measured to",
+                            locked=True)
+        obj.setEditorMode(PROP_MOUNT_HEIGHT, 2)  # hidden
         # A document written before params replaced variants still carries a
         # Variant enumeration. Removing a document property is destructive,
         # so it stays - but it must stop looking like a live control.
@@ -444,6 +472,67 @@ class _LibraryPart(ArchComponent.Component):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: cannot write derived params for %s: %s\n"
                     % (obj.Label, exc))
+
+        self._applyMountHeight(obj, manifest, overrides)
+
+    def _applyMountHeight(self, obj, manifest, overrides):
+        """Move the part when its mounting height changes after placement.
+
+        Placement computes Z once, at insert. Without this, editing a wall
+        cabinet's Height above floor would rebuild the shape and leave it
+        hanging where it was - a field that does nothing. What is remembered
+        is the offset the object's Z was built at (and, where the manifest
+        measures the offset to the part's TOP, the height it measured to), so
+        an edit shifts it by the difference rather than re-deriving Z from
+        the host: a part the user has since dragged stays where they put it
+        and moves only by what the edit changed.
+
+        Idempotent by construction - the same params compute a zero delta -
+        so every execute() path (param edit, Reload from library, reopening
+        the edit panel) can call it."""
+        from . import placement as partslib_placement
+
+        params = partslib_manifest.merge_params(manifest, overrides)
+        resolved = {"placement": partslib_manifest.resolve_placement(
+            manifest, params)}
+        host = partslib_placement.host_of(resolved)
+        sign = partslib_placement.offset_sign(host)
+        if not sign:
+            return  # no host surface: nothing holds this part at a height
+        offset = partslib_placement.offset_of(resolved)
+        top = partslib_placement.offset_to_of(resolved) == "top"
+        height = 0.0
+        if top:
+            try:
+                height = partslib_geometry.measure(obj.Shape)["Height"]
+            except Exception as exc:
+                FreeCAD.Console.PrintWarning(
+                    "ArchPlus: cannot measure %s for its mounting height: "
+                    "%s\n" % (obj.Label, exc))
+
+        last_offset = getattr(obj, PROP_MOUNT_OFFSET, _MOUNT_UNSET)
+        last_height = getattr(obj, PROP_MOUNT_HEIGHT, 0.0)
+        if last_offset <= _MOUNT_UNSET + 1.0:
+            # A freshly placed object: placement already put it at host +
+            # offset, so record that and change nothing. A document written
+            # before these properties existed lands here too, and so does
+            # not jump.
+            setattr(obj, PROP_MOUNT_OFFSET, offset)
+            setattr(obj, PROP_MOUNT_HEIGHT, height)
+            return
+
+        delta = sign * (offset - last_offset)
+        if top:
+            # The offset measures to the top, so a taller part hangs lower.
+            delta -= height - last_height
+        setattr(obj, PROP_MOUNT_OFFSET, offset)
+        setattr(obj, PROP_MOUNT_HEIGHT, height)
+        if abs(delta) < 1e-9:
+            return
+        placement = obj.Placement
+        placement.Base = FreeCAD.Vector(placement.Base.x, placement.Base.y,
+                                        placement.Base.z + delta)
+        obj.Placement = placement
 
     def onChanged(self, obj, prop):
         """Changing a Parameter property rebuilds.
