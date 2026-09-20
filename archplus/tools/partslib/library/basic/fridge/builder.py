@@ -47,6 +47,21 @@ _DOOR_PLANE = _HANDLE_DEPTH + _HANDLE_STANDOFF
 # appliance this size.
 CONFIGURATIONS = ("single", "double")
 
+# The size each arrangement ships at, straight from the catalogues: a
+# single-door fridge-freezer is 600 wide, a double-door one 750, and both are
+# 650 front to back. That is the difference a buyer would otherwise have to
+# look up, which is what makes the arrangement a driver for Width and Depth
+# rather than a decoration on a fixed box.
+_DEFAULT_SIZES = {
+    "single": (600.0, 650.0),
+    "double": (750.0, 650.0),
+}
+
+
+def _default_size(configuration):
+    """(width, depth) in mm for a fridge with this door arrangement."""
+    return _DEFAULT_SIZES.get(configuration, _DEFAULT_SIZES["single"])
+
 
 def _row_edges(height, kick_height):
     """The door row boundaries, top down: the fridge compartment and the
@@ -94,17 +109,30 @@ def build(params, assets, ctx):
     """A freestanding fridge-freezer: an insulated body with applied door
     slabs proud of its front, on standoff grab handles.
 
-    Params: Width, Depth, Height (mm), Configuration (Choice of "single" or
-    "double"). A fridge always has a freezer here, so the configuration is
-    the door arrangement - one door per compartment, or a pair of doors over
-    the freezer - and never the size: both arrangements are the same box, so
-    a width typed to fit a gap survives switching between them."""
-    width = float(params.get("Width", 600))
-    depth = float(params.get("Depth", 650))
+    Params: Configuration (Choice of "single" or "double"), Width and Depth
+    (both derived from the arrangement unless pinned; editing the
+    arrangement discards pinned sizes - a double-door fridge at the
+    single-door width would be two doors the width of one), Height (mm).
+
+    A fridge always has a freezer here, so the configuration is the door
+    arrangement and never the appliance - but it IS the size, because the
+    two arrangements are different appliances: a pair of doors needs the
+    wider box."""
+    arrangement = params.get("Configuration") or "single"
+    if arrangement not in CONFIGURATIONS:
+        arrangement = "single"
+    # The arrangement decides the size the same way the hob's burner count
+    # decides the hob's: it is what the user knows, and 600 vs 750 wide is
+    # what they would otherwise have to look up. A pinned value wins.
+    width = params.get("Width")
+    if width is None:
+        width = _default_size(arrangement)[0]
+    width = float(width)
+    depth = params.get("Depth")
+    if depth is None:
+        depth = _default_size(arrangement)[1]
+    depth = float(depth)
     height = float(params.get("Height", 1850))
-    configuration = params.get("Configuration") or "single"
-    if configuration not in CONFIGURATIONS:
-        configuration = "single"
 
     body_depth = max(depth - _DOOR_PLANE - _DOOR_THICKNESS, 1.0)
     body = sh.rounded_box(width, body_depth, height, radius=12)
@@ -124,7 +152,7 @@ def build(params, assets, ctx):
         slab_height = high - low
         if slab_height <= 0:
             continue
-        columns = _row_columns(configuration, row)
+        columns = _row_columns(arrangement, row)
         column_width = (front_width - _DOOR_SEAM * (columns - 1)) / columns
         for column in range(columns):
             door_x = _GASKET + column * (column_width + _DOOR_SEAM)

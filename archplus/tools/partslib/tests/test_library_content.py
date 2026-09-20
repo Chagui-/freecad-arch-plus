@@ -210,23 +210,32 @@ def test_a_hobs_burner_count_is_a_choice_of_1_2_4_5():
     assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
 
 
-def test_the_fridges_doors_are_not_a_size():
-    # A fridge always has a freezer here, so the choice is the door
-    # arrangement - one door per compartment, or a pair over the freezer -
-    # and never the appliance or the size. Switching it must not discard a
-    # width typed to fit a gap, which is exactly what a "resets" on the
-    # driver would do.
+def test_the_fridges_doors_drive_its_size():
+    # A double-door fridge is a bigger appliance than a single-door one - the
+    # width a buyer would otherwise have to look up - so the doors derive
+    # Width and Depth the way the hob's burner count derives the hob's.
     index = _scan()
     data = partslib_manifest.load_manifest(_entry(index, "fridge")["path"])
     specs = partslib_manifest.param_specs(data)
     spec = specs["Configuration"]
     assert spec["type"] == "Choice"
     assert list(partslib_manifest.choice_options(spec)) == ["single", "double"]
-    assert partslib_manifest.reset_targets(spec) == []
-    for name in ("Width", "Depth", "Height"):
-        assert specs[name]["default"] != "auto", (
-            "the doors choice must not derive a dimension - a fridge-freezer "
-            "is the same box whichever way its doors are arranged")
+    assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
+    for name in ("Width", "Depth"):
+        assert specs[name]["default"] == "auto", (
+            "%s must be derived from the door arrangement" % name)
+    assert specs["Height"]["default"] == 1850
+    merged = _params("fridge")
+    assert merged["Width"] is None and merged["Depth"] is None
+
+
+def test_the_fridge_sizes_cover_both_arrangements():
+    # The sizes the catalogues ship: 600 wide single-door, 750 wide
+    # double-door, both 650 front to back.
+    from archplus.tools.partslib.library.basic.fridge import builder
+
+    assert builder._default_size("single") == (600.0, 650.0)
+    assert builder._default_size("double") == (750.0, 650.0)
 
 
 def test_the_hob_defaults_cover_every_burner_count():

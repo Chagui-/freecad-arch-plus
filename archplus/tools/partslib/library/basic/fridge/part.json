@@ -24,6 +24,10 @@
       "type": "Choice",
       "default": "single",
       "label": "Doors",
+      "resets": [
+        "Width",
+        "Depth"
+      ],
       "options": {
         "single": {
           "label": "Single doors"
@@ -35,11 +39,11 @@
     },
     "Width": {
       "type": "Length",
-      "default": 600
+      "default": "auto"
     },
     "Depth": {
       "type": "Length",
-      "default": 650
+      "default": "auto"
     },
     "Height": {
       "type": "Length",

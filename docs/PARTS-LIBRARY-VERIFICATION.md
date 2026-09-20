@@ -24,7 +24,7 @@ points (L7-L9).
 
 | Room | Parts |
 |---|---|
-| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (fridge/fridge-freezer), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
+| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (single/double doors), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
@@ -134,11 +134,15 @@ only a real placement click can show.
       height — with the bowl hanging into the carcass behind the doors.
       Switch **Bowls** to *Double bowl*: the sink widens to 1000 mm and the
       tap stays centred behind the two bowls.
-- [ ] **K2 (the fridge's doors are not a size).** Place a **Fridge**, type
-      700 into **Width** in the property editor, then switch **Doors** to
-      *Double doors*. The width stays 700; the fridge compartment's single
-      door becomes a pair meeting at the middle, with the two handles facing
-      each other across that seam, and the freezer door below is unchanged.
+- [ ] **K2 (the fridge's doors are its size).** Place a **Fridge**: it
+      measures 600 × 650 × 1850, Width and Depth shown derived (italic).
+      Switch **Doors** to *Double doors*: it rebuilds 750 wide with the
+      fridge compartment's single door replaced by a pair meeting at the
+      middle, their handles facing each other across that seam, and the
+      freezer door below unchanged. Type 700 into **Width**, then switch
+      **Doors** back to *Single doors*: the typed width is discarded and
+      Width returns to derived at 600 — the arrangement is the driver, so
+      its pins go with it.
 - [ ] **K3 (the tall units are tall).** Place **Tall pantry cabinet** and
       **Tall unit with oven and microwave**. Both stand on the floor (they
       are floor-hosted, not lifted like the wall cabinet) and measure
