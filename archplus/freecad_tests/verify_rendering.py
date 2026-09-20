@@ -13,7 +13,14 @@ import FreeCAD
 import Part
 
 from archplus.tools.partslib import geometry as partslib_geometry
+from archplus.tools.partslib import manifest as partslib_manifest
+from archplus.tools.partslib import object as partslib_object
 from archplus.tools.partslib import thumbs as partslib_thumbs
+
+# A circle fills pi/4 of its own bounding box; a square fills all of it, and
+# a square with eased corners fills 0.98 of it. Anything that reads as round
+# lands on pi/4 to a couple of percent.
+_CIRCLE_FILL = 3.14159265358979 / 4.0
 
 _LIBRARY_DIR = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
@@ -62,5 +69,53 @@ def run():
     h.check("J3 building a shape adds nothing to the document",
             len(doc.Objects) == before,
             detail="objects=%d" % len(doc.Objects))
+
+    # --- J4: the pedal bin is round, and its manifest says so.
+    #
+    # A round plan is one dimension, so the bin's Depth is derived from its
+    # Width and the two must measure the same. Roundness is read off plan
+    # sections rather than eyeballed: a circle fills pi/4 of its bounding
+    # box at any height, a box fills all of it, so the ratio catches a body
+    # that has quietly gone back to being square. The body tapers from the
+    # lid to the floor, the lid overhangs the body's shoulder, and nothing
+    # reaches outside the advertised footprint.
+    entry = partslib_object.resolveEntry("basic/waste-bin")[0]
+    manifest = partslib_manifest.load_manifest(entry["path"])
+    bin_shape = partslib_geometry.build_shape(manifest, entry["dir"])
+    dims = partslib_geometry.measure(bin_shape)
+    width, depth, height = dims["Width"], dims["Depth"], dims["Height"]
+
+    def plan(z):
+        """(fill ratio, bounding box) of the shape's plan at height `z`."""
+        # slice() hands back a list of wires, one per closed loop in the
+        # section, so each has to become a face before it has an area.
+        faces = [Part.Face(wire)
+                 for wire in bin_shape.slice(FreeCAD.Vector(0, 0, 1), z)]
+        box = Part.Compound(faces).BoundBox
+        area = sum(face.Area for face in faces)
+        return area / (box.XLength * box.YLength), box
+
+    body_fill, body_box = plan(height * 0.4)
+    lid_fill, lid_box = plan(height * 0.98)
+
+    def solid(point):
+        return bin_shape.isInside(FreeCAD.Vector(*point), 1e-6, False)
+
+    rim = (width / 2.0 + width * 0.47, depth / 2.0, height * 0.98)
+    shoulder = (width / 2.0 + width * 0.47, depth / 2.0, height * 0.70)
+    corner = (width - 2.0, 2.0, height * 0.40)
+    h.check("J4 the bin's plan is a circle at the body and at the lid",
+            abs(width - depth) < 1e-6
+            and abs(body_fill - _CIRCLE_FILL) < 0.02
+            and abs(lid_fill - _CIRCLE_FILL) < 0.02,
+            detail="plan=%.1fx%.1f fill=%.3f/%.3f (circle=%.3f)"
+            % (width, depth, body_fill, lid_fill, _CIRCLE_FILL))
+    h.check("J4 the body tapers from the lid down to the floor",
+            body_box.XLength < lid_box.XLength - 1.0,
+            detail="body=%.1f lid=%.1f" % (body_box.XLength, lid_box.XLength))
+    h.check("J4 the lid overhangs the shoulder, inside the footprint",
+            solid(rim) and not solid(shoulder) and not solid(corner),
+            detail="rim=%s shoulder=%s corner=%s"
+            % (solid(rim), solid(shoulder), solid(corner)))
 
     return h.failures()

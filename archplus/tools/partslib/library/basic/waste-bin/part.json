@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Pedal bin",
-  "description": "Freestanding kitchen bin with an overhanging lid and a foot pedal.",
+  "description": "Freestanding round kitchen bin with a domed overhanging lid and a foot pedal.",
   "keywords": [
     "kitchen",
     "bin",
@@ -9,6 +9,7 @@
     "waste",
     "pedal",
     "lid",
+    "round",
     "accessory",
     "parametric"
   ],
@@ -26,7 +27,7 @@
     },
     "Depth": {
       "type": "Length",
-      "default": 300
+      "default": "auto"
     },
     "Height": {
       "type": "Length",

@@ -169,9 +169,14 @@ only a real placement click can show.
       the oven and microwave fronts are recessed into the door line rather
       than outlined on it — each should carry a shadow on all four sides,
       the way the base cabinet with oven's front does.
-- [ ] **K5 (the bin is not a cabinet).** Place **Pedal bin**: it stands on
-      the floor, measures 300 × 300 × 700, the lid overhangs the body on
-      every side, and the foot pedal shows at the front of the floor.
+- [ ] **K5 (the bin is round).** Place **Pedal bin**: it stands on the floor
+      and measures 300 × 300 × 700. A round plan is one dimension, so
+      **Depth** reads derived (italic) and follows **Width** — change
+      **Width** to `400` and the bin rebuilds round at 400 across, keeping
+      the taper and the lid's overhang. At the defaults the body is 270
+      across at the shoulder narrowing to 237 at the floor, the domed cap
+      overhangs it by 15 mm on every side, and the foot pedal shows at the
+      front of the floor without reaching past the advertised depth.
 
 ## Part L — Editing placed parts
 
