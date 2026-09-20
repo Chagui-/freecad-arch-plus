@@ -14,12 +14,18 @@ def build(params, assets, ctx):
     """An L-shaped corner base unit with a worktop following the same plan.
 
     Params: Width, Depth, Height, WorktopThickness, KickHeight, ReturnWidth,
-    ReturnDepth (mm).
+    ReturnDepth (mm), Worktop (Choice of "with" or "without").
 
     `Width`/`Depth` are the two outer legs of the L, measured from the inside
     corner of the room; `ReturnWidth`/`ReturnDepth` are how deep each leg is.
     The notch is cut out of the FRONT-LEFT, so the unit wraps a corner at the
-    back-right of its own footprint."""
+    back-right of its own footprint.
+
+    Without the worktop the carcass stops one worktop thickness below
+    `Height`, the 40mm a sink's rim fills - see base-cabinet, which explains
+    why the top of a worktopless unit is where the work surface goes rather
+    than where the carcass ends. Nothing else moves: the L already runs the
+    full plan, so the unit still measures the depth it advertises."""
     width = float(params.get("Width", 900))
     depth = float(params.get("Depth", 900))
     height = float(params.get("Height", 900))
@@ -27,6 +33,7 @@ def build(params, assets, ctx):
     kick_height = float(params.get("KickHeight", 100))
     return_width = float(params.get("ReturnWidth", 600))
     return_depth = float(params.get("ReturnDepth", 600))
+    with_worktop = (params.get("Worktop") or "with") != "without"
 
     carcass_height = height - worktop
     return_width = min(return_width, width - 50.0)
@@ -52,11 +59,13 @@ def build(params, assets, ctx):
                           groove=6.0, depth=8.0,
                           face_depth=depth - return_depth)
 
-    top = _l_shape(width, depth, worktop, 6.0)
-    top = sh.place(top, 0, 0, carcass_height)
+    parts = [box]
+    if with_worktop:
+        top = _l_shape(width, depth, worktop, 6.0)
+        parts.append(sh.place(top, 0, 0, carcass_height))
 
     pull = sh.place(sh.bar((carcass_height - kick_height) * 0.22, 7.0,
                             along="z"),
                      width - 40.0, depth - return_depth,
                      kick_height + (carcass_height - kick_height) * 0.4)
-    return sh.fuse_all([box, top, pull])
+    return sh.fuse_all(parts + [pull])

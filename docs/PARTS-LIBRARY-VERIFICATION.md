@@ -24,7 +24,7 @@ points (L7-L9).
 
 | Room | Parts |
 |---|---|
-| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (single/double doors), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
+| Kitchen | Base cabinet (300/600/800, with/without worktop), Base cabinet with oven, Corner base cabinet (with/without worktop), Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (single/double doors), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
@@ -137,12 +137,17 @@ Five parts added to the Kitchen room after the first pass: `basic/sink`,
 `basic/waste-bin`. Their heights and offsets are the part of a new part that
 only a real placement click can show.
 
-- [ ] **K1 (the sink drops into the worktop).** Select **Sink**, click
-      **Place**, then click the floor in front of a placed Base cabinet. The
-      rim's top face lands at 900 mm — the base unit's finished worktop
-      height — with the bowl hanging into the carcass behind the doors.
-      Switch **Bowls** to *Double bowl*: the sink widens to 1000 mm and the
-      tap stays centred behind the two bowls.
+- [ ] **K1 (the sink drops into the worktop).** Place a **Base cabinet** and
+      set its **Worktop** to *Without worktop*: the unit's top drops 40 mm
+      below its Height (the top surface reads 86.0 cm while **Height** still
+      says 90.0 — that 40 mm is where the work surface goes). Select **Sink**,
+      set its **Depth** to `600` so its rim covers the whole unit (its 500 mm
+      default leaves the back 100 mm of carcass top showing), then click
+      **Place** and click the floor in front of that unit. The rim's underside
+      lands on the carcass top and its top face becomes the work surface at
+      900 mm — the unit's Height — with the bowl hanging into the cabinet and
+      the tap behind it. Switch **Bowls** to *Double bowl*: the sink widens to
+      1000 mm and the tap stays centred behind the two bowls.
 - [ ] **K2 (the fridge's doors are its size).** Place a **Fridge**: it
       measures 600 × 650 × 1850, Width and Depth shown derived (italic).
       Switch **Doors** to *Double doors*: it rebuilds 750 wide with the

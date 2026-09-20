@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Placement and IFC checks: Parts D (D1/D2/D3/D4/D4b/D4c/D10) and E (E1/E2)
-# of docs/PARTS-LIBRARY-VERIFICATION.md. Placement goes through the same
-# code path the browser's click-to-place uses, just with a computed point
-# instead of a mouse.
+# Placement and IFC checks: Parts D (D1/D2/D3/D4/D4b/D4c/D10/D13) and E
+# (E1/E2) of docs/PARTS-LIBRARY-VERIFICATION.md. Placement goes through the
+# same code path the browser's click-to-place uses, just with a computed
+# point instead of a mouse.
 
 import os
 import tempfile
@@ -153,6 +153,50 @@ def run():
         doc.removeObject(obj.Name)
     doc.removeObject(wall.Name)
     doc.removeObject(wall_base.Name)
+
+    # D13 - a sink drops into a worktopless unit. The unit's carcass stops
+    # one worktop thickness short of its Height, which is exactly what the
+    # sink's rim is thick, so the rim fills the gap: the carcass top and the
+    # rim's underside are one plane, and the finished surface is the Height
+    # the unit advertises. Reaching into the sink's builder for those two
+    # proportions is the point - if the rim stops being a worktop's
+    # thickness, this fails.
+    #
+    # The footprint is checked to half a millimetre, not to the micron: with
+    # the worktop gone the frontmost thing on the unit is the pull bar, and a
+    # tight bounding box over a cylindrical face comes out a few hundredths
+    # short of the radius. A footprint that actually moved - the overhang
+    # left in place, say - is 20mm out, which this still catches.
+    from archplus.tools.partslib.library.basic.sink import builder as sink_builder
+
+    bare = _make("basic/base-cabinet",
+                 placement=FreeCAD.Placement(Vector(0, 0, 0),
+                                             FreeCAD.Rotation()))
+    bare.Worktop = "Without worktop"
+    doc.recompute()
+    sink_entry = _entry("basic/sink")
+    sink_offset = partslib_placement.offset_of(
+        partslib_manifest.load_manifest(sink_entry["path"]))
+    sink = _make("basic/sink", placement=FreeCAD.Placement(
+        Vector(0, 0, sink_offset), FreeCAD.Rotation()))
+    doc.recompute()
+    carcass_top = bare.Shape.BoundBox.ZMax
+    rim_underside = sink_offset + sink_builder._BOWL_DEPTH
+    rim_top = rim_underside + sink_builder._RIM_THICKNESS
+    h.check("D13 a worktopless unit keeps its footprint and drops its top",
+            abs(carcass_top - (bare.Height.Value - 40.0)) < 1e-6
+            and abs(bare.Shape.BoundBox.XLength - 600.0) < 0.5
+            and abs(bare.Shape.BoundBox.YLength - 600.0) < 0.5,
+            detail="top=%r Height=%r footprint=%r"
+            % (carcass_top, bare.Height.Value,
+               (bare.Shape.BoundBox.XLength, bare.Shape.BoundBox.YLength)))
+    h.check("D13 the sink's rim fills that gap and tops out at the Height",
+            abs(rim_underside - carcass_top) < 1e-6
+            and abs(rim_top - bare.Height.Value) < 1e-6,
+            detail="rim=%.1f..%.1f carcass_top=%.1f Height=%.1f"
+            % (rim_underside, rim_top, carcass_top, bare.Height.Value))
+    for obj in (bare, sink):
+        doc.removeObject(obj.Name)
 
     # E1 - the IFC type resolution chain (no manifest declares its own).
     toilet = _make("basic/toilet")

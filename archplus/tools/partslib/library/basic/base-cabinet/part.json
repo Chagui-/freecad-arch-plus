@@ -1,13 +1,15 @@
 {
   "schema": 1,
   "name": "Base cabinet",
-  "description": "Floor-standing kitchen unit with a worktop; Height is the finished worktop height.",
+  "description": "Floor-standing kitchen unit. Height is the finished worktop height; without the worktop a sink's rim fills the top 40 mm.",
   "keywords": [
     "kitchen",
     "cabinet",
     "unit",
     "base",
     "worktop",
+    "countertop",
+    "sink",
     "parametric"
   ],
   "facets": {
@@ -20,7 +22,16 @@
   "params": {
     "Width": { "type": "Length", "default": 600},
     "Depth": { "type": "Length", "default": 600},
-    "Height": { "type": "Length", "default": 900}
+    "Height": { "type": "Length", "default": 900},
+    "Worktop": {
+      "type": "Choice",
+      "default": "with",
+      "label": "Worktop",
+      "options": {
+        "with": { "label": "With worktop" },
+        "without": { "label": "Without worktop" }
+      }
+    }
   },
   "placement": {
     "host": "floor",
