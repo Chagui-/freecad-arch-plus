@@ -1,11 +1,12 @@
 {
   "schema": 1,
   "name": "Fridge",
-  "description": "Freestanding fridge or fridge-freezer; the configuration sets the door split, never the size.",
+  "description": "Freestanding fridge-freezer: a fridge over a freezer, with single or double doors.",
   "keywords": [
     "kitchen",
     "fridge",
     "refrigerator",
+    "fridge-freezer",
     "freezer",
     "cold",
     "appliance",
@@ -21,14 +22,14 @@
   "params": {
     "Configuration": {
       "type": "Choice",
-      "default": "fridge",
+      "default": "single",
       "label": "Doors",
       "options": {
-        "fridge": {
-          "label": "Fridge"
+        "single": {
+          "label": "Single doors"
         },
-        "fridge-freezer": {
-          "label": "Fridge-freezer"
+        "double": {
+          "label": "Double doors"
         }
       }
     },

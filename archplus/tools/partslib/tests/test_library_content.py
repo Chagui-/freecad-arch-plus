@@ -210,6 +210,25 @@ def test_a_hobs_burner_count_is_a_choice_of_1_2_4_5():
     assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
 
 
+def test_the_fridges_doors_are_not_a_size():
+    # A fridge always has a freezer here, so the choice is the door
+    # arrangement - one door per compartment, or a pair over the freezer -
+    # and never the appliance or the size. Switching it must not discard a
+    # width typed to fit a gap, which is exactly what a "resets" on the
+    # driver would do.
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "fridge")["path"])
+    specs = partslib_manifest.param_specs(data)
+    spec = specs["Configuration"]
+    assert spec["type"] == "Choice"
+    assert list(partslib_manifest.choice_options(spec)) == ["single", "double"]
+    assert partslib_manifest.reset_targets(spec) == []
+    for name in ("Width", "Depth", "Height"):
+        assert specs[name]["default"] != "auto", (
+            "the doors choice must not derive a dimension - a fridge-freezer "
+            "is the same box whichever way its doors are arranged")
+
+
 def test_the_hob_defaults_cover_every_burner_count():
     # The sizes the catalogues ship: a 300mm domino for one or two burners,
     # 600mm for four, 750mm for five.

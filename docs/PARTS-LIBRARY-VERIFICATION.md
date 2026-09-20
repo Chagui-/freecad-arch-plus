@@ -134,10 +134,11 @@ only a real placement click can show.
       height — with the bowl hanging into the carcass behind the doors.
       Switch **Bowls** to *Double bowl*: the sink widens to 1000 mm and the
       tap stays centred behind the two bowls.
-- [ ] **K2 (the fridge configuration is not a size).** Place a **Fridge**,
-      type 700 into **Width** in the property editor, then switch **Doors**
-      to *Fridge-freezer*. The width stays 700; the front gains a second
-      door over the bottom third of its height, with its own shorter handle.
+- [ ] **K2 (the fridge's doors are not a size).** Place a **Fridge**, type
+      700 into **Width** in the property editor, then switch **Doors** to
+      *Double doors*. The width stays 700; the fridge compartment's single
+      door becomes a pair meeting at the middle, with the two handles facing
+      each other across that seam, and the freezer door below is unchanged.
 - [ ] **K3 (the tall units are tall).** Place **Tall pantry cabinet** and
       **Tall unit with oven and microwave**. Both stand on the floor (they
       are floor-hosted, not lifted like the wall cabinet) and measure
