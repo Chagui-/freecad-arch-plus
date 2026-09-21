@@ -31,9 +31,38 @@ def _spec(**over):
         width=900.0, height=2100.0, frameWidth=70.0,
         panelThk=45.0, frameDepth=100.0,
         swingSide="Left", swingDir="Inward", panelPos="Centered",
+        knobHeight=1050.0, windowWidth=400.0, windowHeight=900.0,
+        windowSill=900.0,
     )
     spec.update(over)
     return spec
+
+
+def _parts(flat):
+    return [flat[i] for i in range(0, len(flat), 5)]
+
+
+def _types(flat):
+    return [flat[i + 1] for i in range(0, len(flat), 5)]
+
+
+def _rects(sketch):
+    """The rectangles a sketcher-drawn sketch holds, as (x0, y0, x1, y1).
+
+    A rectangle arrives as four line segments and a circle as one geometry, so
+    the segments group in fours."""
+    segs = [g for g in sketch.Geometry if g.TypeId == "Part::GeomLineSegment"]
+    out = []
+    for i in range(0, len(segs), 4):
+        points = [s.p1 for s in segs[i:i + 4]]
+        xs = [p.x for p in points]
+        ys = [p.y for p in points]
+        out.append((min(xs), min(ys), max(xs), max(ys)))
+    return out
+
+
+def _circles(sketch):
+    return [g for g in sketch.Geometry if g.TypeId == "Part::GeomCircle"]
 
 
 def _face(x, y, z):
@@ -134,6 +163,87 @@ def test_glass_directly_follows_its_frame():
                 % (op, style, glass, frame, names)
 
 
+# --- knobs ----------------------------------------------------------------
+def test_every_leaf_gets_a_knob_that_follows_it():
+    # A knob carries no Edge/Mode of its own: it inherits its leaf's opening
+    # transform, exactly like the glass does, which only holds while it is the
+    # entry right after that leaf. "Opening only" has no leaf, so no knob.
+    cases = {
+        "Single swing": ["OuterFrame", "Door", "Knob"],
+        "Sliding (single)": ["OuterFrame", "Door", "Knob"],
+        "Double swing": ["OuterFrame", "LeftDoor", "LeftKnob",
+                         "RightDoor", "RightKnob"],
+        "Opening only": ["OuterFrame"],
+    }
+    for op, expected in cases.items():
+        _, flat = dg._makeDoorGeometry(_spec(operation=op))
+        assert _parts(flat) == expected, "%s: %r" % (op, _parts(flat))
+    _, flat = dg._makeDoorGeometry(_spec(panelStyle="Glass (window)"))
+    # ... and on a glazed leaf it still follows the moving entry of that leaf.
+    assert _parts(flat) == ["OuterFrame", "InnerFrame", "InnerGlass", "Knob"]
+
+
+def test_a_knob_is_typed_as_hardware_with_no_movement_of_its_own():
+    # The part type is the builder's interface to the object: it decides that
+    # this part is revolved into a knob and coloured as hardware. A knob must
+    # carry no Edge/Mode either - it inherits its leaf's opening transform, so
+    # giving it one of its own would leave it behind when the leaf moves. The
+    # three types are what keeps the frame, the leaf and the knob in three
+    # different greys (object.DOOR_PART_COLORS).
+    _, flat = dg._makeDoorGeometry(_spec())
+    assert _types(flat) == ["Frame", "Solid panel", "Knob"]
+    wires = flat[2 * 5 + 2]
+    assert "Edge" not in wires and "Mode" not in wires, wires
+
+
+def test_knob_circles_place_one_knob_per_leaf_on_its_free_edge():
+    # The knob's circle is what places and sizes it, so there is one per leaf,
+    # on the edge opposite the hinge, at the height the spec asks for.
+    sketch, _ = dg._makeDoorGeometry(
+        _spec(operation="Double swing", knobHeight=1000.0))
+    circles = _circles(sketch)
+    assert len(circles) == 2
+    for c in circles:
+        assert c.radius == dg.KNOB_RADIUS
+        assert (c.center.y, c.center.z) == (1000.0, 0.0)
+    # The leaves meet in the middle, so their knobs approach it from either
+    # side rather than sitting on top of each other.
+    left, right = sorted(c.center.x for c in circles)
+    assert left < 450.0 < right and right - left > 2 * dg.KNOB_RADIUS
+
+    # A single leaf's knob hangs on the free edge, so the hinge side moves it.
+    for side, below in (("Left", False), ("Right", True)):
+        sketch, _ = dg._makeDoorGeometry(
+            _spec(operation="Single swing", swingSide=side))
+        x = _circles(sketch)[0].center.x
+        assert (x < 450.0) == below, "hinge %s put the knob at %g" % (side, x)
+
+
+# --- a door with a window in it -------------------------------------------
+def test_window_style_cuts_a_lite_in_the_leaf():
+    sketch, flat = dg._makeDoorGeometry(
+        _spec(panelStyle="Glass (window)"))
+    assert _parts(flat) == ["OuterFrame", "InnerFrame", "InnerGlass", "Knob"]
+    # The leaf runs from the jamb to the jamb, 900 wide with 70 jambs; the
+    # window is centred on it, 400 x 900, sitting 900 above the door's base.
+    outline = (77.0, 0.0, 823.0, 2023.0)          # leaf, inset by `tol` = jw/10
+    lite = (250.0, 900.0, 650.0, 1800.0)
+    rects = _rects(sketch)
+    assert outline in rects and lite in rects
+
+
+def test_an_over_large_window_stays_inside_the_leaf():
+    # A window bigger than the leaf must not cut the leaf in two: it is
+    # clamped to leave a frame (the jamb width) on every side, and one asked
+    # to sit higher than that allows drops until it fits.
+    sketch, _ = dg._makeDoorGeometry(
+        _spec(panelStyle="Glass (window)", windowWidth=5000.0,
+              windowHeight=5000.0, windowSill=4000.0))
+    # The leaf's own outline is 77..823 x 0..2023; the lite leaves 70 (jw) of
+    # frame to either side and at the top.
+    assert (140.0, 70.0, 760.0, 1960.0) in _rects(sketch)
+
+
 # --- edit round-trip ------------------------------------------------------
 def _panel(obj):
     p = object.__new__(dg.DoorsPlusTaskPanel)
@@ -143,6 +253,8 @@ def _panel(obj):
     p.frameWidth = FakeNum(); p.frameDepth = FakeNum(); p.panelThk = FakeNum()
     p.swingSide = FakeCombo(); p.swingDir = FakeCombo(); p.panelPos = FakeCombo()
     p.sill = FakeNum(); p.opening = FakeNum()
+    p.knobHeight = FakeNum()
+    p.windowWidth = FakeNum(); p.windowHeight = FakeNum(); p.windowSill = FakeNum()
     p.symbolPlan = FakeCheck(); p.symbolElev = FakeCheck()
     return p
 

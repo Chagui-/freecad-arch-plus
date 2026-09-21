@@ -72,7 +72,7 @@ else:
     # \endcond
 
 # presets
-WindowPartTypes = ["Frame", "Solid panel", "Glass panel", "Louvre"]
+WindowPartTypes = ["Frame", "Solid panel", "Glass panel", "Louvre", "Knob"]
 WindowOpeningModes = [
     "None",
     "Arc 90",
@@ -87,6 +87,81 @@ WindowOpeningModes = [
     "Sliding inv",
 ]
 WindowPresets = ArchWindowPresets.WindowPresets
+
+# A knob is a part like the others in that its sketch circle says where it
+# goes, but it is revolved rather than extruded (see makeKnobShape), so these
+# ratios of the circle's radius are what size the solid.
+KNOB_NECK_RATIO = 0.34      # spindle radius
+KNOB_STEM_RATIO = 1.40      # leaf face to the middle of the grip
+KNOB_GRIP_RATIO = 0.75      # radius of the round grip
+KNOB_BASE_THK_RATIO = 0.16  # thickness of the base plate against the leaf
+KNOB_RADIUS_DEFAULT = 32.0  # base radius when a knob's wire is not a circle
+
+# Part colours for a door, keyed by part type (the second WindowParts field).
+# Three greys deliberately far apart in value: the frame reads as a light
+# reveal around the leaf, and the knob reads as near-black hardware against
+# the leaf it is mounted on. A material set on the object still wins - see
+# getSolidMaterial().
+DOOR_PART_COLORS = {
+    "Frame": (0.82, 0.82, 0.84, 1.0),
+    "Solid panel": (0.45, 0.45, 0.47, 1.0),
+    "Knob": (0.10, 0.10, 0.12, 1.0),
+}
+
+
+def knobCircle(wire):
+    """Returns (centre, base radius) of the circle that places a door knob.
+
+    The knob's wire is a circle in the base sketch: where it sits is where the
+    knob goes, and its radius is the base plate's. Anything else - a knob
+    element hand-drawn as a rectangle in the window editor - keeps the knob at
+    the centre of what was drawn, at the default radius."""
+
+    radius = KNOB_RADIUS_DEFAULT
+    edges = wire.Edges
+    if len(edges) == 1:
+        try:
+            if edges[0].Curve.TypeId == "Part::GeomCircle":
+                radius = edges[0].Curve.Radius
+        except AttributeError:
+            pass
+    return wire.CenterOfMass, radius
+
+
+def makeKnobShape(wire, norm, thickness, depth):
+    """Returns the solid of a door knob, built around the circle `wire` names.
+
+    A knob is not an extrusion of its wire: it is a solid of revolution about
+    the door normal, with a stem and a round grip on each face of the leaf,
+    joined through it. One knob therefore covers both sides, and - because the
+    stem runs from face to face - the result is a single solid. That matters:
+    colorize colours one part per solid, so a knob left as a compound would
+    push every following part's colour one part down.
+
+    `thickness` is the leaf's thickness and `depth` how far the leaf's front
+    face lies along `norm`, so the knob sits on the leaf wherever the panel
+    sits within the frame."""
+
+    import Part
+
+    centre, radius = knobCircle(wire)
+    unit = DraftVecUtils.scaleTo(norm, 1.0)
+    near = centre.add(DraftVecUtils.scaleTo(norm, depth))
+    far = near.add(DraftVecUtils.scaleTo(norm, thickness))
+    span = max((far - near).Length, 1e-6)  # keep the knob one solid
+    neck = radius * KNOB_NECK_RATIO
+    stem = radius * KNOB_STEM_RATIO
+    grip = radius * KNOB_GRIP_RATIO
+    plate = radius * KNOB_BASE_THK_RATIO
+
+    pieces = [Part.makeCylinder(neck, span, near, unit)]
+    for face, direction in ((near, unit.negative()), (far, unit)):
+        pieces.append(Part.makeCylinder(radius, plate, face, direction))
+        pieces.append(Part.makeCylinder(neck, stem, face, direction))
+        pieces.append(
+            Part.makeSphere(grip, face.add(DraftVecUtils.scaleTo(direction, stem)))
+        )
+    return pieces[0].fuse(pieces[1:])
 
 
 def recolorize(attr):  # names is [docname,objname]
@@ -413,6 +488,7 @@ class _Window(ArchComponent.Component):
             omode = None
             ssymbols = []
             vsymbols = []
+            ptype = obj.WindowParts[(i * 5) + 1]
             wstr = obj.WindowParts[(i * 5) + 2].split(",")
             for s in wstr:
                 if "Wire" in s:
@@ -578,13 +654,10 @@ class _Window(ArchComponent.Component):
                     thk = thk[:-2]
                     V = obj.Frame.Value
                 thk = float(thk) + V
-                if thk:
-                    exv = DraftVecUtils.scaleTo(norm, thk)
-                    shape = shape.extrude(exv)
-                    for w in wires:
-                        f = Part.Face(w)
-                        f = f.extrude(exv)
-                        shape = shape.cut(f)
+                # The part's depth within the frame is resolved before the
+                # shape: a knob is built in place from it, where everything
+                # else is extruded from the wire plane and translated after.
+                zof = 0.0
                 if obj.WindowParts[(i * 5) + 4]:
                     V = 0
                     zof = obj.WindowParts[(i * 5) + 4]
@@ -594,6 +667,17 @@ class _Window(ArchComponent.Component):
                     zof = float(zof) + V
                     if zof:
                         zov = DraftVecUtils.scaleTo(norm, zof)
+                if ptype == "Knob":
+                    shape = makeKnobShape(ext, norm, thk, zof)
+                else:
+                    if thk:
+                        exv = DraftVecUtils.scaleTo(norm, thk)
+                        shape = shape.extrude(exv)
+                        for w in wires:
+                            f = Part.Face(w)
+                            f = f.extrude(exv)
+                            shape = shape.cut(f)
+                    if zof:
                         shape.translate(zov)
                 if hinge and omode and 0 < omode < 9:
                     if DraftVecUtils.angle(chord, norm, enorm) < 0:
@@ -608,7 +692,7 @@ class _Window(ArchComponent.Component):
                         symb.translate(zov)
                     if rotdata:
                         rotdata[0] = rotdata[0].add(zov)
-                if obj.WindowParts[(i * 5) + 1] == "Louvre":
+                if ptype == "Louvre":
                     if hasattr(obj, "LouvreWidth"):
                         if obj.LouvreWidth and obj.LouvreSpacing:
                             bb = shape.BoundBox
@@ -1032,6 +1116,11 @@ class _ViewProviderWindow(ArchComponent.ViewProviderComponent):
                     typ = obj.WindowParts[typeidx]
                     if typ == WindowPartTypes[2]:  # "Glass panel"
                         color = ArchCommands.getDefaultColor("WindowGlass")
+                    else:
+                        # Door parts carry their own greys (DOOR_PART_COLORS):
+                        # the frame, the leaf and the knob have to read apart
+                        # from each other without anyone setting a material.
+                        color = DOOR_PART_COLORS.get(typ)
 
             if color is None:
                 sapp_mat = base_sapp_mat

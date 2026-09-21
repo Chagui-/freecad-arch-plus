@@ -28,6 +28,7 @@ from archplus.freecad_tests import verify_edit
 from archplus.freecad_tests import verify_reload
 from archplus.freecad_tests import verify_rendering
 from archplus.freecad_tests import verify_openings
+from archplus.freecad_tests import verify_doors
 from archplus.freecad_tests import verify_sketch_visibility
 from archplus.freecad_tests import verify_walls
 
@@ -68,6 +69,7 @@ def main():
     _run_one("verify_reload", verify_reload.run)
     _run_one("verify_rendering", verify_rendering.run)
     _run_one("verify_openings", verify_openings.run)
+    _run_one("verify_doors", verify_doors.run)
     _run_one("verify_sketch_visibility", verify_sketch_visibility.run)
     _run_one("verify_walls", verify_walls.run)
     h.report_exceptions()

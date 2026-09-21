@@ -9,7 +9,8 @@
 #
 # Door types supported: Single swing, Double swing, Single sliding,
 #   Double sliding, Opening only.
-# Panel styles: Solid, Glass (full).
+# Panel styles: Solid, Glass (full), Glass (window) — a solid leaf with a
+#   glazed window in it. Every leaf gets a knob (see object.makeKnobShape).
 
 import math
 import os
@@ -47,11 +48,22 @@ DOOR_OPERATIONS = [
 PANEL_STYLES = [
     "Solid",
     "Glass (full)",
+    "Glass (window)",
 ]
 
 SWING_SIDES = ["Left", "Right"]
 SWING_DIRS = ["Inward", "Outward"]
 PANEL_POSITIONS = ["Centered", "Front", "Back"]  # leaf position in frame depth
+
+# Knob and window-lite defaults. The knob's radius is its base plate's:
+# object.py revolves the knob around the circle the sketch carries, so the
+# sketch - not these numbers - is what the solid is built from.
+KNOB_RADIUS = 32.0            # base plate radius
+KNOB_FROM_EDGE = 75.0         # knob centre, measured in from the free edge
+KNOB_HEIGHT_DEFAULT = 1050.0  # standard handle height above the floor
+WINDOW_WIDTH_DEFAULT = 400.0
+WINDOW_HEIGHT_DEFAULT = 900.0
+WINDOW_SILL_DEFAULT = 900.0   # solid panel below the window
 
 
 def _operationNeedsLeaves(op):
@@ -122,6 +134,7 @@ def _makeDoorGeometry(spec):
     Returns (sketch, windowParts).
     """
 
+    import Part
     import Sketcher
 
     from archplus.common import geometry as archplus_geometry
@@ -195,9 +208,6 @@ def _makeDoorGeometry(spec):
     # Pin outer to origin
     s.addConstraint(Sketcher.Constraint("Coincident", 0, 1, -1, 1))
 
-    cstart = s.ConstraintCount
-    cname = 18  # constraint naming start index (after Width=16, Height=17)
-
     # Wire0 = outer frame wire (index 0), Wire1 = inner frame wire (index 1)
     offset_str = "0.00+V"
     fthk = fd - pt
@@ -218,115 +228,157 @@ def _makeDoorGeometry(spec):
     glass_off = "%.4f+V" % (panelZ + pt / 2.0)   # glass sheet, mid-leaf
 
     leaf_count = _operationLeafCount(op)
+    sliding = _operationIsSliding(op)
+    solid = style == "Solid"
+    window = style == "Glass (window)"
+
+    # Hardware and window-lite settings (see DoorsPlusTaskPanel).
+    knob_h = spec.get("knobHeight", KNOB_HEIGHT_DEFAULT)
+    lite_w = spec.get("windowWidth", WINDOW_WIDTH_DEFAULT)
+    lite_h = spec.get("windowHeight", WINDOW_HEIGHT_DEFAULT)
+    lite_sill = spec.get("windowSill", WINDOW_SILL_DEFAULT)
 
     # Edge index helpers.  After the outer frame (2 rectangles via _addFrame),
     # the sketch has 8 edges (0–7).  Wire0 = edges 0-3, Wire1 = edges 4-7.
-    # Each additional rectangle adds 4 edges.
+    # Every rectangle after that adds 4 more, so a leaf's hinge edge is known
+    # purely from the order its geometry is added — which is why the knob
+    # circles below are drawn only after every leaf rectangle.
     # Global edge indices (1-based, as used in WindowParts strings):
-    _BASE_EDGES = 8          # edges consumed by the outer frame
     _W1_LEFT   = 8           # Wire1 left   = global edge  7 → Edge8
     _W1_RIGHT  = 6           # Wire1 right  = global edge  5 → Edge6
+    _L1_LEFT   = 12          # Wire2 left   = global edge 11 → Edge12
+    _L2_RIGHT  = 14          # Wire3 right  = global edge 13 → Edge14
 
-    if leaf_count == 1 and not _operationIsSliding(op) and style == "Solid":
-        # Single swing / solid — door leaf = Wire1 (the inner opening)
-        hinge = _W1_LEFT if ss == "Left" else _W1_RIGHT
-        wp.append(["Door", "Solid panel", "Wire1,Edge%d,Mode%d" % (hinge, _swingMode()),
-                   "%.4f" % pt, leaf_off])
+    # Wires are named in the order they are drawn; the frame took Wire0/Wire1.
+    next_wire = 2
 
-    elif leaf_count == 1 and _operationIsSliding(op) and style == "Solid":
-        # Single sliding / solid
-        wp.append(["Door", "Solid panel", "Wire1,Edge8,Mode%d" % _swingMode(),
-                   "%.4f" % pt, leaf_off])
+    def _takeWire():
+        nonlocal next_wire
+        name = "Wire%d" % next_wire
+        next_wire += 1
+        return name
 
-    elif leaf_count == 1 and style == "Glass (full)":
-        # Single door with full glass — inner frame + glass inside the door leaf.
-        # Wire2 (edges 8-11): inner frame outer
-        # Wire3 (edges 12-15): inner frame inner (glass opening)
-        inner_frame_outer = [
-            FreeCAD.Vector(jw + tol, 0.0, 0),
-            FreeCAD.Vector(w - jw - tol, 0.0, 0),
-            FreeCAD.Vector(w - jw - tol, h - jw - tol, 0),
-            FreeCAD.Vector(jw + tol, h - jw - tol, 0),
-        ]
-        inner_frame_inner = [
-            FreeCAD.Vector(jw + h2, 0.0, 0),
-            FreeCAD.Vector(w - jw - h2, 0.0, 0),
-            FreeCAD.Vector(w - jw - h2, h - jw - h2, 0),
-            FreeCAD.Vector(jw + h2, h - jw - h2, 0),
-        ]
-        _addFrame(*inner_frame_outer, *inner_frame_inner)
-        hinge = _W1_LEFT if ss == "Left" else _W1_RIGHT
-        fw = "%.4f" % pt
-        wp.append(["InnerFrame", "Frame", "Wire2,Wire3,Edge%d,Mode%d" % (hinge, _swingMode()),
-                   fw, leaf_off])
-        # The glass deliberately carries no Edge/Mode: it inherits
-        # InnerFrame's transform (native FreeCAD convention, see
-        # object.py buildShapes), so it swings/slides exactly with the
-        # leaf. It must stay the entry right after its frame.
-        wp.append(["InnerGlass", "Glass panel", "Wire3",
-                   "%.4f" % (pt / gla), glass_off])
+    def _rectWire(x0, y0, x1, y1):
+        """Draw a rectangle; returns the wire name it becomes."""
+        wire = _takeWire()
+        _rect(FreeCAD.Vector(x0, y0, 0), FreeCAD.Vector(x1, y0, 0),
+              FreeCAD.Vector(x1, y1, 0), FreeCAD.Vector(x0, y1, 0))
+        return wire
 
-    elif leaf_count == 2 and style == "Solid":
-        # Double door — split the inner opening into two leaves.
-        # Wire1 = full opening (used by frame)
-        # Wire2 = left leaf  → edges 8-11
-        # Wire3 = right leaf → edges 12-15
+    def _liteRect(x0, y0, x1, y1):
+        """The lite's rectangle (x0, y0, x1, y1) within a leaf.
+
+        "Glass (full)" takes the whole leaf.  "Glass (window)" takes the
+        window the spec asks for, centred across the leaf and clamped to leave
+        a frame `h2` wide on every side: an over-large window must not cut the
+        leaf in two."""
+        if not window:
+            return x0 + h2, y0, x1 - h2, y1 - h2
+        leaf_w, leaf_h = x1 - x0, y1 - y0
+        width = max(2.0, min(lite_w, leaf_w - 2 * h2))
+        height = max(2.0, min(lite_h, leaf_h - 2 * h2))
+        # The sill gives way to the size rather than the other way round: a
+        # window asked to sit higher than the leaf's top rail allows drops
+        # until it fits, keeping the frame whole.
+        sill = min(max(lite_sill, 0.0), max(0.0, leaf_h - h2 - height))
+        centre = (x0 + x1) / 2.0
+        return (centre - width / 2.0, y0 + sill,
+                centre + width / 2.0, y0 + sill + height)
+
+    def _addLeaf(box, wire=None):
+        """Draw a leaf: its outline (unless the opening already is it) and its
+        lite.  Returns (outline wire, lite wire or None).
+
+        `tol` keeps the outline clear of the opening's wire — the sketcher
+        joins coincident wires, which would make one part of the two."""
+        x0, y0, x1, y1 = box
+        if wire is None:
+            wire = _rectWire(x0 + tol, y0, x1 - tol, y1 - tol)
+        if solid:
+            return wire, None
+        return wire, _rectWire(*_liteRect(x0, y0, x1, y1))
+
+    def _knob(box, anchored_left, name):
+        """Draw the circle that places a leaf's knob and return its part.
+
+        The knob sits near the leaf's free edge — the one a hand reaches for,
+        opposite the edge the leaf is anchored on — and the circle carries
+        both its position and its size: object.makeKnobShape revolves the knob
+        around it.  The circle is drawn last of all leaf geometry so the hinge
+        edges above keep their indices."""
+        x0, y0, x1, y1 = box
+        reach = max(KNOB_FROM_EDGE, KNOB_RADIUS * 1.5)
+        x = x1 - reach if anchored_left else x0 + reach
+        x = min(max(x, x0 + KNOB_RADIUS + 1.0), x1 - KNOB_RADIUS - 1.0)
+        y = min(max(knob_h, KNOB_RADIUS + 1.0), y1 - KNOB_RADIUS - 1.0)
+        wire = _takeWire()
+        i = s.addGeometry(
+            Part.Circle(FreeCAD.Vector(x, y, 0), FreeCAD.Vector(0, 0, 1), KNOB_RADIUS))
+        s.addConstraint(Sketcher.Constraint("Radius", i, KNOB_RADIUS))
+        s.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, i, 3, x))
+        s.addConstraint(Sketcher.Constraint("DistanceY", -1, 1, i, 3, y))
+        return [name, "Knob", wire, "%.4f" % pt, leaf_off]
+
+    # --- Leaves -----------------------------------------------------------
+    # One entry per leaf. A leaf's box is its share of the door's inner
+    # opening; the geometry is drawn first and the parts appended after, so
+    # every knob circle follows every leaf rectangle (see _knob).
+    leaves = []
+
+    if leaf_count == 1:
+        box = (jw, 0.0, w - jw, h - jw)
+        if solid:
+            leaf_wire, lite = "Wire1", None   # the opening itself is the leaf
+        else:
+            leaf_wire, lite = _addLeaf(box)
+        # A sliding leaf always travels away from its left edge, whichever
+        # side a swing door would have been hinged on.
+        anchored_left = sliding or ss == "Left"
+        leaves.append(dict(
+            box=box, wire=leaf_wire, lite=lite, anchored_left=anchored_left,
+            hinge=_W1_LEFT if anchored_left else _W1_RIGHT, mode=_swingMode(),
+            panel="Door", frame="InnerFrame", glass="InnerGlass", knob="Knob"))
+
+    elif leaf_count == 2:
+        # Double door: two leaves meeting in the middle, each hinged at its
+        # own jamb — so the left leaf's hinge edge is its left edge and the
+        # right leaf's its right edge.
         half = w / 2.0
-        _rect(*[FreeCAD.Vector(jw + tol, 0.0, 0),
-                FreeCAD.Vector(half - tol, 0.0, 0),
-                FreeCAD.Vector(half - tol, h - jw - tol, 0),
-                FreeCAD.Vector(jw + tol, h - jw - tol, 0)])   # Wire2
-        _rect(*[FreeCAD.Vector(half + tol, 0.0, 0),
-                FreeCAD.Vector(w - jw - tol, 0.0, 0),
-                FreeCAD.Vector(w - jw - tol, h - jw - tol, 0),
-                FreeCAD.Vector(half + tol, h - jw - tol, 0)])  # Wire3
+        for box, hinge, anchored_left, names in (
+                ((jw, 0.0, half, h - jw), _L1_LEFT, True,
+                 ("LeftDoor", "LeftFrame", "LeftGlass", "LeftKnob")),
+                ((half, 0.0, w - jw, h - jw), _L2_RIGHT, False,
+                 ("RightDoor", "RightFrame", "RightGlass", "RightKnob"))):
+            leaf_wire, lite = _addLeaf(box)
+            leaves.append(dict(
+                box=box, wire=leaf_wire, lite=lite, anchored_left=anchored_left,
+                hinge=hinge, mode=_swingMode(len(leaves)),
+                panel=names[0], frame=names[1], glass=names[2], knob=names[3]))
 
-        # Wire2 left edge  = edge 11 (1-based: Edge12)
-        # Wire3 right edge = edge 13 (1-based: Edge14)
-        wp.append(["LeftDoor", "Solid panel", "Wire2,Edge12,Mode%d" % _swingMode(0),
-                   "%.4f" % pt, leaf_off])
-        wp.append(["RightDoor", "Solid panel", "Wire3,Edge14,Mode%d" % _swingMode(1),
-                   "%.4f" % pt, leaf_off])
+    for leaf in leaves:
+        leaf["part"] = _knob(leaf["box"], leaf["anchored_left"], leaf["knob"])
 
-    elif leaf_count == 2 and style == "Glass (full)":
-        # Double glass door — glass in each leaf.
-        half = w / 2.0
-        _addFrame(*[FreeCAD.Vector(jw + tol, 0.0, 0),
-                    FreeCAD.Vector(half - tol, 0.0, 0),
-                    FreeCAD.Vector(half - tol, h - jw - tol, 0),
-                    FreeCAD.Vector(jw + tol, h - jw - tol, 0)],
-                  *[FreeCAD.Vector(jw + h2, 0.0, 0),
-                    FreeCAD.Vector(half - h2, 0.0, 0),
-                    FreeCAD.Vector(half - h2, h - jw - h2, 0),
-                    FreeCAD.Vector(jw + h2, h - jw - h2, 0)])  # Wire2, Wire3
-        _addFrame(*[FreeCAD.Vector(half + tol, 0.0, 0),
-                    FreeCAD.Vector(w - jw - tol, 0.0, 0),
-                    FreeCAD.Vector(w - jw - tol, h - jw - tol, 0),
-                    FreeCAD.Vector(half + tol, h - jw - tol, 0)],
-                  *[FreeCAD.Vector(half + h2, 0.0, 0),
-                    FreeCAD.Vector(w - jw - h2, 0.0, 0),
-                    FreeCAD.Vector(w - jw - h2, h - jw - h2, 0),
-                    FreeCAD.Vector(half + h2, h - jw - h2, 0)])  # Wire4, Wire5
-
-        wp.append(["LeftFrame", "Frame", "Wire2,Wire3,Edge12,Mode%d" % _swingMode(0),
-                   "%.4f" % pt, leaf_off])
-        # Each glass deliberately carries no Edge/Mode: it inherits the
-        # transform of the frame immediately before it (native FreeCAD
-        # convention), so it swings/slides exactly with its leaf.
-        wp.append(["LeftGlass", "Glass panel", "Wire3",
-                   "%.4f" % (pt / gla), glass_off])
-        wp.append(["RightFrame", "Frame", "Wire4,Wire5,Edge18,Mode%d" % _swingMode(1),
-                   "%.4f" % pt, leaf_off])
-        wp.append(["RightGlass", "Glass panel", "Wire5",
-                   "%.4f" % (pt / gla), glass_off])
-
-    elif op == "Opening only":
-        # Just a single rectangle — no door leaf, just the hole
-        # We already have Wire0 (outer) and Wire1 (inner), but for opening only
-        # we want just one wire for the opening. Overwrite with a simple rectangle.
-        # Actually, the existing sketch structure works — Wire0=outer, Wire1=inner.
-        # We just don't add any door/glass components.
-        pass
+    for leaf in leaves:
+        if leaf["lite"] is None:
+            wp.append([leaf["panel"], "Solid panel",
+                       "%s,Edge%d,Mode%d" % (leaf["wire"], leaf["hinge"], leaf["mode"]),
+                       "%.4f" % pt, leaf_off])
+        else:
+            # A glazed leaf is typed "Solid panel", not "Frame": it is the
+            # leaf, and its colour (see object.DOOR_PART_COLORS) has to read
+            # apart from the door frame around it.
+            wp.append([leaf["frame"], "Solid panel",
+                       "%s,%s,Edge%d,Mode%d" % (leaf["wire"], leaf["lite"],
+                                                leaf["hinge"], leaf["mode"]),
+                       "%.4f" % pt, leaf_off])
+            # The glass deliberately carries no Edge/Mode: it inherits
+            # the frame's transform (native FreeCAD convention, see
+            # object.py buildShapes), so it swings/slides exactly with the
+            # leaf. It must stay the entry right after its frame — and the
+            # knob, which inherits the same transform, after that.
+            wp.append([leaf["glass"], "Glass panel", leaf["lite"],
+                       "%.4f" % (pt / gla), glass_off])
+        wp.append(leaf["part"])
 
     # Flatten WindowParts list for the property (5-element groups)
     flat = []
@@ -601,6 +653,36 @@ class DoorsPlusTaskPanel:
         dimV.addLayout(dimForm)
         outer.addWidget(dimBox)
 
+        # ---- Window (a glazed lite in the leaf) ----------------------------
+        winBox = QtGui.QGroupBox("Window")
+        winForm = QtGui.QFormLayout(winBox)
+        self.windowWidth = self._len(WINDOW_WIDTH_DEFAULT)
+        self.windowWidth.setToolTip("Width of the window in the door leaf")
+        self.windowHeight = self._len(WINDOW_HEIGHT_DEFAULT)
+        self.windowHeight.setToolTip("Height of the window in the door leaf")
+        self.windowSill = self._len(WINDOW_SILL_DEFAULT)
+        self.windowSill.setToolTip(
+            "Height of the window's bottom above the door's base — the solid "
+            "panel below it. The window stays inside the leaf whatever these "
+            "say, leaving at least the leaf's frame width around it.")
+        winForm.addRow("Ww · Window width", self.windowWidth)
+        winForm.addRow("Wh · Window height", self.windowHeight)
+        winForm.addRow("Ws · Window sill", self.windowSill)
+        self._windowBox = winBox
+        outer.addWidget(winBox)
+
+        # ---- Hardware -----------------------------------------------------
+        hwBox = QtGui.QGroupBox("Hardware")
+        hwForm = QtGui.QFormLayout(hwBox)
+        self.knobHeight = self._len(KNOB_HEIGHT_DEFAULT)
+        self.knobHeight.setToolTip(
+            "Height of the door knob above the door's base (about 1050 mm is "
+            "standard). The knob sits on the leaf's free edge, opposite the "
+            "hinge.")
+        hwForm.addRow("Kh · Knob height", self.knobHeight)
+        self._hardwareBox = hwBox
+        outer.addWidget(hwBox)
+
         # ---- Position -----------------------------------------------------
         # A door is placed and moved with the mouse (see DoorsPlusCommand /
         # repositionDoor), sitting on the wall base by default. The sill field
@@ -672,7 +754,8 @@ class DoorsPlusTaskPanel:
 
         # Connect widgets to live-update scheduler
         for w in (self.width, self.height, self.frameWidth, self.panelThk,
-                  self.frameDepth):
+                  self.frameDepth, self.knobHeight, self.windowWidth,
+                  self.windowHeight, self.windowSill):
             w.valueChanged.connect(self._schedule)
         # Sill only moves the door vertically; handle it directly (no rebuild).
         self.sill.valueChanged.connect(self._onSillChanged)
@@ -685,8 +768,9 @@ class DoorsPlusTaskPanel:
         # Set checked AFTER connecting so the signal reaches the object.
         self.symbolPlan.setChecked(True)
         self.symbolElev.setChecked(False)
-        self.operation.currentIndexChanged.connect(self._syncOperationRows)
-        self._syncOperationRows()
+        self.operation.currentIndexChanged.connect(self._syncRows)
+        self.panelStyle.currentIndexChanged.connect(self._syncRows)
+        self._syncRows()
 
         if self.editing:
             self._loadFromObject()
@@ -737,13 +821,20 @@ class DoorsPlusTaskPanel:
             swingSide=self.swingSide.currentText(),
             swingDir=self.swingDir.currentText(),
             panelPos=self.panelPos.currentText(),
+            knobHeight=self._mm(self.knobHeight),
+            windowWidth=self._mm(self.windowWidth),
+            windowHeight=self._mm(self.windowHeight),
+            windowSill=self._mm(self.windowSill),
         )
 
-    def _syncOperationRows(self):
-        """Show swing controls only for hinged (non-sliding) operations."""
+    def _syncRows(self):
+        """Show only the rows the chosen operation and style use: swing
+        controls for hinged doors, the window's size for a glazed lite, and
+        the knob for any door with a leaf to mount it on."""
         op = self.operation.currentText()
-        hasSwing = op in ("Single swing", "Double swing")
-        self._swingBox.setVisible(hasSwing)
+        self._swingBox.setVisible(op in ("Single swing", "Double swing"))
+        self._windowBox.setVisible(self.panelStyle.currentText() == "Glass (window)")
+        self._hardwareBox.setVisible(_operationNeedsLeaves(op))
 
     def _onOpeningChanged(self, val):
         self._openLbl.setText("%d%%" % val)
@@ -932,6 +1023,10 @@ class DoorsPlusTaskPanel:
             self.swingSide.setCurrentText(spec.get("swingSide", "Left"))
             self.swingDir.setCurrentText(spec.get("swingDir", "Inward"))
             self.panelPos.setCurrentText(spec.get("panelPos", "Centered"))
+            self._setmm(self.knobHeight, spec.get("knobHeight", KNOB_HEIGHT_DEFAULT))
+            self._setmm(self.windowWidth, spec.get("windowWidth", WINDOW_WIDTH_DEFAULT))
+            self._setmm(self.windowHeight, spec.get("windowHeight", WINDOW_HEIGHT_DEFAULT))
+            self._setmm(self.windowSill, spec.get("windowSill", WINDOW_SILL_DEFAULT))
         else:
             # Legacy object with no stored spec: restore what the native
             # properties hold; frame width/depth fall back to the defaults.
@@ -940,6 +1035,10 @@ class DoorsPlusTaskPanel:
             self._setmm(self.frameWidth, 70)
             self._setmm(self.panelThk, o.Frame.Value)
             self._setmm(self.frameDepth, 100)
+            self._setmm(self.knobHeight, KNOB_HEIGHT_DEFAULT)
+            self._setmm(self.windowWidth, WINDOW_WIDTH_DEFAULT)
+            self._setmm(self.windowHeight, WINDOW_HEIGHT_DEFAULT)
+            self._setmm(self.windowSill, WINDOW_SILL_DEFAULT)
         self.opening.setValue(int(getattr(o, "Opening", 0)))
         self._loadSill()
         if hasattr(o, "SymbolPlan"):

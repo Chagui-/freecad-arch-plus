@@ -48,7 +48,17 @@ Double-click a stairs object to edit it.
   existing door.
 - **Operations** — Single swing, Double swing, Sliding (single), Sliding
   (double), and Opening only (a bare hole, no leaf).
-- **Panel styles** — Solid or Glass (full).
+- **Panel styles** — Solid, Glass (full), or Glass (window): a solid leaf with
+  a glazed window in it. The window's width, height and sill height are set in
+  the panel's **Window** group, which appears with that style; it is centred
+  across the leaf and clamped to leave the leaf's frame around it.
+- **Knobs** — every leaf gets one, on its free edge (opposite the hinge) at the
+  height set in the panel's **Hardware** group. The knob swings — or slides —
+  with its leaf, and grips it from both faces. A door with no leaf (Opening
+  only) has none.
+- **Frame, leaf and knob colours** — the three are shaded apart by default: a
+  light grey frame, a mid-grey leaf, and a near-black knob. Setting a Material
+  on the door still wins (Arch's material colouring).
 - **Swing controls** — hinge side and opening direction for hinged doors.
 - **Opening animation** — a 0–100 % slider: swing leaves rotate about the
   hinge, sliding leaves slide aside.
