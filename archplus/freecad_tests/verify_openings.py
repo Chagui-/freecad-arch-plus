@@ -56,6 +56,26 @@ def _close(obj, z_plane, xmin, xmax, label):
             % (xmin, xmax, z_plane, span))
 
 
+def _body_bbox(obj):
+    """The bounding box of an opening's body, leaving out its hardware.
+
+    A door knob protrudes from both faces of its leaf, so the whole-shape box
+    overhangs the wall it is hosted in by design. The placement contract these
+    checks are about is where the body of the opening sits, so the knob's
+    solids are left out of the measurement."""
+    parts = list(getattr(obj, "WindowParts", None) or [])
+    solids = obj.Shape.Solids
+    if parts and len(parts) % 5 == 0 and len(parts) == 5 * len(solids):
+        box = FreeCAD.BoundBox()
+        for i, solid in enumerate(solids):
+            if parts[i * 5 + 1] == "Knob":
+                continue
+            box.add(solid.BoundBox)
+        if box.isValid():
+            return box
+    return obj.Shape.BoundBox
+
+
 def _drive_pick(pos):
     """Drive one mouse move + left click through the Snapper's own handlers.
 
@@ -155,7 +175,7 @@ def _reposition_target(doc, obj, label, sill):
     # starts half a panel in from the face, a window's flush with it), so the
     # contract is that the body sits inside the wall's thickness and reaches
     # its picked side.
-    bb = obj.Shape.BoundBox
+    bb = _body_bbox(obj)
     in_wall = bb.YMin >= -150.0 - 1.0 and bb.YMax <= 150.0 + 1.0
     on_picked_side = min(abs(bb.YMin + 150.0), abs(bb.YMax + 150.0)) < 30.0
     along = abs(pl.Base.x - (3500.0 - half)) < 200.0   # centred on the aim
