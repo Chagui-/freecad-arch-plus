@@ -1,13 +1,16 @@
 {
   "schema": 1,
   "name": "Corner base cabinet",
-  "description": "L-shaped corner base unit with a worktop following the same plan.",
+  "description": "L-shaped corner base unit with a worktop following the same plan; without the worktop a sink's rim fills the top 40 mm.",
   "keywords": [
     "kitchen",
     "corner",
     "cabinet",
     "base",
     "L-shaped",
+    "worktop",
+    "countertop",
+    "sink",
     "parametric"
   ],
   "facets": {
@@ -26,7 +29,16 @@
       "default": 900},
     "Height": {
       "type": "Length",
-      "default": 900}
+      "default": 900},
+    "Worktop": {
+      "type": "Choice",
+      "default": "with",
+      "label": "Worktop",
+      "options": {
+        "with": { "label": "With worktop" },
+        "without": { "label": "Without worktop" }
+      }
+    }
   },
   "placement": {
     "host": "floor",

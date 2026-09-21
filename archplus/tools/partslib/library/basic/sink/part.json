@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "name": "Sink",
+  "description": "Drop-in sink with a mixer tap; the offset drops its rim into the worktop plane.",
+  "keywords": [
+    "kitchen",
+    "sink",
+    "bowl",
+    "basin",
+    "tap",
+    "mixer",
+    "sanitary",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Sanitary",
+    "element": "Sink",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "BowlCount": {
+      "type": "Choice",
+      "default": "1",
+      "label": "Bowls",
+      "resets": [
+        "Width",
+        "Depth"
+      ],
+      "options": {
+        "1": {
+          "label": "Single bowl"
+        },
+        "2": {
+          "label": "Double bowl"
+        }
+      }
+    },
+    "Width": {
+      "type": "Length",
+      "default": "auto"
+    },
+    "Depth": {
+      "type": "Length",
+      "default": "auto"
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 670
+  },
+  "geometry": {}
+}

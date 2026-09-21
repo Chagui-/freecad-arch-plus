@@ -404,6 +404,41 @@ def test_resolve_placement_never_mutates_the_manifest():
     assert data["placement"] == {"host": "floor", "offset": 0}
 
 
+def _part_with_offset_param():
+    """A manifest whose offset comes from a param instead of the literal."""
+    data = _part_with_choice()
+    data["params"]["MountingHeight"] = {"type": "Length", "default": 1500}
+    data["placement"] = {"host": "wall", "offset": 1500,
+                         "offsetParam": "MountingHeight"}
+    return data
+
+
+def test_resolve_placement_takes_its_offset_from_a_named_param():
+    data = _part_with_offset_param()
+    assert pm.resolve_placement(
+        data, {"MountingHeight": 1200})["offset"] == 1200.0
+
+
+def test_resolve_placement_reads_a_quantity_offset():
+    # A placed object's PropertyLength hands over a Quantity, not a float. An
+    # isinstance check here silently ignored every height a user typed into
+    # the property editor, so the offset is asked for a number instead.
+    class _Quantity(object):
+        def __float__(self):
+            return 1350.0
+
+    data = _part_with_offset_param()
+    assert pm.resolve_placement(
+        data, {"MountingHeight": _Quantity()})["offset"] == 1350.0
+
+
+@pytest.mark.parametrize("value", [None, "tall", True, {}])
+def test_resolve_placement_keeps_the_literal_offset_without_a_number(value):
+    data = _part_with_offset_param()
+    assert pm.resolve_placement(
+        data, {"MountingHeight": value})["offset"] == 1500.0
+
+
 # -- params block validation ------------------------------------------------
 
 @pytest.mark.parametrize("kind", pm.PARAM_TYPES)

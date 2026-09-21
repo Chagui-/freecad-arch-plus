@@ -17,13 +17,36 @@
 
 from archplus.tools.partslib import shapes as sh
 
+# The radius of every door pull in this family, and so the clearance a
+# carcass needs from the origin for the handles it hangs to stay inside the
+# depth its manifest advertises.
+PULL_RADIUS = 7.0
 
-def carcass(width, depth, height, kick_height, kick_depth, radius=8.0):
-    """A cabinet box standing on a recessed plinth."""
+# The thickness of a carcass's walls, floor and door fronts. Only the units
+# with no top panel need it modelled: it is what a worktop lands on, and what
+# a sink's rim rests on when it drops into an open-topped unit.
+PANEL = 18.0
+
+
+def carcass(width, depth, height, kick_height, kick_depth, radius=8.0,
+            open_top=False):
+    """A cabinet box standing on a recessed plinth.
+
+    `open_top` hollows the box and leaves it without a top panel, which is
+    what a base unit is: its top is the worktop, or the sink dropped into it.
+    The void is inset by a panel on all four sides and floored at the plinth,
+    so a worktop spanning the unit still lands on `PANEL` of material and a
+    sink's rim has an edge to sit on. A wall or tall unit keeps its top
+    panel, and with it the default solid carcass."""
     box = sh.rounded_box(width, depth, height, radius=radius)
-    return sh.toe_kick(box, width, depth,
-                       kick_height=kick_height, kick_depth=kick_depth,
-                       margin=min(20.0, width * 0.04))
+    box = sh.toe_kick(box, width, depth,
+                      kick_height=kick_height, kick_depth=kick_depth,
+                      margin=min(20.0, width * 0.04))
+    if not open_top:
+        return box
+    return sh.cut_box(box, PANEL, PANEL, kick_height + PANEL,
+                      width - 2.0 * PANEL, depth - 2.0 * PANEL,
+                      height - kick_height - PANEL + 1.0)
 
 
 def doors(shape, width, height, door_count, base_z, margin=None,
@@ -63,10 +86,10 @@ def pulls(width, height, door_count, base_z, y, vertical=True):
         x = (i * door_width + door_width - inset if i < door_count / 2.0
              else i * door_width + inset)
         if vertical:
-            pulls.append(sh.place(sh.bar(length, 7.0, along="z"), x, y,
+            pulls.append(sh.place(sh.bar(length, PULL_RADIUS, along="z"), x, y,
                                   base_z + (height - base_z - length) / 2.0))
         else:
-            pulls.append(sh.place(sh.bar(length, 7.0, along="x"),
+            pulls.append(sh.place(sh.bar(length, PULL_RADIUS, along="x"),
                                   i * door_width + (door_width - length) / 2.0,
                                   y, height - 60.0))
     return pulls

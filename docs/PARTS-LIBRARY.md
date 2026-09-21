@@ -6,7 +6,7 @@ inserting single lightweight objects built from bundled part definitions.
 
 ## Browser features
 
-ArchPlus ships a starter catalogue of 31 parametric parts across Kitchen,
+ArchPlus ships a starter catalogue of 36 parametric parts across Kitchen,
 Dining Room, Bedroom, Living Room, Bathroom and Office, alongside the faceted
 vocabulary (`archplus/tools/partslib/library/facets.json`) and the
 browser/placement machinery. The shipped parts are floor- or wall-hosted (the
@@ -70,7 +70,7 @@ part → **Reload from library** to refresh it from its manifest.
 ## Adding parts to the library
 
 A part is a folder under `archplus/tools/partslib/library/<family>/<part>/`
-containing a `part.json` manifest — e.g. all 31 shipped parts currently live
+containing a `part.json` manifest — e.g. all 36 shipped parts currently live
 under one family, `basic/`. Unlike the old category folders this replaced,
 the family level is not cosmetic: a family can hold a `_shared.py` with
 massing reused by several of its parts (see 2b), and a part's id is derived
@@ -103,7 +103,7 @@ covers — e.g. `library/ikea/malm/collection.json` governs every part under
 | `description` | Optional. Shown as the family line's tooltip. |
 
 An absent `label` — `library/basic/`'s actual state — means no family line
-at all, not a placeholder: badging all 31 generic parts with an identical
+at all, not a placeholder: badging all 36 generic parts with an identical
 "Basic" would repeat the low-information line the card used to show instead
 (a monospaced row of parameter labels). When more than one `collection.json`
 could apply to a part, **the nearest ancestor wins** — a
@@ -164,6 +164,18 @@ a manufacturer's download, or something too organic to describe in code.
 - `placement.host` is one of `floor`, `wall`, `ceiling`, `free`, and
   `offset` is millimetres from that surface — e.g. a wall cabinet uses
   `{"host": "wall", "offset": 1500}` to hang at 1500 mm.
+- A part lands with its **contact face** on the face you click: its bottom on
+  a floor, its **back** on a wall (only yawing, so it stays upright and hangs
+  in the room in front of the wall), its top under a ceiling. The offset then
+  runs from the host object's base, so clicking a wall anywhere gives the
+  same height.
+
+Placement keys beyond `host` and `offset`:
+
+| key | meaning |
+|---|---|
+| `placement.offsetParam` | Optional. Name a `Length` param and the offset comes from it instead of the literal `offset`, which stays the fallback. This is how a *continuous* height is expressed — a wall cabinet's `MountingHeight` — where a `Choice` option's `placement` could only offer a few fixed values. Editing the param on a placed part moves it. |
+| `placement.offsetTo` | Optional, `bottom` (the default) or `top`: which end of the part the offset measures to. A cabinet's offset is to its underside; a curtain's is to its rail, and the fabric hangs below it. |
 
 | key | meaning |
 |---|---|
@@ -248,7 +260,7 @@ to know anything about a file's internal quirks.
 
 Two honest caveats. Reading a shape this way discards per-solid colours and
 product names from a STEP assembly — set one material on the part instead.
-And **nothing in the shipped library uses this path yet**: all 31 parts are
+And **nothing in the shipped library uses this path yet**: all 36 parts are
 builders, so this route is exercised by the test suite but not by real
 content. Expect to be the first to shake it out.
 
@@ -332,6 +344,12 @@ render:
 - **Solid, not scattered.** Where the real object is one soft mass (a sofa),
   model one mass and *cut* the cushion seams into it. Separate floating
   cushions read worse.
+- **A base unit is a box, not a block.** Its top is the worktop, or the sink
+  dropped into it, so `_shared.carcass(..., open_top=True)` hollows the
+  carcass and leaves it open at 18 mm in from every edge. A sink's body is
+  cut back to its bowls for the same reason: the bowl has to hang in the
+  cabinet's interior rather than in its material. Wall and tall units have a
+  top panel of their own and keep the default solid carcass.
 - **Don't round a solid's plan corners and its top edge.** The two fillets
   collide at the corners and leave a picture-frame rim. Use `roll_top` for a
   roll that runs through.

@@ -20,11 +20,16 @@
   "params": {
     "Width": { "type": "Length", "default": 600},
     "Height": { "type": "Length", "default": 720},
-    "Depth": { "type": "Length", "default": 350}
+    "Depth": { "type": "Length", "default": 350},
+    "MountingHeight": {
+      "type": "Length",
+      "default": 1500,
+      "label": "Height above floor"}
   },
   "placement": {
     "host": "wall",
-    "offset": 1500
+    "offset": 1500,
+    "offsetParam": "MountingHeight"
   },
   "geometry": {}
 }

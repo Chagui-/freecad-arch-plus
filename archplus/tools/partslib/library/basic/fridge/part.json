@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "name": "Fridge",
+  "description": "Freestanding fridge-freezer: a fridge over a freezer, with single or double doors.",
+  "keywords": [
+    "kitchen",
+    "fridge",
+    "refrigerator",
+    "fridge-freezer",
+    "freezer",
+    "cold",
+    "appliance",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Appliance",
+    "element": "Refrigerator",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Configuration": {
+      "type": "Choice",
+      "default": "single",
+      "label": "Doors",
+      "resets": [
+        "Width",
+        "Depth"
+      ],
+      "options": {
+        "single": {
+          "label": "Single doors"
+        },
+        "double": {
+          "label": "Double doors"
+        }
+      }
+    },
+    "Width": {
+      "type": "Length",
+      "default": "auto"
+    },
+    "Depth": {
+      "type": "Length",
+      "default": "auto"
+    },
+    "Height": {
+      "type": "Length",
+      "default": 1850
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {}
+}

@@ -25,11 +25,17 @@
       "default": 1600},
     "Height": {
       "type": "Length",
-      "default": 2200}
+      "default": 2200},
+    "MountingHeight": {
+      "type": "Length",
+      "default": 2300,
+      "label": "Rail height"}
   },
   "placement": {
     "host": "wall",
-    "offset": 2300
+    "offset": 2300,
+    "offsetParam": "MountingHeight",
+    "offsetTo": "top"
   },
   "geometry": {}
 }

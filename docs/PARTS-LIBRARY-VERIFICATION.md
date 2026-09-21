@@ -9,8 +9,8 @@ loads and exposes a callable `build()`, every declared parameter and
 placement host is valid, every facet icon exists on disk) — everything below
 is what that suite cannot see.
 
-The library ships 31 parametric parts across six rooms (Kitchen, Dining
-Room, Bedroom, Living Room, Bathroom, Office). All 31 ship a committed
+The library ships 36 parametric parts across six rooms (Kitchen, Dining
+Room, Bedroom, Living Room, Bathroom, Office). All 36 ship a committed
 `thumbnail.jpg` and a `builder.py`; none uses the model-file (assets) path.
 
 Everything scriptable runs inside FreeCAD via
@@ -24,7 +24,7 @@ points (L7-L9).
 
 | Room | Parts |
 |---|---|
-| Kitchen | Base cabinet (300/600/800), Base cabinet with oven, Corner base cabinet, Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner) |
+| Kitchen | Base cabinet (300/600/800, with/without worktop), Base cabinet with oven, Corner base cabinet (with/without worktop), Wall cabinet (600/800), Corner wall cabinet, Gas hob (1/2/4/5 burner), Sink (1/2 bowl), Fridge (single/double doors), Tall pantry cabinet, Tall unit with oven and microwave, Pedal bin |
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
@@ -120,6 +120,63 @@ placed part stay in millimetres.
       clicking. Confirm: (1) the ghost tracker box disappears — no leftover
       geometry in the 3D view; (2) no further object is placed; (3) the MDI
       area switches back to the ArchPlus Library tab automatically.
+- [ ] **D12 (a wall-hosted part hangs on the wall).** Select **Wall
+      cabinet**, click **Place**, then click a wall face in the 3D view. It
+      arrives **upright** — its back against the wall, its body standing out
+      into the room, its underside at 1500 mm above the wall's base — and
+      the ghost box follows the cursor in the same orientation. Then change
+      **Height above floor** to `1200` in the property editor: the cabinet
+      moves down to 1200 without being re-placed. Click it, drag it
+      sideways, and change the height again: it keeps the new position and
+      moves only by the difference.
+
+## Part K — the kitchen additions (K1-K5)
+
+Five parts added to the Kitchen room after the first pass: `basic/sink`,
+`basic/fridge`, `basic/tall-pantry`, `basic/tall-oven-unit` and
+`basic/waste-bin`. Their heights and offsets are the part of a new part that
+only a real placement click can show.
+
+- [ ] **K1 (the sink drops into the hole).** Place a **Base cabinet** and
+      set its **Worktop** to *Without worktop*: the unit's top drops 40 mm
+      below its Height (the top surface reads 86.0 cm while **Height** still
+      says 90.0 — that 40 mm is where the work surface goes), and it is an
+      open-topped box rather than a block — look into it and you see its
+      walls and floor, 18 mm in from the edges. Select **Sink**, set its
+      **Depth** to `600` so its rim reaches the unit's edges (its 500 mm
+      default leaves the back 100 mm of that opening showing, which is the
+      hole at its clearest), then click **Place** and click the floor in
+      front of that unit. The rim's underside lands on the box's edges and
+      its top face becomes the work surface at 900 mm — the unit's Height —
+      with the bowl hanging in the interior and the tap behind it. Switch
+      **Bowls** to *Double bowl*: the sink widens to 1000 mm and the tap
+      stays centred behind the two bowls.
+- [ ] **K2 (the fridge's doors are its size).** Place a **Fridge**: it
+      measures 600 × 650 × 1850, Width and Depth shown derived (italic).
+      Switch **Doors** to *Double doors*: it rebuilds 750 wide with the
+      fridge compartment's single door replaced by a pair meeting at the
+      middle, their handles facing each other across that seam, and the
+      freezer door below unchanged. Type 700 into **Width**, then switch
+      **Doors** back to *Single doors*: the typed width is discarded and
+      Width returns to derived at 600 — the arrangement is the driver, so
+      its pins go with it.
+- [ ] **K3 (the tall units are tall).** Place **Tall pantry cabinet** and
+      **Tall unit with oven and microwave**. Both stand on the floor (they
+      are floor-hosted, not lifted like the wall cabinet) and measure
+      2100 mm high: the pantry shows four door leaves in two tiers, the oven
+      unit a cupboard below two appliance fronts and another above them.
+- [ ] **K4 (the appliance recesses read).** On the tall oven unit, confirm
+      the oven and microwave fronts are recessed into the door line rather
+      than outlined on it — each should carry a shadow on all four sides,
+      the way the base cabinet with oven's front does.
+- [ ] **K5 (the bin is round).** Place **Pedal bin**: it stands on the floor
+      and measures 300 × 300 × 500. A round plan is one dimension, so
+      **Depth** reads derived (italic) and follows **Width** — change
+      **Width** to `400` and the bin rebuilds round at 400 across, keeping
+      the taper and the lid's overhang. At the defaults the body is 270
+      across at the shoulder narrowing to 237 at the floor, the domed cap
+      overhangs it by 15 mm on every side, and the foot pedal shows at the
+      front of the floor without reaching past the advertised depth.
 
 ## Part L — Editing placed parts
 

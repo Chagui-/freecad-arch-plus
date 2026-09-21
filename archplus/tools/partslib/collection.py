@@ -37,7 +37,7 @@ def validate_collection(data):
 
     `label` is OPTIONAL and its absence is not a warning: an unlabelled
     collection means "these parts belong to no brand", which is exactly
-    library/basic/'s state. Badging all 31 generic parts with an identical
+    library/basic/'s state. Badging all 36 generic parts with an identical
     "Basic" would repeat the low-information card line this whole change
     removes."""
     errors = []

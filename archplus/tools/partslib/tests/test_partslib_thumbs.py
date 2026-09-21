@@ -147,7 +147,7 @@ def test_ensure_thumbnail_marks_failure_after_a_failed_render(
 
 
 def test_an_untouched_part_with_a_thumbnail_touches_no_geometry():
-    # 27 of the 31 bundled parts. The committed thumbnail IS the render of
+    # 31 of the 36 bundled parts. The committed thumbnail IS the render of
     # the manifest defaults - ensure_thumbnail() builds the part at exactly
     # those values - so recreating it is 0.5s spent reproducing a file that
     # loads in 1ms.

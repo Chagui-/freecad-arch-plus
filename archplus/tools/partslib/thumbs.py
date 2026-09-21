@@ -238,7 +238,7 @@ def preview_plan(pristine, has_derived_fields, thumbnail_usable):
 
     Selecting a part used to run the whole pipeline every time - build the
     shape, measure it with optimalBoundingBox, tessellate, render offscreen,
-    save a JPEG, load it back. Measured over the bundled 31 parts in FreeCAD
+    save a JPEG, load it back. Measured over the bundled 36 parts in FreeCAD
     1.1.1 with a cold shape cache, that is 0.496s on average and 1.76s at
     worst, of which the render is only 18%: build is 53% and measure 28%.
     (The 17-second writeInventor stall this module's other comments describe
@@ -252,8 +252,8 @@ def preview_plan(pristine, has_derived_fields, thumbnail_usable):
       resolved manifest defaults, which is what a pristine form holds.
     - `has_derived_fields` - some field's value is derived from the shape
       ("default": "auto"), so the shape must be built and measured to fill
-      it in, even when nothing will be rendered. Only 4 of the 31 bundled
-      parts declare one; for the other 27 this is the difference between
+      it in, even when nothing will be rendered. Only 5 of the 36 bundled
+      parts declare one; for the other 31 this is the difference between
       0.5s and 1ms.
 
     `thumbnail_usable` is the caller's business: it means both that the file

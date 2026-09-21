@@ -27,3 +27,16 @@ def test_offset_direction_per_host(host, sign):
 def test_every_host_has_a_sign():
     for host in pp.HOSTS:
         assert pp.offset_sign(host) in (-1.0, 0.0, 1.0)
+
+
+def test_offset_to_defaults_to_the_part_bottom():
+    assert pp.offset_to_of({}) == "bottom"
+    assert pp.offset_to_of({"placement": {"host": "wall"}}) == "bottom"
+
+
+def test_offset_to_reads_top_for_a_part_that_hangs_from_it():
+    assert pp.offset_to_of({"placement": {"offsetTo": "top"}}) == "top"
+
+
+def test_an_unknown_offset_to_falls_back_to_the_bottom():
+    assert pp.offset_to_of({"placement": {"offsetTo": "sideways"}}) == "bottom"

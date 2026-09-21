@@ -389,7 +389,13 @@ def resolve_placement(manifest, params):
     This is what a variant's placement override used to do, narrowed to one
     axis: a television on a stand is floor-hosted, the same television on a
     bracket is wall-hosted at a mounting height, and that is a choice the
-    user makes rather than a second catalogue entry."""
+    user makes rather than a second catalogue entry.
+
+    A `placement` may also name a param to take its offset from
+    ("offsetParam"), which is how a CONTINUOUS height is expressed: a wall
+    cabinet's mounting height is a dimension the user edits, not a value the
+    catalogue should fix. The literal `offset` stays the fallback, so a
+    manifest naming a param it forgot to declare still places."""
     resolved = dict(manifest.get("placement") or {})
     params = params or {}
     for name, spec in param_specs(manifest).items():
@@ -402,6 +408,21 @@ def resolve_placement(manifest, params):
         override = selected.get("placement")
         if isinstance(override, dict):
             resolved.update(override)
+
+    named = resolved.get("offsetParam")
+    if isinstance(named, str):
+        value = params.get(named)
+        # A placed object's PropertyLength arrives as a Quantity, not a
+        # float, so this asks the value for a number rather than testing its
+        # type - an isinstance check silently ignored every height a user
+        # typed into the property editor. A bool is an int in Python and is
+        # never a distance, so it is refused; anything unnumbered leaves the
+        # literal offset in place.
+        if value is not None and not isinstance(value, bool):
+            try:
+                resolved["offset"] = float(value)
+            except (TypeError, ValueError):
+                pass
     return resolved
 
 

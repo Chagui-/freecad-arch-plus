@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # Startup, toolbar and browser checks: Parts A (A1/A2) and B
-# (B1/B2/B4/B5/B6/B7/B9) of docs/PARTS-LIBRARY-VERIFICATION.md.
+# (B1/B2/B4/B5/B6/B7/B9/B13-B17) of docs/PARTS-LIBRARY-VERIFICATION.md.
 
 from archplus.freecad_tests import _harness as h
 
 import FreeCADGui
-from PySide import QtGui
+from PySide import QtCore, QtGui
 
 from archplus.tools.partslib import gui as partslib_gui
 
@@ -74,6 +74,93 @@ def _search(panel, text):
     h.process_events(400)  # the search debounce is 250 ms
 
 
+def _flash_events(action):
+    """Run `action` and return the window Show events that went to widgets
+    which are not real windows.
+
+    An unparented QWidget IS a top-level window, and unparenting a visible
+    one keeps it on screen until the deferred delete runs - so a grid or
+    form rebuilt without parents flashes a real window per widget. The grid
+    and the parameter form are both rebuilt on a chip click, which is where
+    this showed up as a burst of windows."""
+    events = []
+    app = QtGui.QApplication.instance()
+
+    class _Watch(QtCore.QObject):
+        def eventFilter(self, obj, event):
+            try:
+                if event.type() == QtCore.QEvent.Show and obj.isWindow() \
+                        and not obj.windowTitle():
+                    events.append(obj.metaObject().className())
+            except Exception:
+                pass
+            return False
+
+    watcher = _Watch()
+    app.installEventFilter(watcher)
+    try:
+        action()
+        h.process_events(400)
+    finally:
+        app.removeEventFilter(watcher)
+    return events
+
+
+def _progress_pass(panel, chip, render_seconds):
+    """Click `chip` with every thumbnail forced missing and the render
+    stubbed to take `render_seconds`, and report what the pass did to the
+    screen as (dialogs constructed, show events delivered).
+
+    Forcing the state is the only way to time this from a check: a real pass
+    is half a second of OCC work per part, and whether a window appeared
+    must not depend on how fast the machine is. Everything patched is
+    restored before returning, so a failing check still leaves the library
+    rendering its real thumbnails."""
+    import os
+    import tempfile
+    import time
+
+    from archplus.tools.partslib import thumbs as partslib_thumbs
+
+    dialogs = []
+    shown = []
+    original_dialog = QtGui.QProgressDialog
+    original_path = partslib_thumbs.thumbnail_path
+    original_ensure = partslib_gui.PartsLibraryPanel._ensureGridThumbnail
+    missing_dir = tempfile.mkdtemp(prefix="archplus-progress-")
+
+    class _Loud(original_dialog):
+        def __init__(self, *args, **kwargs):
+            dialogs.append(args[0] if args else "")
+            original_dialog.__init__(self, *args, **kwargs)
+
+        def showEvent(self, event):
+            shown.append(True)
+            return original_dialog.showEvent(self, event)
+
+    def _stub_render(self, entry):
+        if render_seconds:
+            time.sleep(render_seconds)
+        return None
+
+    try:
+        QtGui.QProgressDialog = _Loud
+        partslib_thumbs.thumbnail_path = lambda part_dir: os.path.join(
+            missing_dir, os.path.basename(part_dir) + ".jpg")
+        partslib_gui.PartsLibraryPanel._ensureGridThumbnail = _stub_render
+        # A search left active by an earlier check would filter the room's
+        # set down to nothing, and a pass with nothing pending shows no
+        # window whatever the code does - the check would pass vacuously.
+        _search(panel, "")
+        _click_chip(panel, chip)
+        h.process_events(100)
+    finally:
+        QtGui.QProgressDialog = original_dialog
+        partslib_thumbs.thumbnail_path = original_path
+        partslib_gui.PartsLibraryPanel._ensureGridThumbnail = original_ensure
+    return len(dialogs), len(shown)
+
+
 def run():
     h.fresh_doc()
     FreeCADGui.activateWorkbench("BIMWorkbench")
@@ -96,8 +183,8 @@ def run():
                type(panel.parentWidget()).__name__))
 
     # B2 - the chip row.
-    expected = ["All · 31", "Bathroom · 8", "Bedroom · 10",
-                "Dining Room · 2", "Kitchen · 6", "Living Room · 8",
+    expected = ["All · 36", "Bathroom · 8", "Bedroom · 10",
+                "Dining Room · 2", "Kitchen · 11", "Living Room · 8",
                 "Office · 2"]
     h.check("B2 chip row labels and counts",
             sorted(_chip_texts(panel)) == sorted(expected),
@@ -110,10 +197,10 @@ def run():
             clicked and len(_grid_names(panel)) == 8,
             detail="clicked=%r count=%d" % (clicked,
                                             len(_grid_names(panel))))
-    clicked = _click_chip(panel, "All · 31")
+    clicked = _click_chip(panel, "All · 36")
     h.process_events(100)
-    h.check("B4 All chip restores 31 parts",
-            clicked and len(_grid_names(panel)) == 31,
+    h.check("B4 All chip restores 36 parts",
+            clicked and len(_grid_names(panel)) == 36,
             detail="clicked=%r count=%d" % (clicked,
                                             len(_grid_names(panel))))
 
@@ -140,7 +227,7 @@ def run():
 
     # B6 - debounced search (back on All, so the room filter cannot hide
     # a match from another room).
-    _click_chip(panel, "All · 31")
+    _click_chip(panel, "All · 36")
     h.process_events(100)
     _search(panel, "toilet")
     names = _grid_names(panel)
@@ -175,5 +262,41 @@ def run():
             panel.detailFamily.text() == "",
             detail="family=%r" % (panel.detailFamily.text(),))
 
+    # B13/B14 - the thumbnail pass opens ONE window, and only when the pass
+    # is actually slow. Both halves are checks: a pass that finishes in
+    # milliseconds must not put a window on screen at all, and a slow one
+    # must not open a fresh window per part. (B11/B12 are verify_panel's.)
+    fast_dialogs, fast_shown = _progress_pass(panel, "Bathroom · 8", 0.0)
+    h.check("B13 a fast thumbnail pass shows no progress window",
+            fast_dialogs == 0 and fast_shown == 0,
+            detail="dialogs=%d shown=%d" % (fast_dialogs, fast_shown))
+    # A different room from B13's: clicking the chip that is already
+    # selected is a deliberate no-op, so reusing it would test nothing.
+    slow_dialogs, slow_shown = _progress_pass(panel, "Bedroom · 10", 0.2)
+    h.check("B14 a slow thumbnail pass shows exactly one progress window",
+            slow_dialogs == 1 and slow_shown >= 1,
+            detail="dialogs=%d shown=%d" % (slow_dialogs, slow_shown))
+
+    # B15-B17 - a rebuild must not flash windows. Every card and every
+    # parameter field is rebuilt on a chip click, and a widget that is a
+    # top-level window - built without a parent, or unparented while visible
+    # - is a real window on screen for the instant before a layout or
+    # deleteLater() claims it. B15 arms the check: if an unparented widget
+    # ever stops counting as a window, B16/B17 would pass by measuring
+    # nothing.
+    stray = QtGui.QLabel()
+    h.check("B15 an unparented widget is a window (arms B16/B17)",
+            stray.isWindow(), detail="isWindow=%s" % stray.isWindow())
+    stray.deleteLater()
+    flashes = _flash_events(lambda: _click_chip(panel, "Living Room · 8"))
+    h.check("B16 a chip click flashes no windows",
+            flashes == [],
+            detail="%d momentary window(s): %r" % (len(flashes), flashes[:8]))
+    flashes = _flash_events(lambda: _search(panel, "zzzz"))
+    h.check("B17 an empty search flashes no windows",
+            flashes == [],
+            detail="%d momentary window(s): %r" % (len(flashes), flashes[:8]))
     _search(panel, "")
+    _click_chip(panel, "All · 36")
+    h.process_events(100)
     return h.failures()

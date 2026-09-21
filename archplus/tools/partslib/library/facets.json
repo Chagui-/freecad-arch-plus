@@ -46,6 +46,11 @@
         "label": "Basins",
         "icon": "basin.svg"
       },
+      "Sink": {
+        "ifcType": "Sanitary Terminal",
+        "label": "Sinks",
+        "icon": "sink.svg"
+      },
       "Cabinet": {
         "ifcType": "Furniture",
         "label": "Cabinets",
@@ -131,6 +136,11 @@
         "label": "Ovens",
         "icon": "oven.svg"
       },
+      "Refrigerator": {
+        "ifcType": "Electric Appliance",
+        "label": "Refrigerators",
+        "icon": "refrigerator.svg"
+      },
       "Mirror": {
         "ifcType": "Discrete Accessory",
         "label": "Mirrors",
@@ -160,6 +170,11 @@
         "ifcType": "Discrete Accessory",
         "label": "Holders",
         "icon": "holder.svg"
+      },
+      "Bin": {
+        "ifcType": "Discrete Accessory",
+        "label": "Bins",
+        "icon": "bin.svg"
       }
     }
   },

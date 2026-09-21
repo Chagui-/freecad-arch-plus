@@ -25,6 +25,7 @@
 import os
 import shutil
 import tempfile
+import time
 
 
 import FreeCAD
@@ -269,7 +270,13 @@ def _clearLayout(layout):
         item = layout.takeAt(0)
         widget = item.widget()
         if widget is not None:
-            widget.setParent(None)
+            # Hide before letting go. setParent(None) on a VISIBLE widget
+            # makes it a top-level window, and Qt keeps it shown until the
+            # deferred delete runs - a real window on screen for every
+            # widget cleared, which is what a chip click flashed. Hiding
+            # first leaves nothing to show, and deleteLater() removes the
+            # widget without ever unparenting it.
+            widget.hide()
             widget.deleteLater()
         sublayout = item.layout()
         if sublayout is not None:
@@ -471,7 +478,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             else:
                 _PREVIEW_LIVE = True
                 return widget
-        label = QtGui.QLabel()
+        label = QtGui.QLabel(self)
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
@@ -545,8 +552,8 @@ class PartsLibraryPanel(QtGui.QWidget):
             item = self.chipLayout.takeAt(0)
             widget = item.widget() if item is not None else None
             if widget is not None:
-                widget.setParent(None)
-                widget.deleteLater()
+                widget.hide()          # see _clearLayout: unparenting a
+                widget.deleteLater()   # visible widget shows a window
 
         groups = partslib_index.facet_groups(
             self._entries, self._facets, "room")
@@ -564,8 +571,12 @@ class PartsLibraryPanel(QtGui.QWidget):
                           group["icon"], group["value"])
 
     def _addChip(self, label, count, iconName, room):
-        """One filter chip. `room` is None for the All chip."""
-        chip = QtGui.QToolButton()
+        """One filter chip. `room` is None for the All chip.
+
+        Born with its parent: an unparented QToolButton is a top-level
+        window, and one handed to a layout only afterwards is shown as a
+        window first - a flash per chip, on every repopulate."""
+        chip = QtGui.QToolButton(self.chipRow)
         chip.setObjectName("RoomChip")
         chip.setCheckable(True)
         chip.setAutoRaise(True)
@@ -681,7 +692,8 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         empty = not self._entries
         message = QtGui.QLabel("No parts in the library yet" if empty
-                               else "No parts match this search")
+                               else "No parts match this search",
+                               self.resultsEmptyState)
         message.setAlignment(QtCore.Qt.AlignCenter)
         message.setWordWrap(True)
         message.setStyleSheet("color: %s;" % self._tokens["text"])
@@ -689,7 +701,8 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         if empty:
             path = QtGui.QLabel(
-                os.path.abspath(partslib_object.LIBRARY_DIR))
+                os.path.abspath(partslib_object.LIBRARY_DIR),
+                self.resultsEmptyState)
             path.setAlignment(QtCore.Qt.AlignCenter)
             path.setWordWrap(True)
             pathFont = path.font()
@@ -707,7 +720,10 @@ class PartsLibraryPanel(QtGui.QWidget):
         the column headings of a form the user had not opened. A card's job
         is recognition, which the thumbnail does; the detail pane states
         dimensions properly, as editable fields."""
-        card = QtGui.QFrame()
+        # Every widget on a card is born with its parent - see _addChip:
+        # an unparented widget is a window until a layout adopts it, and the
+        # grid is rebuilt on every chip click, so these flashed in the tens.
+        card = QtGui.QFrame(self)
         card.setObjectName("PartCard")
         card.setProperty("selected", False)
         card.setToolTip(entry.get("description") or entry["name"])
@@ -715,7 +731,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         v.setContentsMargins(8, 8, 8, 8)
         v.setSpacing(4)
 
-        thumb = QtGui.QLabel()
+        thumb = QtGui.QLabel(card)
         thumb.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
         thumb.setAlignment(QtCore.Qt.AlignCenter)
         thumbPath = partslib_thumbs.thumbnail_path(entry["dir"])
@@ -737,7 +753,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                     QtCore.Qt.SmoothTransformation))
         v.addWidget(thumb, 0, QtCore.Qt.AlignHCenter)
 
-        name = QtGui.QLabel(entry["name"])
+        name = QtGui.QLabel(entry["name"], card)
         name.setAlignment(QtCore.Qt.AlignHCenter)
         name.setWordWrap(True)
         v.addWidget(name)
@@ -745,11 +761,11 @@ class PartsLibraryPanel(QtGui.QWidget):
         # Only where the collection declares a label. An unlabelled
         # collection - which is what library/basic/ is - leaves the card at
         # thumbnail-plus-name and correspondingly shorter, because an
-        # identical "Basic" under all 31 generic parts would be exactly the
+        # identical "Basic" under all 36 generic parts would be exactly the
         # noise the parameter line was removed for.
         family = entry.get("family")
         if family:
-            familyLabel = QtGui.QLabel(family)
+            familyLabel = QtGui.QLabel(family, card)
             familyLabel.setAlignment(QtCore.Qt.AlignHCenter)
             familyLabel.setWordWrap(True)
             familyFont = familyLabel.font()
@@ -765,6 +781,10 @@ class PartsLibraryPanel(QtGui.QWidget):
     # Below this many missing thumbnails, a dialog is more disruptive than
     # the wait it reports on.
     PROGRESS_THRESHOLD = 3
+    # ...and below this much time, likewise: a pass that finishes inside a
+    # second is not worth a window, and one that takes longer is a freeze
+    # worth explaining. Qt's own 4s default is long past that point.
+    PROGRESS_DELAY_MS = 1000
 
     def _prerenderThumbnails(self, entries):
         """Render every missing thumbnail up front, showing progress.
@@ -780,6 +800,16 @@ class PartsLibraryPanel(QtGui.QWidget):
         the count meaningful: the total is known before the first render
         rather than discovered as the grid fills.
 
+        ONE dialog serves the whole pass - never one per part - and it is
+        not built at all until the pass has run longer than
+        PROGRESS_DELAY_MS. The first version built it up front and relied on
+        Qt's minimumDuration to keep it hidden, which does not hold: a
+        QProgressDialog with minimumDuration set still showed itself part
+        way through a pass that finished in 0.6s, so every chip click that
+        rebuilt a few thumbnails threw a modal window up and took it down
+        again before it had painted. Deciding it here means a fast pass has
+        no window to show, no repaint per part and no event pumping at all.
+
         Cancelling sets `_renderThumbnails` False, which stops the cards
         rendering the rest inline behind the dialog's back - otherwise
         "Cancel" would only dismiss the dialog and leave the freeze."""
@@ -792,18 +822,23 @@ class PartsLibraryPanel(QtGui.QWidget):
         if len(pending) < self.PROGRESS_THRESHOLD:
             return
 
-        dialog = QtGui.QProgressDialog(
-            "Building thumbnails…", "Cancel", 0, len(pending),
-            FreeCADGui.getMainWindow())
-        dialog.setWindowTitle("ArchPlus Parts Library")
-        dialog.setWindowModality(QtCore.Qt.ApplicationModal)
-        # Show immediately: the whole point is that the UI is about to be
-        # busy for a while, so Qt's default "wait and see" defeats it.
-        dialog.setMinimumDuration(0)
-        dialog.setAutoClose(True)
-        dialog.setValue(0)
-
+        started = time.perf_counter()
+        dialog = None
         for index, entry in enumerate(pending):
+            if dialog is None:
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                if elapsed_ms < self.PROGRESS_DELAY_MS:
+                    self._ensureGridThumbnail(entry)
+                    continue
+                # Slow enough to explain. minimumDuration 0 now says "show
+                # this now" honestly, because the wait has already happened.
+                dialog = QtGui.QProgressDialog(
+                    "Building thumbnails…", "Cancel", 0, len(pending),
+                    FreeCADGui.getMainWindow())
+                dialog.setWindowTitle("ArchPlus Parts Library")
+                dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+                dialog.setMinimumDuration(0)
+                dialog.setAutoClose(True)
             if dialog.wasCanceled():
                 self._renderThumbnails = False
                 FreeCAD.Console.PrintMessage(
@@ -814,10 +849,13 @@ class PartsLibraryPanel(QtGui.QWidget):
             dialog.setLabelText("Building thumbnails: %d of %d\n%s"
                                 % (index + 1, len(pending), entry["name"]))
             dialog.setValue(index)
+            # Only while it exists: pumping events is what paints it and
+            # what keeps a long pass from freezing the window outright.
             QtGui.QApplication.processEvents()
             self._ensureGridThumbnail(entry)
-        dialog.setValue(len(pending))
-        dialog.close()
+        if dialog is not None:
+            dialog.setValue(len(pending))
+            dialog.close()
 
     def _ensureGridThumbnail(self, entry):
         """Render a fallback thumbnail for `entry`'s manifest defaults.
@@ -1166,6 +1204,7 @@ class PartsLibraryPanel(QtGui.QWidget):
             manifest, params)}
         host = partslib_placement.host_of(effective)
         offset = partslib_placement.offset_of(effective)
+        offset_to = partslib_placement.offset_to_of(effective)
         # Read once, up front: the checkbox lives on the library tab, which
         # is not even the active window while picking, so a mid-session
         # change of mind is not something the user can express anyway - and
@@ -1184,6 +1223,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         # no tracker, not blocked placement, if the shape cannot be built.
         tracker = None
         trackerCentre = None
+        metrics = None
         try:
             shape = partslib_geometry.build_shape(
                 manifest, entry["dir"], overrides)
@@ -1206,6 +1246,15 @@ class PartsLibraryPanel(QtGui.QWidget):
                 "ArchPlus: no placement preview for %s: %s\n"
                 % (entry["id"], exc))
             tracker = None
+
+        def measured_size():
+            """The built part's (width, depth, height), or None when it could
+            not be built. Placement uses it to put the part's contact face -
+            its back, for a wall - on the picked point instead of its origin;
+            without it the part keeps the origin there, as it always did."""
+            if metrics is None:
+                return None
+            return (metrics["Width"], metrics["Depth"], metrics["Height"])
 
         # The Snapper's callback does NOT hand back the picked face - only the
         # movecallback's `info` dict carries it. Capture it there and read it
@@ -1236,7 +1285,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 point, state["face"], info)
             if tracker is not None:
                 preview = partslib_placement.partPlacement(
-                    state["place"], state["face"], host, offset)
+                    state["place"], state["face"], host, offset,
+                    size=measured_size(), offset_to=offset_to)
                 tracker.setRotation(preview.Rotation)
                 tracker.pos(preview.multVec(trackerCentre))
 
@@ -1248,7 +1298,8 @@ class PartsLibraryPanel(QtGui.QWidget):
                 if point is None:
                     return  # Esc/cancel - end the placement loop
                 placement = partslib_placement.partPlacement(
-                    state.get("place") or point, state["face"], host, offset)
+                    state.get("place") or point, state["face"], host, offset,
+                    size=measured_size(), offset_to=offset_to)
                 doc.openTransaction("Place library part")
                 try:
                     partslib_object.makePart(

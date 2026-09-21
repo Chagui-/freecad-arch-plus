@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "name": "Tall pantry cabinet",
+  "description": "Full-height larder unit with two tiers of doors, at larder depth.",
+  "keywords": [
+    "kitchen",
+    "pantry",
+    "larder",
+    "tall",
+    "cabinet",
+    "unit",
+    "storage",
+    "parametric"
+  ],
+  "facets": {
+    "function": "Storage",
+    "element": "Cabinet",
+    "room": [
+      "Kitchen"
+    ]
+  },
+  "params": {
+    "Width": {
+      "type": "Length",
+      "default": 600
+    },
+    "Depth": {
+      "type": "Length",
+      "default": 600
+    },
+    "Height": {
+      "type": "Length",
+      "default": 2100
+    }
+  },
+  "placement": {
+    "host": "floor",
+    "offset": 0
+  },
+  "geometry": {}
+}

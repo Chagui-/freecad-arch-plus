@@ -121,7 +121,7 @@ class ParamForm(QtGui.QWidget):
         measuring the shape is pure waste - and measuring is not cheap:
         geometry.measure() calls optimalBoundingBox(), which costs about as
         much as building the shape (0.913s of the king bed's 1.76s click).
-        27 of the 31 bundled parts declare no "auto" param at all."""
+        31 of the 36 bundled parts declare no "auto" param at all."""
         return bool(self._auto)
 
     def setDerived(self, values):
@@ -214,14 +214,18 @@ class ParamForm(QtGui.QWidget):
 
     def _addField(self, grid, row, column, name):
         spec = self._specs.get(name) or {}
-        widget = _widgetFor(spec, self._imperial)
+        # Every widget here is born WITH a parent, and that is load-bearing:
+        # an unparented QWidget IS a top-level window, so one built and only
+        # later handed to a layout is shown as a window first - a visible
+        # flash on Windows, one per field, every time a part is selected.
+        widget = _widgetFor(spec, self._imperial, self)
         if widget is None:
             # An unrecognised type gets NO field here, matching object.py's
             # warn-and-skip when declaring properties: guessing a spinbox
             # would send a float into build_shape as a real override for a
             # param nothing else represents.
             return
-        caption = QtGui.QLabel(spec.get("label") or name)
+        caption = QtGui.QLabel(spec.get("label") or name, self)
         # A length field arrives with its unit hint already set; the derived
         # note is added to it rather than over it, and _onEdited puts the hint
         # back when the field is pinned.
@@ -344,8 +348,11 @@ class LengthSpinBox(QtGui.QDoubleSpinBox):
         return (state, text, position)
 
 
-def _widgetFor(spec, imperial=False):
+def _widgetFor(spec, imperial=False, parent=None):
     """One editor widget for a param spec, or None for an unknown type.
+
+    `parent` is not decoration: an unparented widget is a top-level window,
+    and one handed to a layout only afterwards is shown as a window first.
 
     The None case is a SKIP, not a fallback widget: the old fall-through
     produced a millimetre QDoubleSpinBox for anything unrecognised, whose
@@ -358,7 +365,7 @@ def _widgetFor(spec, imperial=False):
         default = None
 
     if kind == "Choice":
-        widget = QtGui.QComboBox()
+        widget = QtGui.QComboBox(parent)
         options = partslib_manifest.choice_options(spec)
         for value, option in options.items():
             widget.addItem((option or {}).get("label") or value, value)
@@ -366,24 +373,25 @@ def _widgetFor(spec, imperial=False):
             widget.setCurrentIndex(list(options).index(default))
         return widget
     if kind == "Bool":
-        widget = QtGui.QCheckBox()
+        widget = QtGui.QCheckBox(parent)
         widget.setChecked(bool(default))
         return widget
     if kind == "String":
-        widget = QtGui.QLineEdit()
+        widget = QtGui.QLineEdit(parent)
         widget.setText(default or "")
         return widget
     if kind == "Integer":
-        widget = QtGui.QSpinBox()
+        widget = QtGui.QSpinBox(parent)
         widget.setRange(0, 9999)
         widget.setValue(int(default or 0))
         return widget
     if kind == "Length":
-        widget = LengthSpinBox(partslib_units.display_unit(spec, imperial))
+        widget = LengthSpinBox(partslib_units.display_unit(spec, imperial),
+                               parent)
         widget.setMmValue(float(default or 0))
         return widget
     if kind == "Angle":
-        widget = QtGui.QDoubleSpinBox()
+        widget = QtGui.QDoubleSpinBox(parent)
         widget.setRange(0.0, 100000.0)
         widget.setDecimals(0)
         widget.setSuffix(" deg")
@@ -443,5 +451,9 @@ def _clearGrid(grid):
         item = grid.takeAt(0)
         widget = item.widget()
         if widget is not None:
-            widget.setParent(None)
+            # Hide first: see gui._clearLayout. Unparenting a visible widget
+            # turns it into a top-level window that stays on screen until
+            # the deferred delete runs, so clearing three fields flashed six
+            # windows (each field and its caption) on every part selected.
+            widget.hide()
             widget.deleteLater()

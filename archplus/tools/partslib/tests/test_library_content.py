@@ -126,7 +126,7 @@ def test_every_part_lives_under_a_family_folder():
     # The library tree is also the import tree: a part's builder.py is
     # imported by the part's path. A part directly at the library root is
     # allowed by the rules (reserved for one-off imports) but nothing
-    # shipped today is one - all 31 are the house style.
+    # shipped today is one - all 36 are the house style.
     for path in partslib_index.manifest_paths(LIBRARY_DIR):
         relative = os.path.relpath(os.path.dirname(path), LIBRARY_DIR)
         segments = relative.replace(os.sep, "/").split("/")
@@ -153,7 +153,7 @@ def test_shipped_ids_are_unique():
     index = _scan()
     ids = [e["id"] for e in index["entries"]]
     assert len(ids) == len(set(ids))
-    assert len(ids) == 31
+    assert len(ids) == 36
 
 
 def test_every_local_builder_imports_and_exposes_build():
@@ -208,6 +208,57 @@ def test_a_hobs_burner_count_is_a_choice_of_1_2_4_5():
     assert spec["type"] == "Choice"
     assert list(partslib_manifest.choice_options(spec)) == ["1", "2", "4", "5"]
     assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
+
+
+def test_every_offset_param_names_a_declared_length():
+    # A placement can take its offset from a param, and that param has to be
+    # one the manifest declares as a Length: a name that resolves to nothing
+    # would silently leave every part at the literal offset, and a param of
+    # another type would resolve to something that is not a distance.
+    index = _scan()
+    checked = 0
+    for entry in index["entries"]:
+        data = partslib_manifest.load_manifest(entry["path"])
+        named = (data.get("placement") or {}).get("offsetParam")
+        if named is None:
+            continue
+        checked += 1
+        specs = partslib_manifest.param_specs(data)
+        assert named in specs, (
+            "%s: placement.offsetParam names %r, which the manifest does "
+            "not declare" % (entry["id"], named))
+        assert specs[named]["type"] == "Length", (
+            "%s: offsetParam %r is a %s, not a Length"
+            % (entry["id"], named, specs[named]["type"]))
+    assert checked >= 4, "expected the wall-hosted parts to drive a height"
+
+
+def test_the_fridges_doors_drive_its_size():
+    # A double-door fridge is a bigger appliance than a single-door one - the
+    # width a buyer would otherwise have to look up - so the doors derive
+    # Width and Depth the way the hob's burner count derives the hob's.
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "fridge")["path"])
+    specs = partslib_manifest.param_specs(data)
+    spec = specs["Configuration"]
+    assert spec["type"] == "Choice"
+    assert list(partslib_manifest.choice_options(spec)) == ["single", "double"]
+    assert partslib_manifest.reset_targets(spec) == ["Width", "Depth"]
+    for name in ("Width", "Depth"):
+        assert specs[name]["default"] == "auto", (
+            "%s must be derived from the door arrangement" % name)
+    assert specs["Height"]["default"] == 1850
+    merged = _params("fridge")
+    assert merged["Width"] is None and merged["Depth"] is None
+
+
+def test_the_fridge_sizes_cover_both_arrangements():
+    # The sizes the catalogues ship: 600 wide single-door, 750 wide
+    # double-door, both 650 front to back.
+    from archplus.tools.partslib.library.basic.fridge import builder
+
+    assert builder._default_size("single") == (600.0, 650.0)
+    assert builder._default_size("double") == (750.0, 650.0)
 
 
 def test_the_hob_defaults_cover_every_burner_count():
@@ -392,10 +443,11 @@ def test_television_size_drives_the_panel_dimensions():
     assert merged["Height"] is None
 
 
-def test_a_curtain_is_just_a_width_and_a_height():
+def test_a_curtain_is_a_size_and_a_rail_height():
     # Fullness, rail diameter, header height and fold count were all things
-    # nobody specifies about a curtain; the builder decides them now.
-    assert sorted(_params("curtain")) == ["Height", "Width"]
+    # nobody specifies about a curtain; the builder decides them now. What a
+    # drawing DOES name is the curtain's size and where its rail hangs.
+    assert sorted(_params("curtain")) == ["Height", "MountingHeight", "Width"]
 
 
 def test_the_curtain_fabric_is_a_wave_not_a_row_of_bulges():
