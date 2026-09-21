@@ -1291,21 +1291,25 @@ def makeSegment(parent, name="Segments"):
 def moveSegmentEdges(source, target, subnames):
     """Move claimed edges from `source` into the existing `target` segment.
 
-    The target gains explicit claims; the source drops them from its own
-    claims, except when it is the fallback segment — fallback claims are
-    dynamic, so adding explicit claims to the target is enough (the
-    fallback rebuilds without those edges on its own)."""
+    A normal target gains explicit claims; a fallback target gains none. It
+    already builds every edge no other segment claims, so dropping the edges
+    from the source is what hands them over — storing them would leave a
+    list the claim resolver discards and reports on every recompute. The
+    source drops them from its own claims, except when it is the fallback
+    itself — fallback claims are dynamic, so the target's new claims are
+    enough (the fallback rebuilds without those edges on its own)."""
     if target is source:
         return
-    edges = []
-    claimed = set()
-    for link, subs in getattr(target, "Edges", None) or []:
-        edges.append((link, tuple(subs)))
-        claimed.update(subs)
-    fresh = tuple(s for s in subnames if s not in claimed)
-    if fresh and target.Base is not None:
-        edges.append((target.Base, fresh))
-        target.Edges = edges
+    if not target.Fallback:
+        edges = []
+        claimed = set()
+        for link, subs in getattr(target, "Edges", None) or []:
+            edges.append((link, tuple(subs)))
+            claimed.update(subs)
+        fresh = tuple(s for s in subnames if s not in claimed)
+        if fresh and target.Base is not None:
+            edges.append((target.Base, fresh))
+            target.Edges = edges
     if not source.Fallback:
         remaining = []
         for link, subs in getattr(source, "Edges", None) or []:

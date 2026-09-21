@@ -1267,6 +1267,41 @@ def _w29_branched_plan(doc):
             and not any("mitered chain build failed" in m for m in captured))
 
 
+def _w30_move_onto_fallback(doc):
+    """Moving faces onto the fallback hands their runs back to it. The
+    fallback builds them again and stores no claim of its own: a stored list
+    is discarded by the claim resolver, which then reports it on every
+    recompute — the state the Split/move command used to leave behind."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ], name="FallbackMove")
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    fallback = wall.Group[0]
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge1",))]
+    doc.recompute()
+    h.check("W30 the explicit segment starts with the moved run",
+            abs(ext.Shape.Volume - _expected_volume(300, 2800, [4000])) < 1e-3)
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        walls_object.moveSegmentEdges(ext, fallback, ["Edge1"])
+        doc.recompute()
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W30 moving faces onto the fallback stores no claim",
+            not (fallback.Edges or []))
+    h.check("W30 the fallback builds the moved run again",
+            abs(fallback.Shape.Volume
+                - _expected_volume(300, 2800, [4000, 4000])) < 1e-3
+            and abs(ext.Shape.Volume) < 1e-9)
+    h.check("W30 no ignored-claim warning follows the move",
+            not any("ignores its explicit edges" in m for m in captured))
+
+
 def run():
     doc = h.fresh_doc()
     _w1_creation(doc)
@@ -1300,3 +1335,5 @@ def run():
     doc = h.fresh_doc()   # W27 saves and closes the document it was given
     _w28_mixed_direction_chain(doc)
     _w29_branched_plan(doc)
+    doc = h.fresh_doc()
+    _w30_move_onto_fallback(doc)

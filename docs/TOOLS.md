@@ -186,6 +186,9 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   into a new sibling segment, or one of the wall's other top-level segments,
   which the runs are moved into (rejoining that segment's chain). Hovering a
   row previews that segment in the 3D view; double-click chooses it.
+  Moving runs onto the fallback segment stores no claim on it — the fallback
+  already builds every edge no other segment claims, so the runs simply stop
+  being claimed by their old segment and land in the fallback on their own.
   Splitting requires picked faces — running the command with no face picked
   prints a Report-view warning and changes nothing. Each clicked face moves
   the run nearest to the click.

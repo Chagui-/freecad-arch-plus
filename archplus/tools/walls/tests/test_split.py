@@ -10,11 +10,20 @@ import FreeCAD
 import Part
 
 from archplus.tools.walls import gui as wg
+from archplus.tools.walls import model
 from archplus.tools.walls import object as walls_object
 
 
+class _Seg(types.SimpleNamespace):
+    """A segment stand-in. Real document objects hash by identity, and the
+    claim resolver keys its result by the object it was handed, so these
+    must stay hashable — SimpleNamespace's value equality makes it not."""
+
+    __hash__ = object.__hash__
+
+
 def _segment(name="Segments"):
-    return types.SimpleNamespace(
+    return _Seg(
         Name=name, Label=name, Group=[], InList=[], Wall=None,
         Proxy=types.SimpleNamespace(Type="Wall", Segment=True))
 
@@ -206,6 +215,31 @@ def test_target_options_exclude_sources_and_ancestors():
     assert fallback in options and b in options and a not in options
     root.Group = [a]
     assert cmd._targetOptions([(a, ("Edge1",))]) == []
+
+
+def test_moving_faces_onto_the_fallback_stores_no_claims():
+    """A fallback builds what no one else claims, so moving faces onto it
+    must not leave an explicit list behind: that list is ignored, and the
+    next recompute reports it as an ignored claim."""
+    sk = types.SimpleNamespace()
+    fallback = _segment("Segments")
+    fallback.Fallback = True
+    fallback.Edges = []
+    fallback.Base = sk
+    a = _segment("a")
+    a.Fallback = False
+    a.Edges = [(sk, ("Edge1",))]
+    a.Base = sk
+    root = _root(fallback, a)
+
+    walls_object.moveSegmentEdges(a, fallback, ["Edge1"])
+
+    nodes = [walls_object._claimNode(seg) for seg in root.Group
+             if walls_object.is_segment(seg)]
+    built, warnings = model.resolve_claims(nodes, ["Edge1", "Edge2"])
+    assert warnings == []
+    assert built[fallback] == frozenset(["Edge1", "Edge2"])
+    assert built[a] == frozenset()
 
 
 def test_target_labels_suffix_repeats():
