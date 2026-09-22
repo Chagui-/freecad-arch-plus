@@ -1295,9 +1295,13 @@ def moveSegmentEdges(source, target, subnames):
     already builds every edge no other segment claims, so dropping the edges
     from the source is what hands them over — storing them would leave a
     list the claim resolver discards and reports on every recompute. The
-    source drops them from its own claims, except when it is the fallback
-    itself — fallback claims are dynamic, so the target's new claims are
-    enough (the fallback rebuilds without those edges on its own)."""
+    source drops them from its own claims, WHICHEVER segment it is. A
+    fallback source especially must not keep them: its list is dormant while
+    it is the fallback, but the next time the fallback moves to another
+    segment that list wakes up, collides with the target that already took
+    the edge, and the edge then builds nowhere at all. The rest of the
+    source's list is left alone, so the claims it still holds are there for
+    when it stops being the fallback."""
     if target is source:
         return
     if not target.Fallback:
@@ -1310,25 +1314,27 @@ def moveSegmentEdges(source, target, subnames):
         if fresh and target.Base is not None:
             edges.append((target.Base, fresh))
             target.Edges = edges
-    if not source.Fallback:
-        remaining = []
-        for link, subs in getattr(source, "Edges", None) or []:
-            subs = tuple(s for s in subs if s not in subnames)
-            if subs:
-                remaining.append((link, subs))
-        source.Edges = remaining
+    remaining = []
+    for link, subs in getattr(source, "Edges", None) or []:
+        subs = tuple(s for s in subs if s not in subnames)
+        if subs:
+            remaining.append((link, subs))
+    source.Edges = remaining
 
 
 def splitSegment(segment, subnames, name=None):
-    """Move claimed edges from `segment` into a new sibling segment."""
+    """Move claimed edges from `segment` into a new sibling segment.
+
+    The new sibling gains them and `segment` drops them, for the reason
+    moveSegmentEdges gives: a kept list on a fallback is a trap, not a
+    memory."""
     parent = parent_group(segment) or wall_root(segment)
     new = makeSegment(parent, name or "Segments")
     new.Edges = [(new.Base, sub) for sub in subnames]
-    if not segment.Fallback:
-        remaining = []
-        for link, subs in getattr(segment, "Edges", None) or []:
-            subs = tuple(s for s in subs if s not in subnames)
-            if subs:
-                remaining.append((link, subs))
-        segment.Edges = remaining
+    remaining = []
+    for link, subs in getattr(segment, "Edges", None) or []:
+        subs = tuple(s for s in subs if s not in subnames)
+        if subs:
+            remaining.append((link, subs))
+    segment.Edges = remaining
     return new

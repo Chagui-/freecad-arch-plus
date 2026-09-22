@@ -242,6 +242,51 @@ def test_moving_faces_onto_the_fallback_stores_no_claims():
     assert built[a] == frozenset()
 
 
+def test_moving_faces_off_the_fallback_forgets_them():
+    """A move takes the edges away from the segment they came from, the
+    fallback included.
+
+    Leaving them behind in the fallback's own list looks harmless while it
+    IS the fallback, because the resolver ignores that list and says so. But
+    the moment the fallback moves to another segment the list wakes up,
+    collides with the target that already took the edge, and the edge then
+    builds NOWHERE - a run missing from the wall, reported as "claimed by
+    several segments"."""
+    sk = types.SimpleNamespace()
+    fallback = _segment("Segments")
+    fallback.Fallback = True
+    fallback.Edges = [(sk, ("Edge1", "Edge2"))]
+    fallback.Base = sk
+    a = _segment("a")
+    a.Fallback = False
+    a.Edges = []
+    a.Base = sk
+    root = _root(fallback, a)
+
+    walls_object.moveSegmentEdges(fallback, a, ["Edge1"])
+
+    # Edge1 left the fallback's list; Edge2, which nobody moved, stays.
+    assert [s for _l, subs in fallback.Edges for s in subs] == ["Edge2"]
+
+    # The fallback moves to a third segment, so both are normal build again.
+    third = _segment("third")
+    third.Fallback = True
+    third.Edges = []
+    third.Base = sk
+    third.Wall = root
+    third.InList = [root]
+    fallback.Fallback = False
+    root.Group = [fallback, a, third]
+
+    nodes = [walls_object._claimNode(seg) for seg in root.Group
+             if walls_object.is_segment(seg)]
+    built, warnings = model.resolve_claims(nodes, ["Edge1", "Edge2"])
+    assert warnings == []
+    assert built[a] == frozenset(["Edge1"])
+    assert built[fallback] == frozenset(["Edge2"])
+    assert built[third] == frozenset()
+
+
 def test_target_labels_suffix_repeats():
     cmd = wg.WallSplitCommand()
     segs = []
