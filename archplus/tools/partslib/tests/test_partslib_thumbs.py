@@ -1,4 +1,5 @@
 import sys
+import types
 
 import pytest
 
@@ -77,6 +78,48 @@ def test_render_shape_returns_false_rather_than_raising_without_pivy(tmp_path):
     assert ok is False
 
 
+def test_render_shape_draws_one_item_per_role_in_the_palette(
+        tmp_path, monkeypatch):
+    # A bare shape carries no per-face appearance and SoOffscreenRenderer
+    # paints ONE material per shape, so the roles have to reach the renderer
+    # as entries of their own: that is what makes a thumbnail show wood and
+    # grey instead of one flat mass.
+    import Part
+
+    from archplus.tools.partslib import palette as pal
+
+    class _Face:
+        pass
+
+    monkeypatch.setattr(Part, "makeCompound",
+                        lambda faces: types.SimpleNamespace(Faces=list(faces)),
+                        raising=False)
+    seen = []
+
+    def _fake_render_groups(items, out_path, size=None, timer=None):
+        seen.append(items)
+        return True
+
+    monkeypatch.setattr(pt, "render_groups", _fake_render_groups)
+
+    faces = [_Face(), _Face(), _Face()]
+    shape = types.SimpleNamespace(Faces=faces)
+    assert pt.render_shape(shape, str(tmp_path / "roles.jpg"),
+                           roles=["top", "carcass", "fitting"]) is True
+    assert [colour for _compound, colour in seen[0]] == [
+        pal.colour_for("top")[:3],
+        pal.colour_for("carcass")[:3],
+        pal.colour_for("fitting")[:3]]
+    assert [len(compound.Faces) for compound, _colour in seen[0]] == [1, 1, 1]
+
+    # No roles, or roles from another shape: the whole thing, in one piece.
+    assert pt.render_shape(shape, str(tmp_path / "plain.jpg")) is True
+    assert seen[1] == [(shape, None)]
+    assert pt.render_shape(shape, str(tmp_path / "odd.jpg"),
+                           roles=["top"]) is True
+    assert seen[2] == [(shape, None)]
+
+
 def test_render_shape_survives_freecad_being_unimportable(tmp_path, monkeypatch):
     # The test harness installs a fake FreeCAD into sys.modules (see
     # conftest), which is enough to satisfy a naive `import FreeCAD` in an
@@ -114,8 +157,8 @@ def test_ensure_thumbnail_does_not_rebuild_a_part_already_marked_failed(
     # This is the bug the session failure cache exists to fix: without it,
     # a part whose render can never succeed on this machine gets its real
     # geometry rebuilt on every single call (every grid repaint). Marking
-    # the path failed up front must short-circuit BEFORE build_shape runs -
-    # asserting inside the monkeypatched build_shape proves it is never
+    # the path failed up front must short-circuit BEFORE the build runs -
+    # asserting inside the monkeypatched build proves it is never
     # even attempted, not just that the render is skipped.
     entry = {"id": "always-fails", "dir": str(tmp_path)}
     resolved = {"geometry": {}, "params": {}}
@@ -123,9 +166,9 @@ def test_ensure_thumbnail_does_not_rebuild_a_part_already_marked_failed(
     pt.mark_render_failed(path)
 
     def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("build_shape must not run for a known-failed part")
+        raise AssertionError("the build must not run for a known-failed part")
 
-    monkeypatch.setattr(pg, "build_shape", _must_not_be_called)
+    monkeypatch.setattr(pg, "build_shape_and_roles", _must_not_be_called)
     assert pt.ensure_thumbnail(entry, resolved) is None
 
 
@@ -140,7 +183,7 @@ def test_ensure_thumbnail_marks_failure_after_a_failed_render(
     resolved = {"geometry": {}, "params": {}}
     path = pt.thumbnail_path(entry["dir"])
 
-    monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())
+    monkeypatch.setattr(pg, "build_shape_and_roles", lambda *a, **k: (object(), None))
     assert pt.render_failed_before(path) is False
     assert pt.ensure_thumbnail(entry, resolved) is None
     assert pt.render_failed_before(path) is True
@@ -260,7 +303,7 @@ def test_a_stale_thumbnail_that_cannot_render_keeps_being_shown(tmp_path, monkey
     part_dir, thumb = _part_dir(tmp_path, thumbnail_age=600.0, builder_age=60.0)
     entry = {"id": "stale", "dir": part_dir}
     resolved = {"geometry": {}, "params": {}}
-    monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())
+    monkeypatch.setattr(pg, "build_shape_and_roles", lambda *a, **k: (object(), None))
     monkeypatch.setattr(pt, "render_shape", lambda *a, **k: False)
     assert pt.ensure_thumbnail(entry, resolved) == thumb
     assert pt.render_failed_before(thumb) is True
@@ -270,7 +313,7 @@ def test_a_stale_thumbnail_is_re_rendered(tmp_path, monkeypatch):
     part_dir, thumb = _part_dir(tmp_path, thumbnail_age=600.0, builder_age=60.0)
     entry = {"id": "stale", "dir": part_dir}
     resolved = {"geometry": {}, "params": {}}
-    monkeypatch.setattr(pg, "build_shape", lambda *a, **k: object())
+    monkeypatch.setattr(pg, "build_shape_and_roles", lambda *a, **k: (object(), None))
     monkeypatch.setattr(pt, "render_shape", lambda shape, path, **k: True)
     assert pt.ensure_thumbnail(entry, resolved) == thumb
 
@@ -283,5 +326,5 @@ def test_a_fresh_thumbnail_is_returned_without_building(tmp_path, monkeypatch):
     def _must_not_run(*a, **k):
         raise AssertionError("a fresh thumbnail must not rebuild the part")
 
-    monkeypatch.setattr(pg, "build_shape", _must_not_run)
+    monkeypatch.setattr(pg, "build_shape_and_roles", _must_not_run)
     assert pt.ensure_thumbnail(entry, resolved) == thumb

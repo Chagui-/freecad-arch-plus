@@ -39,6 +39,48 @@ def run():
             % (ok, os.path.getsize(out_path)
                if os.path.exists(out_path) else 0))
 
+    # --- I2: a library part's thumbnail carries the palette.
+    #
+    # SoOffscreenRenderer paints ONE material per shape and a bare shape
+    # carries no per-face appearance, so a part used to render as a single
+    # grey mass however its faces were tagged. "More than one colour" does
+    # not discriminate, because that grey mass is shaded - lit faces, dark
+    # faces. HUE does: the palette's wood is brown and its glazing blue, so
+    # a coloured render has strongly saturated pixels where a neutral one
+    # has none. The measure is relative to the pixel's own brightness, so a
+    # face in shadow counts the same as one in the light.
+    entry = partslib_object.resolveEntry("basic/base-cabinet")[0]
+    manifest = partslib_manifest.load_manifest(entry["path"])
+    part_shape, part_roles = partslib_geometry.build_shape_and_roles(
+        manifest, entry["dir"])
+    part_path = os.path.join(tempfile.gettempdir(),
+                             "archplus_verify_part_colours.png")
+    if os.path.exists(part_path):
+        os.remove(part_path)
+    drawn = partslib_thumbs.render_shape(part_shape, part_path,
+                                         roles=part_roles)
+    from PySide import QtGui
+
+    image = QtGui.QImage(part_path) if drawn else QtGui.QImage()
+    h.check("I2 a part renders with its roles",
+            drawn and not image.isNull(),
+            detail="rendered=%r null=%r" % (drawn, image.isNull()))
+
+    sampled = tinted = 0
+    if not image.isNull():
+        for y in range(0, image.height(), 2):
+            for x in range(0, image.width(), 2):
+                colour = image.pixelColor(x, y)
+                channels = (colour.redF(), colour.greenF(), colour.blueF())
+                sampled += 1
+                brightest = max(channels)
+                if brightest > 0.05 and \
+                        (brightest - min(channels)) / brightest >= 0.25:
+                    tinted += 1
+    h.check("I2 the part is drawn in the palette, not one grey mass",
+            sampled and tinted >= sampled * 0.05,
+            detail="tinted %d of %d sampled pixels" % (tinted, sampled))
+
     # --- J1/J2/J3: builder resolution and measurement.
     part_dir = os.path.join(_LIBRARY_DIR, "archplus", "tools", "partslib",
                             "library", "basic", "nightstand")

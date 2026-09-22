@@ -452,9 +452,43 @@ def render_groups(items, out_path, size=THUMBNAIL_SIZE, timer=None):
             timer.report()
 
 
-def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None):
-    """Render a single white `shape` to an image file; see render_groups."""
-    return render_groups([(shape, None)], out_path, size=size, timer=timer)
+def render_shape(shape, out_path, size=THUMBNAIL_SIZE, timer=None, roles=None):
+    """Render one `shape` to an image file; see render_groups.
+
+    With `roles` - one role per face, as partslib_geometry.
+    build_shape_and_roles returns - the part is drawn in its palette
+    colours: one entry per role, a compound of that role's faces painted
+    with that role's colour. Without them it is the single white mass this
+    has always drawn."""
+    return render_groups(_paint_items(shape, roles), out_path, size=size,
+                         timer=timer)
+
+
+def _paint_items(shape, roles):
+    """[(shape, colour)] - one entry per role of a part.
+
+    A bare shape carries no per-face appearance, and SoOffscreenRenderer
+    paints one material per shape, so the roles have to become entries of
+    their own: the faces of each role gathered into a compound. They are
+    the part's own boundary, so what the renderer draws is the part - with
+    the seams between roles showing as the colour changes, which is the
+    whole point of drawing it this way.
+
+    A role count that does not match the face count means the roles belong
+    to another shape, and the part is drawn plainly rather than in the
+    wrong colours."""
+    from . import palette as partslib_palette
+
+    if not roles or len(roles) != len(shape.Faces):
+        return [(shape, None)]
+    import Part
+
+    by_role = {}
+    for role, face in zip(roles, shape.Faces):
+        by_role.setdefault(role, []).append(face)
+    return [(Part.makeCompound(faces),
+             partslib_palette.colour_for(role)[:3])
+            for role, faces in by_role.items()]
 
 
 def ensure_thumbnail(entry, resolved):
@@ -480,7 +514,8 @@ def ensure_thumbnail(entry, resolved):
 
     timer = Timer("first thumbnail for %r" % (entry["id"],))
     try:
-        shape = partslib_geometry.build_shape(resolved, entry["dir"])
+        shape, roles = partslib_geometry.build_shape_and_roles(
+            resolved, entry["dir"])
     except Exception as exc:
         mark_render_failed(path, (
             "ArchPlus: cannot build %r for a thumbnail; will not retry "
@@ -488,7 +523,7 @@ def ensure_thumbnail(entry, resolved):
         return path if exists else None
     timer.mark("build")
 
-    rendered = render_shape(shape, path, timer=timer)
+    rendered = render_shape(shape, path, roles=roles, timer=timer)
     timer.report()
     if rendered:
         return path

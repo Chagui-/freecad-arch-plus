@@ -966,9 +966,10 @@ class PartsLibraryPanel(QtGui.QWidget):
 
         timer = _Timer("previewing %r" % (entry["id"],))
         shape = None
+        roles = None
         if plan["build"]:
             try:
-                shape = partslib_geometry.build_shape(
+                shape, roles = partslib_geometry.build_shape_and_roles(
                     manifest, entry["dir"], overrides)
             except Exception as exc:
                 self.buildError.setText("Cannot build this part: %s" % exc)
@@ -995,7 +996,7 @@ class PartsLibraryPanel(QtGui.QWidget):
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: live preview failed: %s\n" % (exc,))
         else:
-            self._showStaticPreview(entry, shape, manifest, overrides)
+            self._showStaticPreview(entry, shape, manifest, overrides, roles)
         timer.mark("preview")
         timer.report()
 
@@ -1013,7 +1014,7 @@ class PartsLibraryPanel(QtGui.QWidget):
         self.preview.setPixmap(pixmap.scaledToHeight(
             _PREVIEW_HEIGHT, QtCore.Qt.SmoothTransformation))
 
-    def _showStaticPreview(self, entry, shape, manifest, overrides):
+    def _showStaticPreview(self, entry, shape, manifest, overrides, roles=None):
         """Static-image fallback for the detail pane - FIX 2 of the bug-fix
         round. Degrades through three layers, most-specific first, each
         wrapped so a failure falls through to the next rather than raising:
@@ -1024,8 +1025,12 @@ class PartsLibraryPanel(QtGui.QWidget):
              still a real preview of the part);
           3. a plain text placeholder - this layer must always succeed, even
              with no pivy/GL available at all, since it is what stands
-             between the user and a blank pane."""
-        pixmap = self._renderParamPreview(entry, shape, manifest, overrides)
+             between the user and a blank pane.
+
+        `roles` is the part's per-face role list, so the render comes out in
+        the palette's colours; without it the preview is one flat mass."""
+        pixmap = self._renderParamPreview(entry, shape, manifest, overrides,
+                                          roles)
         if pixmap is None:
             try:
                 thumb = partslib_thumbs.thumbnail_path(entry["dir"])
@@ -1055,7 +1060,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         blob = repr(sorted((str(k), str(v)) for k, v in params.items()))
         return hashlib.sha1(blob.encode("utf8")).hexdigest()[:12]
 
-    def _renderParamPreview(self, entry, shape, manifest, overrides):
+    def _renderParamPreview(self, entry, shape, manifest, overrides,
+                            roles=None):
         """Render `shape` at detail resolution, memoized in _PREVIEW_CACHE by
         part and parameter values. Returns a QPixmap, or None on any failure
         (a renderer with no GL context - render_shape already returns False
@@ -1087,7 +1093,8 @@ class PartsLibraryPanel(QtGui.QWidget):
         out_path = os.path.join(folder, "preview.jpg")
         try:
             if not partslib_thumbs.render_shape(
-                    shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE):
+                    shape, out_path, size=partslib_thumbs.THUMBNAIL_SIZE,
+                    roles=roles):
                 partslib_thumbs.mark_render_failed(failureKey, (
                     "ArchPlus: cannot render a detail preview for %r; "
                     "will not retry this session\n" % (entry["id"],)))
