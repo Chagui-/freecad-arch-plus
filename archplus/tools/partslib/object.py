@@ -24,6 +24,7 @@ _DIR = os.path.dirname(__file__)     # archplus/tools/partslib/ itself
 from . import geometry as partslib_geometry
 from . import index as partslib_index
 from . import manifest as partslib_manifest
+from . import palette as partslib_palette
 
 PROP_PART_ID = "PartId"
 PROP_AUTO_PARAMS = "AutoParams"
@@ -440,7 +441,7 @@ class _LibraryPart(ArchComponent.Component):
             for name in getattr(self, "_paramNames", ()):
                 if name in obj.PropertiesList and name not in auto:
                     overrides[name] = _paramValue(obj, name, specs.get(name))
-            shape = partslib_geometry.build_shape(
+            shape, roles = partslib_geometry.build_shape_and_roles(
                 manifest, entry["dir"], overrides)
         except Exception as exc:
             FreeCAD.Console.PrintError(
@@ -450,6 +451,15 @@ class _LibraryPart(ArchComponent.Component):
         placement = obj.Placement
         obj.Shape = shape
         obj.Placement = placement
+        # After the shape, and only on a change. After it, because the view
+        # provider refuses a role list whose length does not match the face
+        # count, so the shape must never be the newer of the two. Only on a
+        # change, because a recompute runs on EVERY part in the document, so
+        # writing unconditionally marks every part modified inside whatever
+        # undo step is open - and undoing an edit to one part then rolls the
+        # others' bookkeeping back with it (the chest of drawers losing its
+        # derived Height when the king bed's edit was undone, check L5).
+        _storeRoles(obj, roles)
 
         # An "auto" param has no seeded value, so the editor would otherwise
         # show a meaningless zero. The built shape is the only thing that
@@ -542,6 +552,15 @@ class _LibraryPart(ArchComponent.Component):
         opening a file would silently rebuild from whatever the library
         currently contains, exactly what this module's cache semantics forbid.
         """
+        if prop == "Material":
+            # The greys give way to a Material, so a part has to be repainted
+            # the moment one is set or cleared: nothing else would, and the
+            # previous appearance would stay on screen. Guarded because the
+            # proxy is only there in a GUI session.
+            proxy = getattr(getattr(obj, "ViewObject", None), "Proxy", None)
+            colorize = getattr(proxy, "colorize", None)
+            if colorize is not None:
+                colorize(obj)
         if prop in getattr(self, "_paramNames", ()):
             if ("Restore" not in obj.State
                     and not getattr(self, "_reseeding", False)):
@@ -566,14 +585,156 @@ class _LibraryPart(ArchComponent.Component):
             ArchComponent.Component.onChanged(self, obj, prop)
 
 
+def _storeRoles(obj, roles):
+    """Hand the role of each face to the view provider that paints it.
+
+    Deliberately not a property - see _ViewProviderLibraryPart.partRoles for
+    what declaring one costs."""
+    if not FreeCAD.GuiUp:
+        return
+    view = getattr(obj, "ViewObject", None)
+    proxy = getattr(view, "Proxy", None)
+    store = getattr(proxy, "setPartRoles", None)
+    if store is not None:
+        store(list(roles or []))
+
+
+def _material_appearance(material):
+    """One face's appearance from the Material linked to a part.
+
+    ArchComponent's Material is a LINK to a material object whose own
+    `Material` is a dict, and in that dict "DiffuseColor" is a string like
+    "(0.5, 0.5, 0.6)" and "Transparency" a whole percentage - so both are
+    parsed the way ArchComponent.updateData parses them, not the way a colour
+    arrives from ArchCommands (an RGBA tuple, which the doors paint with)."""
+    values = material if isinstance(material, dict) else (
+        getattr(material, "Material", None) or {})
+    colour = (0.8, 0.8, 0.8)
+    try:
+        channels = [float(channel) for channel in
+                    str(values["DiffuseColor"]).strip("()[] ").split(",")]
+        colour = tuple(channels[:3])
+    except Exception:
+        pass
+    appearance = FreeCAD.Material()
+    appearance.DiffuseColor = colour + (1.0,)
+    try:
+        appearance.Transparency = float(values.get("Transparency", 0)) / 100.0
+    except Exception:
+        pass
+    return appearance
+
+
+def _paints_the_same(current, wanted):
+    """True when an appearance list already paints exactly `wanted`.
+
+    Only DiffuseColor and Transparency are compared, because they are the
+    only things colorize() sets: an appearance that differs anywhere else is
+    someone else's, and repainting it would be colorize() fighting the user."""
+    if len(current) != len(wanted):
+        return False
+    for have, want in zip(current, wanted):
+        if (have.DiffuseColor != want.DiffuseColor
+                or have.Transparency != want.Transparency):
+            return False
+    return True
+
+
 class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
 
     def __init__(self, vobj):
         ArchComponent.ViewProviderComponent.__init__(self, vobj)
         vobj.Proxy = self
 
+    def partRoles(self):
+        """The role of each face, from the build that last ran.
+
+        Held on the proxy rather than in a property, which is a hard-won
+        detail: declaring any NEW property on a placed part - on the object
+        or on its view - breaks FreeCAD's undo/redo of that object's OTHER
+        properties, because the declaration is recorded inside the creation
+        transaction and replaying it stops the rest of the restore. It showed
+        up as a chest of drawers losing its derived Height when an unrelated
+        part's edit was undone (check L5), and it was not the property's type
+        or its position that mattered, only its existence.
+
+        Nothing is lost by not persisting the roles: the colours themselves
+        live in ShapeAppearance, which saves with the document, and the roles
+        are only needed to PAINT - which happens on a rebuild, and a rebuild
+        recomputes them."""
+        return list(getattr(self, "_roles", ()) or [])
+
+    def setPartRoles(self, roles):
+        """Remember one role per face, and repaint with them.
+
+        The repaint is here rather than left to the shape change: the roles
+        arrive from the object's rebuild AFTER its shape does, so a part
+        painted on the shape event alone would wear the roles of its
+        previous build. colorize() compares before it writes, so this does
+        not loop."""
+        self._roles = list(roles or [])
+        self.colorize(self.Object)
+
     def getIcon(self):
         return os.path.join(_DIR, "resources", "icons", "PartsLibrary.svg")
+
+    def updateData(self, obj, prop):
+        # The shape is what the colours are read from, so a rebuild repaints.
+        if prop == "Shape":
+            self.colorize(obj)
+        ArchComponent.ViewProviderComponent.updateData(self, obj, prop)
+
+    def onChanged(self, vobj, prop):
+        # Assigning ShapeAppearance in colorize() comes back through here, so
+        # colorize() compares before it writes - that comparison is what stops
+        # this being a loop, exactly as doors/object.py does it. PartRoles is
+        # here because the roles arrive from the object's rebuild AFTER the
+        # shape does, so a shape change alone would paint a part with the
+        # roles of its previous build.
+        if prop == "ShapeAppearance":
+            self.colorize(vobj.Object)
+        ArchComponent.ViewProviderComponent.onChanged(self, vobj, prop)
+
+    def colorize(self, obj):
+        """Paint each face with the colour of the piece it came from.
+
+        The roles are this view object's own PartRoles (see palette.py). A
+        face count that does not match means the roles belong to another
+        shape - a rebuild is on its way - so the appearance is left alone
+        rather than painted from a stale list.
+
+        A Material set on the part wins, and it has to win HERE rather than
+        by leaving the appearance alone: a per-face appearance overrides the
+        whole-shape colour FreeCAD paints a Material with, so a part left
+        painted in greys would ignore the material its owner had set. A role
+        this build of the palette does not know falls back to the default
+        rather than raising, because a hand-edited file must still draw."""
+        shape = getattr(obj, "Shape", None)
+        if shape is None or not shape.Faces:
+            return
+
+        material = getattr(obj, "Material", None)
+        if material:
+            wanted = [_material_appearance(material)] * len(shape.Faces)
+        else:
+            roles = self.partRoles()
+            if not roles or len(roles) != len(shape.Faces):
+                return
+            fallback = partslib_palette.ROLE_COLOUR[partslib_palette.DEFAULT_ROLE]
+            wanted = []
+            for role in roles:
+                red, green, blue, alpha = partslib_palette.ROLE_COLOUR.get(
+                    role, fallback)
+                appearance = FreeCAD.Material()
+                appearance.DiffuseColor = (red, green, blue, 1.0)
+                # Alpha is opacity, and FreeCAD stores its inverse - the same
+                # reading doors/object.py gives a glass panel.
+                appearance.Transparency = 1.0 - alpha
+                wanted.append(appearance)
+
+        if _paints_the_same(obj.ViewObject.ShapeAppearance, wanted):
+            return
+        obj.ViewObject.ShapeAppearance = wanted
 
     def setEdit(self, vobj, mode):
         # Mode 0 (Default) opens the library panel's edit page - FreeCAD

@@ -41,7 +41,10 @@ def build(params, assets, ctx):
     rim = sh.soften_top(rim, rim_thickness * 0.4)
     rim = sh.place(rim, 0, 0, body_height)
 
-    tub = sh.fuse_all([body, rim])
+    # The rim is the tub's own surface, so it stays a piece of its own for
+    # the final fuse rather than going into the body's: the basin's cavity is
+    # then cut from each of them, and a union cut is the same solid as
+    # cutting the pieces it is made of.
 
     inner_width = max(width - 2 * wall, 10.0)
     inner_depth = max(depth - 2 * wall, 10.0)
@@ -51,7 +54,11 @@ def build(params, assets, ctx):
     cavity = sh.soften_top(cavity, min(60.0, inner_height * 0.4), z=0)
     cavity = sh.place(cavity, wall, wall, bottom)
     try:
-        tub = tub.cut(cavity)
+        body = body.cut(cavity)
+    except Exception:
+        pass
+    try:
+        rim = rim.cut(cavity)
     except Exception:
         pass
 
@@ -59,8 +66,16 @@ def build(params, assets, ctx):
     drain = Part.makeCylinder(min(45.0, inner_depth * 0.09), bottom * 0.5)
     drain = sh.place(drain, width - wall - inner_width * 0.12, depth / 2.0,
                       bottom - bottom * 0.5)
+    # The drain well is in the basin's floor, well inside the body: the rim
+    # is nowhere near it.
     try:
-        tub = tub.cut(drain)
+        body = body.cut(drain)
     except Exception:
         pass
-    return tub
+
+    # One role, and so one colour: the basin and the rim around it are the same
+    # enamel, one moulded mass. The drain is cut out of that mass rather than
+    # set into it, so there is no hardware here.
+    return sh.fuse_all({
+        "shell": [body, rim],
+    }, ctx)

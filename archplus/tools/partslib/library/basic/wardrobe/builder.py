@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 from archplus.tools.partslib import shapes as sh
+from .. import _shared
 
 
 def build(params, assets, ctx):
@@ -47,7 +48,13 @@ def build(params, assets, ctx):
             carcass_height - kick_height - 2 * margin,
             groove=8.0, depth=10.0))
     carcass = sh.cut_boxes(carcass, grooves)
+    # The door line comes off the case in the case's own frame, before it
+    # is placed: the front layer is the doors, the rest the carcass behind
+    # them, and the two still add up to the one solid the case was.
+    front, carcass = _shared.split_front(carcass, carcass_width,
+                                         carcass_height)
     carcass = sh.place(carcass, overhang, overhang, 0)
+    front = sh.place(front, overhang, overhang, 0)
 
     cornice = sh.rounded_box(width, depth, cornice_height, radius=10)
     cornice = sh.soften_top(cornice, cornice_height * 0.3)
@@ -65,4 +72,11 @@ def build(params, assets, ctx):
         for i in range(door_count)
     ]
 
-    return sh.fuse_all([carcass, cornice] + pulls)
+    # Three roles, and so three colours: the case and its cornice are the
+    # mass, the door line split off its front is the applied face, the
+    # pulls the hardware.
+    return sh.fuse_all({
+        "carcass": [carcass, cornice],
+        "front": [front],
+        "fitting": pulls,
+    }, ctx)

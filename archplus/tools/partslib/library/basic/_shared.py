@@ -95,6 +95,28 @@ def pulls(width, height, door_count, base_z, y, vertical=True):
     return pulls
 
 
+def split_front(shape, width, height, thickness=PANEL):
+    """(front, rest) - a cabinet's door line split off its carcass.
+
+    A cabinet in this family is one solid with its doors CUT into the front
+    as seams and reveals, so there is no door piece for a colour to hang on:
+    the whole front belongs to the carcass. This splits the front
+    `thickness` of it off as a piece of its own. The two are disjoint and
+    their volumes add up to the carcass's exactly, so the part's shape is
+    unchanged - only the pieces the roles are read from are new.
+
+    `thickness` defaults to the family's panel, which is the right number:
+    the reveals cut 8-10mm in, so a door's own thickness holds them whole.
+
+    Call it on the carcass in its own frame, before it is placed: the box
+    spans (0, 0, 0) to (width, depth, height), its front face at y=0.
+    """
+    import Part
+
+    layer = Part.makeBox(width, thickness, height)
+    return shape.common(layer), shape.cut(layer)
+
+
 def table(params, assets, ctx, top_thickness=30.0, leg_radius=30.0,
           apron_height=70.0, shelf_height=0.0):
     """A rectangular top on 4 square legs, tied by an apron frame.
@@ -166,7 +188,10 @@ def table(params, assets, ctx, top_thickness=30.0, leg_radius=30.0,
                            radius=10),
             inset, inset, min(shelf_height, leg_height - shelf_thickness)))
 
-    return sh.fuse_all([top] + legs + rails + shelf)
+    return sh.fuse_all({
+        "top": [top] + shelf,
+        "carcass": legs + rails,
+    }, ctx)
 
 
 def bed(params, assets, ctx):
@@ -233,4 +258,7 @@ def bed(params, assets, ctx):
                 length - pillow_depth - length * 0.03,
                 base_height + mattress_height))
 
-    return sh.fuse_all([base, mattress, headboard] + pillows)
+    return sh.fuse_all({
+        "carcass": [base, headboard],
+        "soft": [mattress] + pillows,
+    }, ctx)

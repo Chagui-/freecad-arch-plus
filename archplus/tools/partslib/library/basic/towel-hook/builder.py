@@ -42,21 +42,26 @@ def build(params, assets, ctx):
                             sh.vector(0, -1, 0))
     arm = sh.place(arm, cx, projection - plate_depth, arm_z)
 
-    parts = [plate, arm]
+    rod = [arm]
     elbow = sh.tube_elbow(tube, bend_radius)
     if elbow is not None:
         # The quarter-bend is built in the XY plane running +X to +Y. One
         # 180-degree turn about (1, 0, -1) maps X to -Z and Y to -Y, which
         # lands the arc's ends exactly on the arm end and the upturned tip.
         elbow = sh.rotate(elbow, (1.0, 0.0, -1.0), 180.0)
-        parts.append(sh.place(elbow, cx, centre_y, centre_z))
+        rod.append(sh.place(elbow, cx, centre_y, centre_z))
         # Short upturned tip continuing out of the bend.
         tip_length = tube * 2.2
-        parts.append(sh.place(Part.makeCylinder(tube, tip_length),
-                              cx, centre_y - bend_radius, centre_z))
+        rod.append(sh.place(Part.makeCylinder(tube, tip_length),
+                            cx, centre_y - bend_radius, centre_z))
     else:
         # No torus available: a straight peg still hangs a towel.
-        parts.append(sh.place(Part.makeCylinder(tube, bend_radius * 1.6),
-                              cx, centre_y, arm_z))
+        rod.append(sh.place(Part.makeCylinder(tube, bend_radius * 1.6),
+                            cx, centre_y, arm_z))
 
-    return sh.fuse_all(parts)
+    # One role, and so one colour: the backplate is the mounting body on the
+    # wall, but a towel hook is all metal - plate and rod alike - so both
+    # halves of it are the same `fitting` black.
+    return sh.fuse_all({
+        "fitting": [plate] + rod,
+    }, ctx)

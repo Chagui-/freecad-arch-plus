@@ -33,4 +33,10 @@ def build(params, assets, ctx):
     shade = Part.makeCone(shade_bottom / 2.0, shade_top / 2.0, shade_height)
     shade = sh.place(shade, radius, radius, stem_height)
 
-    return sh.fuse_all([base, stem, shade])
+    # Two roles, and so two colours: the weighted base and the slim stem are
+    # the fitting that carries the lamp, the shade the upholstery - a floor
+    # lamp's shade is fabric, which is this part's soft surface.
+    return sh.fuse_all({
+        "fitting": [base, stem],
+        "soft": [shade],
+    }, ctx)

@@ -27,4 +27,10 @@ def build(params, assets, ctx):
                           face_depth=depth - return_depth)
     pull = sh.place(sh.bar(height * 0.22, 7.0, along="z"),
                      width - 40.0, depth - return_depth, height * 0.12)
-    return sh.fuse_all([box, pull])
+    # The L is the mass and the pull the hardware - two roles, two colours. A
+    # wall unit has no worktop, and the door is a groove in the L rather than
+    # an applied slab, so neither `top` nor `front` has a piece here.
+    return sh.fuse_all({
+        "carcass": [box],
+        "fitting": [pull],
+    }, ctx)

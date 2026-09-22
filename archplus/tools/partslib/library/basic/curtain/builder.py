@@ -105,4 +105,9 @@ def build(params, assets, ctx):
         for x in (0.0, width - finial_length)
     ]
 
-    return sh.fuse_all([fabric, rail] + finials)
+    # Two roles, and so two colours: the gathered fabric is the upholstery, the
+    # rail it hangs on and the finials capping it are the hardware.
+    return sh.fuse_all({
+        "soft": [fabric],
+        "fitting": [rail] + finials,
+    }, ctx)

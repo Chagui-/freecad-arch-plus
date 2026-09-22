@@ -53,14 +53,15 @@ def build(params, assets, ctx):
 
     # One boolean for the two appliance fronts and their control strips.
     inset = min(18.0, width * 0.03)
-    front = width - 2 * inset
+    appliance_width = width - 2 * inset
     boxes = [
-        (inset, -1.0, oven_z + inset, front, 12.0,
+        (inset, -1.0, oven_z + inset, appliance_width, 12.0,
          _OVEN_HEIGHT - 2 * inset),
-        (inset, -1.0, oven_z + _OVEN_HEIGHT - inset - 70.0, front, 16.0, 6.0),
-        (inset, -1.0, microwave_z + inset, front, 12.0,
+        (inset, -1.0, oven_z + _OVEN_HEIGHT - inset - 70.0, appliance_width,
+         16.0, 6.0),
+        (inset, -1.0, microwave_z + inset, appliance_width, 12.0,
          _MICROWAVE_HEIGHT - 2 * inset),
-        (inset, -1.0, microwave_top - inset - 30.0, front, 16.0, 5.0),
+        (inset, -1.0, microwave_top - inset - 30.0, appliance_width, 16.0, 5.0),
     ]
     carcass = sh.cut_boxes(carcass, boxes)
 
@@ -68,6 +69,17 @@ def build(params, assets, ctx):
     # appliances are a stack in a unit rather than the whole of it.
     carcass = _shared.doors(carcass, width, oven_z, 1, kick_height)
     carcass = _shared.doors(carcass, width, height, 1, microwave_top)
+    # The door line comes off the carcass's front in the carcass's own
+    # frame, before it is placed. The appliance recesses fall inside that
+    # layer, so they are painted with it: the recess is the front.
+    front, carcass = _shared.split_front(carcass, width, height)
     pulls = (_shared.pulls(width, oven_z, 1, kick_height, 0.0)
              + _shared.pulls(width, height, 1, microwave_top, 0.0))
-    return sh.place(sh.fuse_all([carcass] + pulls), 0, _HANDLE_PROTRUSION, 0)
+    # Three roles, and so three colours: the carcass is the mass, the door
+    # line - the cupboard doors and the appliance recesses with it - the
+    # applied face, the pulls the hardware.
+    return sh.place(sh.fuse_all({
+        "carcass": [carcass],
+        "front": [front],
+        "fitting": pulls,
+    }, ctx), 0, _HANDLE_PROTRUSION, 0)

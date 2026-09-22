@@ -143,4 +143,9 @@ def build(params, assets, ctx):
                      tap_x, tap_y - spout_length,
                      height + _TAP_HEIGHT - _TAP_RADIUS * 0.7)
 
-    return sh.fuse_all([body, riser, spout])
+    # The pressed pan is the sink's own moulded mass; the tap's riser and
+    # spout are the hardware standing on its back deck.
+    return sh.fuse_all({
+        "shell": [body],
+        "fitting": [riser, spout],
+    }, ctx)

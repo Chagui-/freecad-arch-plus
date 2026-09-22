@@ -82,4 +82,11 @@ def build(params, assets, ctx):
         for x in (left_x, right_x)
     ]
 
-    return sh.fuse_all(front_legs + posts + [seat] + rails + stretchers)
+    # Two roles, and so two colours: the legs, the back posts, the rails and
+    # the stretchers are the frame, the cushioned seat the upholstery. The
+    # legs stand on the floor themselves, so there are no separate feet to
+    # give a third role.
+    return sh.fuse_all({
+        "carcass": front_legs + posts + rails + stretchers,
+        "soft": [seat],
+    }, ctx)

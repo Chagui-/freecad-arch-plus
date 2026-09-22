@@ -79,7 +79,10 @@ def build(params, assets, ctx):
     lid = sh.soften_top(lid, tank_lid_height * 0.4)
     lid = sh.place(lid, tank_x, tank_y, bowl_height + tank_body_height)
 
-    body = sh.fuse_all([bowl, seat, tank, lid])
+    # The pan, the cistern and the cistern's lid are the ceramic mass. The
+    # closed seat is a piece of its own, and joins the fuse below - after the
+    # flush button, which is cut into the ceramic only.
+    body = sh.fuse_all({"shell": [bowl, tank, lid]})
 
     # Flush button, recessed into the lid rather than standing proud - on
     # the reference it reads as a dark oval sunk into the ceramic.
@@ -91,4 +94,13 @@ def build(params, assets, ctx):
         body = body.cut(button)
     except Exception:
         pass
-    return body
+
+    # The seat stops at the cistern's front face, so the button set into the
+    # lid is cut out of the pan and cistern alone: the cut passes the seat
+    # by, and it joins the fuse as the applied part it is.
+    # Two roles, and so two colours: the pan and cistern are the moulded mass
+    # under the seat, which is the hardware.
+    return sh.fuse_all({
+        "shell": [body],
+        "fitting": [seat],
+    }, ctx)

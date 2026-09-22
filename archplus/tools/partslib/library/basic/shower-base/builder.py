@@ -44,13 +44,43 @@ def build(params, assets, ctx):
     # centre drain is a wet-room detail, whereas a tray drains to one end
     # so the floor can fall towards it and the trap can reach a wall.
     waste_radius = min(45.0, inner_width * 0.06)
+    waste_x = rim + inner_width * 0.16
+    waste_y = depth - rim - inner_depth * 0.16
+    # The bottom of the drain - the floor you look down onto - and so the
+    # top of the slab of tray the waste is set into.
+    waste_floor = height - recess_height - height * 0.3
     waste = Part.makeCylinder(waste_radius, height * 0.6)
-    waste = sh.place(waste,
-                      rim + inner_width * 0.16,
-                      depth - rim - inner_depth * 0.16,
-                      height - recess_height - height * 0.3)
+    waste = sh.place(waste, waste_x, waste_y, waste_floor)
     try:
         tray = tray.cut(waste)
     except Exception:
         pass
-    return tray
+
+    # The waste is a fitting: a slab of the tray under the drain comes out
+    # of the body and is fused back as its own piece, so the face you see
+    # down the drain is hardware and the tray around it stays carcass.
+    wastes = []
+    # Square about the drain and wide enough to take the whole of it - not
+    # a disc, whose wall would land on the drain's own and leave one face
+    # shared by two pieces - but held inside the recess, and no deeper than
+    # the tray under the drain, so the fuse puts back what was cut.
+    slab_height = min(height * 0.1, waste_floor)
+    slab_half = min(waste_radius * 1.6, waste_x - rim, width - rim - waste_x,
+                    waste_y - rim, depth - rim - waste_y)
+    if slab_height > 0 and slab_half > 0:
+        slab_width = slab_half * 2.0
+        slab_x = waste_x - slab_half
+        slab_y = waste_y - slab_half
+        slab_z = waste_floor - slab_height
+        slab = Part.makeBox(slab_width, slab_width, slab_height)
+        slab.translate(sh.vector(slab_x, slab_y, slab_z))
+        tray = sh.cut_box(tray, slab_x, slab_y, slab_z,
+                          slab_width, slab_width, slab_height)
+        wastes.append(slab)
+
+    # Two roles, and so two colours: the tray is the moulded mass, the waste
+    # the hardware set into it.
+    return sh.fuse_all({
+        "shell": [tray],
+        "fitting": wastes,
+    }, ctx)

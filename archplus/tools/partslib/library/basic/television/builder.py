@@ -56,18 +56,26 @@ def build(params, assets, ctx):
                           height - 2 * bezel)
     body = sh.place(body, 0, panel_y, base_z)
 
-    parts = [body]
+    panels = [body]
+    stands = []
     if mounted:
         # Slim wall bracket behind the panel.
-        parts.append(sh.place(
+        stands.append(sh.place(
             sh.rounded_box(width * 0.3, 30.0, height * 0.4, radius=4),
             width * 0.35, panel, height * 0.3))
     else:
         # Pedestal: a neck on a wide foot plate.
-        parts.append(sh.place(
+        stands.append(sh.place(
             sh.rounded_box(width * 0.12, panel * 1.6, stand_height, radius=8),
             width * 0.44, (foot_depth - panel * 1.6) / 2.0, 0))
-        parts.append(sh.place(
+        stands.append(sh.place(
             sh.rounded_box(width * 0.34, foot_depth, 18.0, radius=12),
             width * 0.33, 0, 0))
-    return sh.fuse_all(parts)
+    # One role, and so one colour: the panel and its black bezel are the mass,
+    # and the bracket or pedestal under it is the stand that hardware
+    # carries - a television is not wood, so neither is `carcass`. The screen
+    # is a RECESS cut into the bezel, not a separate glazing piece, so there
+    # is no `glass` here either.
+    return sh.fuse_all({
+        "fitting": panels + stands,
+    }, ctx)

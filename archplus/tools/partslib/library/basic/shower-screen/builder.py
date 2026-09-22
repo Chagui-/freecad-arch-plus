@@ -34,4 +34,10 @@ def build(params, assets, ctx):
     rail = sh.rounded_box(pane_width, profile * 0.8, profile * 0.8, radius=3)
     rail = sh.place(rail, profile, (profile - profile * 0.8) / 2.0, 0)
 
-    return sh.fuse_all([post, pane, rail])
+    # Two roles, and so two colours: the pane is the glazing, and the post and
+    # the bottom rail are the profile it is carried in - hardware rather
+    # than mass, whatever the post is doing structurally.
+    return sh.fuse_all({
+        "glass": [pane],
+        "fitting": [post, rail],
+    }, ctx)

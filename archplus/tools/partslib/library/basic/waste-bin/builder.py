@@ -63,4 +63,9 @@ def build(params, assets, ctx):
                            overhang + _PEDAL_REACH, _PEDAL_HEIGHT, radius=6)
     pedal = sh.place(pedal, (diameter - _PEDAL_LENGTH) / 2.0, 0.0, 0.0)
 
-    return sh.fuse_all([body, cap, pedal])
+    # The drum is the bin's own moulded mass; the domed cap is its lid and
+    # the pedal is hardware, so both are the dark `fitting` colour.
+    return sh.fuse_all({
+        "shell": [body],
+        "fitting": [cap, pedal],
+    }, ctx)

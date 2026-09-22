@@ -32,4 +32,10 @@ def build(params, assets, ctx):
     pulls = _shared.pulls(width, height, door_count, 0.0, clearance)
     # Handles on a wall unit sit at the BOTTOM of the door, within reach.
     pulls = [sh.place(p, 0, 0, -height * 0.30) for p in pulls]
-    return sh.fuse_all([box] + pulls)
+    # The box is the mass and the handles the hardware - two roles, two
+    # colours. The doors are seams and a reveal cut into the carcass, not
+    # applied slabs, so the part has no `front` piece.
+    return sh.fuse_all({
+        "carcass": [box],
+        "fitting": pulls,
+    }, ctx)

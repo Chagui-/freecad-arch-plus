@@ -45,7 +45,8 @@ def build(params, assets, ctx):
     box = _shared.doors(box, width, carcass_height, door_count, kick_height)
     box = sh.place(box, 0, front, 0)
 
-    parts = [box]
+    carcass = [box]
+    tops = []
     if with_worktop:
         # The top dips a millimetre into the carcass. It now lands on the
         # box's edges rather than on a solid face, and two solids meeting on
@@ -54,8 +55,14 @@ def build(params, assets, ctx):
         # surface, so the Height it advertises is still the top's face.
         top = sh.rounded_box(width, depth, worktop + 1.0, radius=6)
         top = sh.roll_top(top, min(worktop * 0.4, 12.0), axis="x")
-        parts.append(sh.place(top, 0, 0, carcass_height - 1.0))
+        tops.append(sh.place(top, 0, 0, carcass_height - 1.0))
 
     pulls = _shared.pulls(width, carcass_height, door_count, kick_height,
                           front)
-    return sh.fuse_all(parts + pulls)
+    # Three roles, and so three colours: the box is the mass, the worktop the
+    # surface you use, the pulls the hardware - see palette.py.
+    return sh.fuse_all({
+        "carcass": carcass,
+        "top": tops,
+        "fitting": pulls,
+    }, ctx)

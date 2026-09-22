@@ -67,4 +67,12 @@ def build(params, assets, ctx):
                 (width - pull_length) / 2.0, overhang,
                 kick_top + (i + 0.5) * drawer_height))
 
-    return sh.fuse_all([carcass, top] + pulls)
+    # Three roles, and so three colours: the case is the mass, the
+    # overhanging top the surface you use, the pulls the hardware. The
+    # drawer fronts are grooves cut into the case, so there is no applied
+    # front to paint.
+    return sh.fuse_all({
+        "carcass": [carcass],
+        "top": [top],
+        "fitting": pulls,
+    }, ctx)

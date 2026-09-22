@@ -61,4 +61,12 @@ def build(params, assets, ctx):
         handles.append(sh.place(
             sh.bar(width * 0.4, 7.0, along="x"),
             width * 0.3, overhang, kick_height + drawer_zone * 0.5))
-    return sh.fuse_all([box, top] + handles)
+    # The box is the mass, the worktop the surface you use, the handles the
+    # hardware - three roles, three colours. The oven and the drawer are
+    # recesses cut into the carcass rather than pieces of their own, so
+    # neither adds a role: there is nothing applied on this front.
+    return sh.fuse_all({
+        "carcass": [box],
+        "top": [top],
+        "fitting": handles,
+    }, ctx)

@@ -31,36 +31,48 @@ def build(params, assets, ctx):
     foot_height = min(60.0, seat_height * 0.14)
     foot_size = min(55.0, arm_width * 0.30)
 
-    parts = []
+    # ONE role, because this part is one upholstered mass: its frame is under
+    # the fabric rather than beside it, so painting the arms and back as wood
+    # would be wrong, and the legs are upholstered with the rest. The seams
+    # below are still cut into the pieces rather than into the assembled mass
+    # - the same boxes, so the same solid - which is what gives fuse_all the
+    # pieces its role map reads faces from.
+    pieces = []
     for x, y in ((arm_width * 0.25, depth * 0.07),
                  (width - arm_width * 0.25 - foot_size, depth * 0.07),
                  (arm_width * 0.25, depth * 0.93 - foot_size),
                  (width - arm_width * 0.25 - foot_size,
                   depth * 0.93 - foot_size)):
-        parts.append(sh.place(sh.square_leg(foot_height, foot_size), x, y, 0))
+        pieces.append(sh.place(sh.square_leg(foot_height, foot_size),
+                                x, y, 0))
 
     base = Part.makeBox(width, depth, seat_height - foot_height)
     base = sh.roll_top(base, min(30.0, depth * 0.05), axis="x")
-    parts.append(sh.place(base, 0, 0, foot_height))
+    pieces.append(sh.place(base, 0, 0, foot_height))
 
     for x in (0.0, width - arm_width):
         arm = Part.makeBox(arm_width, depth, arm_height - foot_height)
         arm = sh.roll_top(arm, arm_width * 0.44, axis="y")
-        parts.append(sh.place(arm, x, 0, foot_height))
+        pieces.append(sh.place(arm, x, 0, foot_height))
 
     back = Part.makeBox(inner_width, back_thickness, back_height)
     back = sh.roll_top(back, min(back_thickness * 0.44, 90.0), axis="x")
-    parts.append(sh.place(back, arm_width, depth - back_thickness,
-                          seat_height))
-
-    body = sh.fuse_all(parts)
+    pieces.append(sh.place(back, arm_width, depth - back_thickness,
+                            seat_height))
 
     # A single seam where the seat cushion meets the frame at the front,
-    # and one across the base of the back cushion.
+    # and one across the base of the back cushion. Both are cut into every
+    # piece instead of into the assembled mass: the same boxes, so the same
+    # solid (a union is a union), but the fuse then still has the pieces to
+    # read the faces' roles from.
     seam = 12.0
     seat_front = depth - back_thickness
-    body = sh.cut_box(body, arm_width, seat_front - seam,
-                      seat_height - 22.0, inner_width, seam, 40.0)
-    body = sh.cut_box(body, arm_width, seat_front - seam * 1.5,
-                      seat_height, inner_width, seam * 1.5 + 6.0, seam)
-    return body
+    seams = [
+        (arm_width, seat_front - seam, seat_height - 22.0,
+         inner_width, seam, 40.0),
+        (arm_width, seat_front - seam * 1.5, seat_height,
+         inner_width, seam * 1.5 + 6.0, seam),
+    ]
+    return sh.fuse_all({
+        "soft": [sh.cut_boxes(piece, seams) for piece in pieces],
+    }, ctx)

@@ -82,4 +82,12 @@ def build(params, assets, ctx):
             panel_thickness, depth - panel_thickness * 0.6,
             under_height - modesty_height))
 
-    return sh.fuse_all([top, panel, pedestal] + modesty + pulls)
+    # Three roles, and so three colours: the top is the surface you use, the
+    # panel end, the pedestal and the modesty panel the mass, the drawer
+    # pulls the hardware. The drawer fronts are grooves cut into the
+    # pedestal rather than applied slabs, so there is no `front` piece.
+    return sh.fuse_all({
+        "top": [top],
+        "carcass": [panel, pedestal] + modesty,
+        "fitting": pulls,
+    }, ctx)
