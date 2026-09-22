@@ -10,11 +10,20 @@ import FreeCAD
 import Part
 
 from archplus.tools.walls import gui as wg
+from archplus.tools.walls import model
 from archplus.tools.walls import object as walls_object
 
 
+class _Seg(types.SimpleNamespace):
+    """A segment stand-in. Real document objects hash by identity, and the
+    claim resolver keys its result by the object it was handed, so these
+    must stay hashable — SimpleNamespace's value equality makes it not."""
+
+    __hash__ = object.__hash__
+
+
 def _segment(name="Segments"):
-    return types.SimpleNamespace(
+    return _Seg(
         Name=name, Label=name, Group=[], InList=[], Wall=None,
         Proxy=types.SimpleNamespace(Type="Wall", Segment=True))
 
@@ -206,6 +215,76 @@ def test_target_options_exclude_sources_and_ancestors():
     assert fallback in options and b in options and a not in options
     root.Group = [a]
     assert cmd._targetOptions([(a, ("Edge1",))]) == []
+
+
+def test_moving_faces_onto_the_fallback_stores_no_claims():
+    """A fallback builds what no one else claims, so moving faces onto it
+    must not leave an explicit list behind: that list is ignored, and the
+    next recompute reports it as an ignored claim."""
+    sk = types.SimpleNamespace()
+    fallback = _segment("Segments")
+    fallback.Fallback = True
+    fallback.Edges = []
+    fallback.Base = sk
+    a = _segment("a")
+    a.Fallback = False
+    a.Edges = [(sk, ("Edge1",))]
+    a.Base = sk
+    root = _root(fallback, a)
+
+    walls_object.moveSegmentEdges(a, fallback, ["Edge1"])
+
+    nodes = [walls_object._claimNode(seg) for seg in root.Group
+             if walls_object.is_segment(seg)]
+    built, warnings = model.resolve_claims(nodes, ["Edge1", "Edge2"])
+    assert warnings == []
+    assert built[fallback] == frozenset(["Edge1", "Edge2"])
+    assert built[a] == frozenset()
+
+
+def test_moving_faces_off_the_fallback_forgets_them():
+    """A move takes the edges away from the segment they came from, the
+    fallback included.
+
+    Leaving them behind in the fallback's own list looks harmless while it
+    IS the fallback, because the resolver ignores that list and says so. But
+    the moment the fallback moves to another segment the list wakes up,
+    collides with the target that already took the edge, and the edge then
+    builds NOWHERE - a run missing from the wall, reported as "claimed by
+    several segments"."""
+    sk = types.SimpleNamespace()
+    fallback = _segment("Segments")
+    fallback.Fallback = True
+    fallback.Edges = [(sk, ("Edge1", "Edge2"))]
+    fallback.Base = sk
+    a = _segment("a")
+    a.Fallback = False
+    a.Edges = []
+    a.Base = sk
+    root = _root(fallback, a)
+
+    walls_object.moveSegmentEdges(fallback, a, ["Edge1"])
+
+    # Edge1 left the fallback's list; Edge2, which nobody moved, stays.
+    assert [s for _l, subs in fallback.Edges for s in subs] == ["Edge2"]
+
+    # The fallback moves to a third segment, so both are normal build again.
+    third = _segment("third")
+    third.Fallback = True
+    third.Edges = []
+    third.Base = sk
+    third.Wall = root
+    third.InList = [root]
+    fallback.Fallback = False
+    root.Group = [fallback, a, third]
+
+    nodes = [walls_object._claimNode(seg) for seg in root.Group
+             if walls_object.is_segment(seg)]
+    built, warnings = model.resolve_claims(nodes, ["Edge1", "Edge2"])
+    assert warnings == []
+    assert built[a] == frozenset(["Edge1"])
+    assert built[fallback] == frozenset(["Edge2"])
+    assert built[third] == frozenset()
 
 
 def test_target_labels_suffix_repeats():
