@@ -204,6 +204,35 @@ human is the mouse routing into that same panel:
 
 ---
 
+## Part M — Part colours
+
+M1-M3 are scripted (`verify_part_colours.py`): every shipped part declares a
+role per face, every role is in `palette.py`, no part uses more than three
+colours, and a placed part is painted one material per face with exactly its
+roles' colours. What a human checks is whether the colours *read*:
+
+- [ ] **M1 (wood reads as wood, and doors read as doors).** Place a **Base
+      cabinet**: its case and its worktop are brown (worktop the lighter of
+      the two) and its handles near black. Place a **Wardrobe** and a **Tall
+      pantry cabinet**: case, door line and handles are three distinct
+      colours, the doors darker than the case.
+- [ ] **M2 (not everything is wood).** Place a **Bathtub**, a **Sink**, a
+      **Toilet** and a **Fridge**: each is 80% white with near-black
+      hardware, not brown. A **King bed** is brown wood with white bedding.
+      A **Sofa** and an **Armchair** are ONE colour — a sofa is one
+      upholstered mass, legs included.
+- [ ] **M3 (glazing is glass).** Place a **Shower screen** and a **Mirror**:
+      the pane is tinted blue and you can see through it to what is behind
+      (the mid-grey of the frame, on the mirror), while the frame itself is
+      solid near-black.
+- [ ] **M4 (a Material wins).** Select a placed part and set a **Material**
+      on it in the property editor. The part takes the material's colour and
+      the palette stops being applied; clearing the Material brings the
+      palette back on the next rebuild (a parameter edit, or **Reload from
+      library**).
+
+---
+
 ## Wrap-up
 
 - [ ] Every checkbox above is ticked, or the specific failure and its

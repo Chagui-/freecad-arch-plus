@@ -265,10 +265,10 @@ def _forget_library_builders():
         del sys.modules[name]
 
 
-def _remember_shape(key, shape):
+def _remember_shape(key, shape, roles=None):
     if key in _SHAPE_CACHE:
         return
-    _SHAPE_CACHE[key] = shape
+    _SHAPE_CACHE[key] = (shape, roles)
     _SHAPE_CACHE_ORDER.append(key)
     while len(_SHAPE_CACHE_ORDER) > _SHAPE_CACHE_LIMIT:
         _SHAPE_CACHE.pop(_SHAPE_CACHE_ORDER.pop(0), None)
@@ -310,6 +310,23 @@ def build_shape(manifest, part_dir, overrides=None):
     object's, and a caller free to mutate what it was given would otherwise
     corrupt the entry for everyone after it. Copying a finished solid is
     still far cheaper than rebuilding one."""
+    shape, _roles = _build_entry(manifest, part_dir, overrides)
+    return shape
+
+
+def build_shape_and_roles(manifest, part_dir, overrides=None):
+    """build_shape(), plus the role of each face - see it for the cache.
+
+    One role per face, in the shape's own face order: what the view provider
+    paints the part with (palette.py). The roles are read from the builder
+    while it runs and cached beside the shape, so a caller that wants
+    geometry only - a measurement, a thumbnail - pays nothing for them, and
+    a second caller for the same key pays nothing for either."""
+    return _build_entry(manifest, part_dir, overrides)
+
+
+def _build_entry(manifest, part_dir, overrides=None):
+    """(shape, roles) for one manifest, reusing an identical earlier build."""
     geometry = manifest.get("geometry") or {}
     builder = select_builder(manifest, part_dir)
     params = partslib_manifest.merge_params(manifest, overrides)
@@ -322,20 +339,26 @@ def build_shape(manifest, part_dir, overrides=None):
 
     cached = _SHAPE_CACHE.get(key)
     if cached is not None:
-        try:
-            return cached.copy()
-        except Exception:
-            # A cached shape that can no longer be copied is worse than no
-            # cache at all - drop it and rebuild.
-            _SHAPE_CACHE.pop(key, None)
+        return _copy_entry(key, cached)
 
     assets = AssetLoader(part_dir, geometry.get("assets"))
-    shape = builder(params, assets, _Context(geometry))
-    _remember_shape(key, shape)
+    context = _Context(geometry)
+    shape = builder(params, assets, context)
+    _remember_shape(key, shape, context.roles)
+    return _copy_entry(key, _SHAPE_CACHE[key])
+
+
+def _copy_entry(key, entry):
+    """A copy of a cached (shape, roles), which is what callers get.
+
+    A cached shape that can no longer be copied is worse than no cache at
+    all - drop it and rebuild."""
+    shape, roles = entry
     try:
-        return shape.copy()
+        return shape.copy(), roles
     except Exception:
-        return shape
+        _SHAPE_CACHE.pop(key, None)
+        return shape, roles
 
 
 class _Context:
@@ -343,6 +366,11 @@ class _Context:
 
     def __init__(self, geometry):
         self.transform = geometry.get("transform") or {}
+        # One role per face of the shape the builder returns, put there by
+        # shapes.fuse_all() - see palette.py. None means the builder never
+        # declared roles, which is a part that has not been tagged yet
+        # rather than a part with no colour.
+        self.roles = None
 
     def normalize(self, shape, params=None):
         """Apply the manifest's transform: unit scale, rotation, anchor.

@@ -169,4 +169,11 @@ def build(params, assets, ctx):
             handles.extend(_handle(door_x, column_width, slab_height, low,
                                    side))
 
-    return sh.fuse_all([body] + doors + handles)
+    # Two roles, and so two colours: the insulated body and the door slabs
+    # hung on it are one white moulded mass - a fridge's doors are its own
+    # shell, not an applied wooden front - while the grab handles on them are
+    # hardware, the same black as a cabinet's pull.
+    return sh.fuse_all({
+        "shell": [body] + doors,
+        "fitting": handles,
+    }, ctx)

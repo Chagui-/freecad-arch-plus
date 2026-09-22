@@ -80,16 +80,24 @@ def build(params, assets, ctx):
                           groove=6.0, depth=8.0,
                           face_depth=depth - return_depth)
 
-    parts = [box]
+    carcass = [box]
+    tops = []
     if with_worktop:
         # A millimetre into the carcass, as in base-cabinet: the top lands on
         # the box's edges now, and a coincident face there fuses to a
         # compound of two solids rather than to one part.
         top = _l_shape(width, depth, worktop + 1.0, 6.0)
-        parts.append(sh.place(top, 0, 0, carcass_height - 1.0))
+        tops.append(sh.place(top, 0, 0, carcass_height - 1.0))
 
     pull = sh.place(sh.bar((carcass_height - kick_height) * 0.22, 7.0,
                             along="z"),
                      width - return_width - 40.0, depth - return_depth,
                      kick_height + (carcass_height - kick_height) * 0.4)
-    return sh.fuse_all(parts + [pull])
+    # Same three roles as base-cabinet, and so the same three colours: the L is
+    # the mass, the worktop the surface you use, the pull the hardware. The
+    # door here is a groove cut into the L, so it has no piece of its own.
+    return sh.fuse_all({
+        "carcass": carcass,
+        "top": tops,
+        "fitting": [pull],
+    }, ctx)

@@ -58,4 +58,9 @@ def build(params, assets, ctx):
     except Exception:
         pass
 
-    return sh.fuse_all([plate, arm, spindle, roll])
+    # One role, and so one colour: the backplate is the mounting body on the
+    # wall, but a roll holder is all metal, so the plate, the arm, the
+    # spindle and the roll it carries share the one `fitting` black.
+    return sh.fuse_all({
+        "fitting": [plate, arm, spindle, roll],
+    }, ctx)

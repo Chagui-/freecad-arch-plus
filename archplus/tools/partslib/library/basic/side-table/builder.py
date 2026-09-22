@@ -55,4 +55,13 @@ def build(params, assets, ctx):
                      width / 2.0 - span_x * 0.15, inset,
                      drawer_z + drawer_height / 2.0)
 
-    return sh.fuse_all([top] + legs + [box, shelf, pull])
+    # Three roles, three colours: the top and the lower shelf are the surfaces
+    # you use, the legs and the apron (which is also the drawer box) are the
+    # mass, and the drawer's bar pull is hardware - the same reading as the
+    # nightstand and the chest of drawers. The drawer has no applied front of
+    # its own (it is a groove cut into that box, not a slab hung on it).
+    return sh.fuse_all({
+        "top": [top, shelf],
+        "carcass": legs + [box],
+        "fitting": [pull],
+    }, ctx)

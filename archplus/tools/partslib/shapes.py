@@ -389,16 +389,149 @@ def place(shape, x, y, z):
     return moved
 
 
-def fuse_all(shapes):
-    """Fuse a list of shapes, cleaning up coincident faces where possible.
+# The epsilon the role map is read with: a point this far inside a face is
+# unambiguously in the piece that owns it, and far smaller than any face the
+# library builds - the smallest features here are millimetre chamfers.
+_ROLE_EPSILON = 0.05
 
-    `removeSplitter()` is itself wrapped: it is a cosmetic clean-up (fewer
-    spurious edges from touching faces), never load-bearing, so a failure
-    there must not lose the fused shape."""
-    result = shapes[0]
-    for extra in shapes[1:]:
-        result = result.fuse(extra)
+
+def fuse_all(groups, ctx=None):
+    """Fuse pieces grouped by role, and say which face came from which piece.
+
+    `groups` is {role: [shape, ...]} - the roles a part is made of, and each
+    role's pieces. Grouping them reorders the fuse, since a role's pieces are
+    fused together: that cannot change the solid (a union is a union) but it
+    can change how the result's faces are subdivided, and removeSplitter()
+    below normalises most of that back. Volume, bounding box and solid count
+    are identical either way, which is what the parts' own verification
+    compares - a face count that moves is a subdivision, not a shape.
+
+    The roles come back on `ctx` (geometry._Context) as one role per face of
+    the result, which is what the view provider paints (see palette.py).
+    They cannot be read off the fused shape afterwards, because the pieces
+    are gone by then - and a fused face's own surface is not a reliable
+    substitute either, since removeSplitter() refits the coplanar faces it
+    merges, and a refit surface matches no piece at all. So the map is made
+    here, while the pieces still exist, by looking just inside each face.
+
+    A part that is one shape (nothing to fuse) is returned untouched rather
+    than run through removeSplitter, so a builder with no pieces to group
+    keeps the shape it built byte for byte."""
+    from archplus.tools.partslib.palette import colour_for
+
+    pieces = []
+    for role, shapes in groups.items():
+        colour_for(role)        # a typo'd role is a build error, not a colour
+        for shape in shapes:
+            pieces.append((role, shape))
+    if not pieces:
+        raise ValueError("fuse_all() was given no pieces")
+
+    if len(pieces) == 1:
+        result = pieces[0][1]
+    else:
+        result = pieces[0][1]
+        for _role, extra in pieces[1:]:
+            result = result.fuse(extra)
+        try:
+            result = result.removeSplitter()
+        except Exception:
+            pass
+
+    if ctx is not None:
+        ctx.roles = _face_roles(result, pieces)
+    return result
+
+
+def _face_roles(shape, pieces):
+    """One role per face of `shape`, read from the pieces it was fused from.
+
+    Pieces are tried smallest first: where two of them meet - a handle on a
+    door, a cushion pressed into a frame - the smaller is the detail that
+    face belongs to, and the common case is then found in a try or two."""
+    order = sorted(range(len(pieces)), key=lambda i: pieces[i][1].Volume)
+    return [_face_role(face, pieces, order) for face in shape.Faces]
+
+
+def _face_role(face, pieces, order):
+    """The role of the piece that owns one face of a fused shape."""
+    import Part
+
+    for point, normal in _face_probes(face):
+        # Just inside the face is in the piece whose surface this is, and not
+        # in a piece the face merely touches - which is what makes this work
+        # where comparing surfaces does not.
+        for epsilon in (_ROLE_EPSILON, _ROLE_EPSILON / 10.0):
+            inside = point - normal * epsilon
+            for index in order:
+                role, piece = pieces[index]
+                if not _bounding_box_contains(piece, inside):
+                    continue
+                try:
+                    if piece.isInside(inside, 0.0, False):
+                        return role
+                except Exception:
+                    continue
+
+    # Fallbacks, for the few faces whose inside-point lands in no piece at
+    # all - a face thinner than the epsilon, a concave corner. Nearest
+    # surface first, then the part's largest piece: either way the face stays
+    # on a piece of its own part, which is all a colour needs.
+    best, best_distance = None, None
+    for index in order:
+        role, piece = pieces[index]
+        try:
+            distance = piece.distToShape(Part.Vertex(face.CenterOfMass))[0]
+        except Exception:
+            continue
+        if best_distance is None or distance < best_distance:
+            best, best_distance = role, distance
+    if best is not None:
+        return best
+    return pieces[order[-1]][0]
+
+
+def _face_probes(face):
+    """Points ON a face, each with the face's normal there.
+
+    More than one, because a face's centre of mass is not always on it: the
+    centre of a ring - a mirror's front ring, the rim of a hole - falls in the
+    hole, and an inside-point taken from there lands in whatever is behind.
+    The midpoint of the face's parameter range is on a ring's surface, and a
+    vertex is on a face whose trim the midpoint misses."""
+    probes = []
+    for u, v in _face_uv_candidates(face):
+        try:
+            probes.append((face.valueAt(u, v), face.normalAt(u, v)))
+        except Exception:
+            continue
+    return probes
+
+
+def _face_uv_candidates(face):
+    """UV parameters worth probing on a face, most representative first."""
+    candidates = []
     try:
-        return result.removeSplitter()
+        candidates.append(face.Surface.parameter(face.CenterOfMass))
     except Exception:
-        return result
+        pass
+    try:
+        u0, u1, v0, v1 = face.ParameterRange
+        candidates.append(((u0 + u1) / 2.0, (v0 + v1) / 2.0))
+    except Exception:
+        pass
+    for vertex in list(face.Vertexes)[:3]:
+        try:
+            candidates.append(face.Surface.parameter(vertex.Point))
+        except Exception:
+            continue
+    return candidates
+
+
+def _bounding_box_contains(piece, point):
+    """A cheap rejection before the kernel call. A bounding box is
+    conservative, so this never skips the piece that owns the point."""
+    box = piece.BoundBox
+    return (box.XMin <= point.x <= box.XMax
+            and box.YMin <= point.y <= box.YMax
+            and box.ZMin <= point.z <= box.ZMax)

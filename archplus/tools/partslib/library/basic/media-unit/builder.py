@@ -79,4 +79,12 @@ def build(params, assets, ctx):
         for x in (0.0, width - door_width)
     ]
 
-    return sh.fuse_all([box, top] + shelves + pulls)
+    # Three roles, and so three colours: the case is the mass, the worktop
+    # and the open bay shelves are the surfaces you use, the pulls the
+    # hardware. The cupboard doors are grooves cut into the case, so there
+    # is no applied front to paint.
+    return sh.fuse_all({
+        "carcass": [box],
+        "top": [top] + shelves,
+        "fitting": pulls,
+    }, ctx)

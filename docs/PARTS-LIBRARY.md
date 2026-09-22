@@ -59,6 +59,13 @@ wall the way a door does.
   from library** to re-read its manifest and rebuild it; opening or
   recomputing a document never silently rebuilds a part from a
   since-edited definition on its own.
+- **Part colours** — a placed part is painted in the colours of what it is
+  made of. Wood parts come in three shades of brown (its case, the surfaces
+  you use, its doors); everything else is grey — upholstery and moulded
+  white bodies at 80% white, hardware 80% black, and glazing tinted blue and
+  genuinely see-through. At most three colours on a part and usually two, so
+  a kitchen unit reads as a case, a worktop and a handle rather than one flat
+  block. A `Material` set on the part wins over them.
 
 ### Usage
 
@@ -355,6 +362,22 @@ render:
   roll that runs through.
 - **Batch your cuts.** `cut_boxes()` subtracts a compound in one boolean.
   Twenty sequential cuts against a growing solid cost real seconds.
+- **Say what each piece is.** A builder ends in `sh.fuse_all({role:
+  [pieces], ...}, ctx)`, grouping its pieces by role: `carcass`, `top` and
+  `front` are the wood, `soft` is upholstery and bedding, `shell` a moulded
+  body (a tub, a bowl, a fridge — anything that is not wood and not
+  hardware), `glass` glazing, `fitting` hardware. Each face is then painted
+  with its own piece's colour, so the roles are what make a part readable —
+  three colours is the ceiling, two is the usual answer, and a role that is
+  not in `palette.py` fails the build rather than painting the wrong
+  colour. `verify_part_colours.py` checks both halves.
+- **Give the doors a piece of their own.** `_shared.carcass` builds a solid
+  with its fronts *cut* into it, so a cabinet's doors would otherwise be
+  part of the carcass and could not take the `front` colour. Where that
+  matters — a tall unit, a wardrobe, where the door line is the whole of
+  what you see — `_shared.split_front(carcass, width, height)` returns the
+  door layer and the rest as two disjoint pieces: the shape is unchanged,
+  and the doors get their own colour.
 - **Avoid non-uniform scaling.** `oval()` runs a shape through
   `transformGeometry`, turning it into a BSpline surface that is far more
   expensive to tessellate — one such surface once cost 17 s per thumbnail.

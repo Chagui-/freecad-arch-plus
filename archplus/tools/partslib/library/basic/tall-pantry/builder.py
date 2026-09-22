@@ -39,6 +39,16 @@ def build(params, assets, ctx):
                               min(60.0, depth * 0.1))
     carcass = _shared.doors(carcass, width, tier_z, leaves, kick_height)
     carcass = _shared.doors(carcass, width, height, leaves, tier_z)
+    # The door line comes off the carcass's front in the carcass's own
+    # frame, before it is placed: the larder doors are then a piece of
+    # their own rather than grooves in the case.
+    front, carcass = _shared.split_front(carcass, width, height)
     pulls = (_shared.pulls(width, tier_z, leaves, kick_height, 0.0)
              + _shared.pulls(width, height, leaves, tier_z, 0.0))
-    return sh.place(sh.fuse_all([carcass] + pulls), 0, _HANDLE_PROTRUSION, 0)
+    # Three roles, and so three colours: the carcass is the mass, the larder
+    # door line the applied face, the pulls the hardware.
+    return sh.place(sh.fuse_all({
+        "carcass": [carcass],
+        "front": [front],
+        "fitting": pulls,
+    }, ctx), 0, _HANDLE_PROTRUSION, 0)

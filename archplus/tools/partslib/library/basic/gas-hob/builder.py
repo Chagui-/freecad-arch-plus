@@ -102,4 +102,10 @@ def build(params, assets, ctx):
         knobs.append(sh.place(Part.makeCylinder(knob_radius, 12.0),
                               x, knob_radius * 1.6, plate))
 
-    return sh.fuse_all([body] + burners + knobs)
+    # Two roles, and so two colours: the plate is glazing - a hob plate, not a
+    # wooden worktop - and the burners and knobs are the hardware sitting on
+    # it.
+    return sh.fuse_all({
+        "glass": [body],
+        "fitting": burners + knobs,
+    }, ctx)

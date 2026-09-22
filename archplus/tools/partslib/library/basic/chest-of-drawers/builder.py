@@ -76,4 +76,11 @@ def build(params, assets, ctx):
     top = sh.roll_top(top, min(top_thickness * 0.4, 10.0), axis="x")
     top = sh.place(top, 0, 0, carcass_height)
 
-    return sh.fuse_all([box, top] + pulls)
+    # Three roles, and so three colours: the case is the mass, the overhanging
+    # top the surface you use, the pulls the hardware. The drawer fronts are
+    # grooves cut into the case, so there is no applied front to paint.
+    return sh.fuse_all({
+        "carcass": [box],
+        "top": [top],
+        "fitting": pulls,
+    }, ctx)

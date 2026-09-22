@@ -92,4 +92,12 @@ def build(params, assets, ctx):
                       tap_x, tap_y - min(150.0, basin_depth * 0.5),
                       height + tap_height - 11.0)
 
-    return sh.fuse_all([carcass, top, backsplash, riser, spout] + pulls)
+    # Three roles, and so three colours: the case is the mass, the countertop
+    # and the backsplash upstand of the same slab are the surfaces you use,
+    # the tap and the pulls the hardware. The doors are grooves cut into the
+    # case, so there is no applied front to paint.
+    return sh.fuse_all({
+        "carcass": [carcass],
+        "top": [top, backsplash],
+        "fitting": pulls + [riser, spout],
+    }, ctx)

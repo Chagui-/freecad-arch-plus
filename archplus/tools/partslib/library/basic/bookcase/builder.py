@@ -54,7 +54,11 @@ def build(params, assets, ctx):
                                       plinth_height + gap * i))
             shelves.append(shelf)
 
-    carcass = sh.fuse_all([carcass] + shelves) if shelves else carcass
+    # The shelves stay pieces of their own rather than being fused into the
+    # case here: the role map reads each face back from the piece that owns
+    # it, so a shelf has to reach fuse_all as a separate `top`. The recess
+    # below never rises above the plinth and so never reaches a shelf, which
+    # makes cutting it from the case alone the same solid.
     # Plinth recess: set the base back on all but the very bottom so the
     # case appears to stand on a shadow gap rather than sit flat.
     carcass = sh.toe_kick(carcass, carcass_width, carcass_depth,
@@ -62,9 +66,15 @@ def build(params, assets, ctx):
                            kick_depth=min(25, depth * 0.1),
                            margin=min(20.0, width * 0.03))
     carcass = sh.place(carcass, overhang, overhang, 0)
+    shelves = [sh.place(shelf, overhang, overhang, 0) for shelf in shelves]
 
     cornice = sh.rounded_box(width, depth, cornice_height, radius=8)
     cornice = sh.soften_top(cornice, cornice_height * 0.35)
     cornice = sh.place(cornice, 0, 0, carcass_height)
 
-    return sh.fuse_all([carcass, cornice])
+    # Two roles, and so two colours: the case and its cornice are the mass,
+    # each shelf a surface you use.
+    return sh.fuse_all({
+        "carcass": [carcass, cornice],
+        "top": shelves,
+    }, ctx)
