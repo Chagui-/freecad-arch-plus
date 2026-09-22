@@ -809,6 +809,16 @@ class _FaceSelection:
         self.HasSubObjects = True
 
 
+# The pick-to-run band is one wall width, plus this. A Left/Right-aligned
+# wall puts its FAR face exactly one width from the baseline - the very edge
+# of the band - so the comparison there is decided by the last bit of the
+# arithmetic: measured on a real 300mm wall, every point of its far face came
+# out at 300.000 from the run, and a click a hair over it was reported as
+# "not on any claimed run". This is the same 1mm the geometry joins its own
+# solids with.
+_BAND_SLACK = 1.0
+
+
 class WallSplitCommand:
     def GetResources(self):
         return {"Pixmap": _SPLIT_ICON, "MenuText": "Split / move segment…",
@@ -1033,8 +1043,9 @@ class WallSplitCommand:
 
         Each picked face maps through the user's actual click point —
         projected onto the sketch plane and matched to the nearest claimed
-        edge within one effective wall width, since a point inside the
-        wall band can never be farther than that from its baseline. When
+        edge within one wall width plus _BAND_SLACK, since a point inside
+        the wall band is at most one width from its baseline, and a
+        Left/Right-aligned wall's far face sits exactly on that width. When
         FreeCAD recorded no pick point the face centroid is projected and
         matched instead. Splitting requires picked faces: a selection
         without subelements maps to nothing. A face that maps to no claimed
@@ -1045,7 +1056,7 @@ class WallSplitCommand:
         names = list(sel.SubElementNames)
         points = list(sel.PickedPoints)
         paired = points if len(points) == len(names) else [None] * len(names)
-        tol = walls_object.effectiveValues(obj)["Width"]
+        tol = walls_object.effectiveValues(obj)["Width"] + _BAND_SLACK
         picked = []
         for i, name in enumerate(names):
             if not name.startswith("Face"):

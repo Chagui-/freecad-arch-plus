@@ -192,6 +192,39 @@ def test_split_with_no_claims_maps_nothing():
     assert cmd._pickedEdges(seg, _sel(seg, subs=("Face1",))) == []
 
 
+def test_a_click_on_the_far_face_still_matches_its_run(monkeypatch):
+    """The far face of a Left-aligned wall sits exactly one Width from its
+    baseline - the very edge of the band a pick is mapped through - so the
+    match must not be decided by the last bit of the arithmetic.
+
+    Measured on a real 300mm wall, every point of that face came out at
+    300.000 from the run: a click a hair over it was reported as "face
+    'Face2' of segment 'Segments-ext-f2b' is not on any claimed run; nothing
+    to split there", while the near face (distance ~0) worked. The guard
+    still has to refuse a face that is nowhere near the segment's runs."""
+    run = ("Edge1", [(0.0, 0.0, 0.0), (4000.0, 0.0, 0.0)])
+    monkeypatch.setattr(wg, "_claimedEdgePolylines", lambda obj: [run])
+    monkeypatch.setattr(wg, "_projectToSketchPlane",
+                        lambda point, base: point)
+    monkeypatch.setattr(walls_object, "effectiveValues",
+                        lambda obj: {"Width": 300.0, "Align": "Left"})
+    seg = _segment()
+    seg.Base = types.SimpleNamespace()
+    cmd = wg.WallSplitCommand()
+
+    for offset in (299.9996, 300.0, 300.0004):
+        sel = _sel(seg, subs=("Face2",),
+                   points=[FreeCAD.Vector(2000.0, offset, 0.0)])
+        assert cmd._pickedEdges(seg, sel) == ["Edge1"], (
+            "a click %.4f from the run is on the wall's face and must match"
+            % offset)
+
+    sel = _sel(seg, subs=("Face2",),
+               points=[FreeCAD.Vector(2000.0, 900.0, 0.0)])
+    assert cmd._pickedEdges(seg, sel) == [], (
+        "a face nowhere near a run must still be refused")
+
+
 def test_target_options_exclude_sources_and_ancestors():
     cmd = wg.WallSplitCommand()
     root = types.SimpleNamespace(
