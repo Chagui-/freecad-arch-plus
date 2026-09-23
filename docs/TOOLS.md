@@ -242,8 +242,11 @@ existing segment to move the faces' runs into.
   and can flicker in the 3D view (z-fighting — the same cosmetic artifact as
   any two touching solids in FreeCAD).
 - **Split / move segment** maps each clicked face to the claimed run nearest
-  to the click point (within one wall width); a clicked face that matches no
-  run is reported in the Report view and nothing is split for it.
+  to the click point (within one wall width, plus a millimetre for the
+  arithmetic: a Left/Right-aligned wall's far face sits exactly one width
+  from its baseline, which would otherwise be decided by rounding); a clicked
+  face that matches no run is reported in the Report view and nothing is
+  split for it.
 
 ## Regenerating the images
 
