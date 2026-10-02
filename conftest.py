@@ -13,6 +13,7 @@
 
 import os
 import sys
+import tempfile
 import types
 
 # Make the add-on modules (in the repo root) importable.
@@ -123,6 +124,14 @@ class _Constraint:
         self.args = args
 
 
+class _FakeArchComponent:
+    """ArchComponent.Component, as far as an import needs it."""
+
+
+class _FakeArchViewProvider:
+    """ArchComponent.ViewProviderComponent, likewise."""
+
+
 class _FakeViewObject:
     """Enough ViewObject for the panels' base-sketch hiding: a sketch starts
     visible and hide() flips it, exactly like a real 3D-view object."""
@@ -193,6 +202,10 @@ def _install_fakes():
     )
     freecad.Units = types.SimpleNamespace(Quantity=lambda *a, **k: None)
     freecad.newDocument = lambda *a, **k: _FakeDocument()
+    # Where a tool puts its cache. Pointed at the system temp directory so a
+    # test that builds an index cannot touch the real one a live FreeCAD on
+    # this machine is using.
+    freecad.getUserAppDataDir = lambda *a, **k: tempfile.gettempdir()
     sys.modules["FreeCAD"] = freecad
 
     # FreeCADGui — the modules register their commands at import time
@@ -235,6 +248,16 @@ def _install_fakes():
     sketcher = types.ModuleType("Sketcher")
     sketcher.Constraint = _Constraint
     sys.modules["Sketcher"] = sketcher
+
+    # ArchComponent — the BIM base classes a tool's object module subclasses
+    # at import time (Component for the object proxy, ViewProviderComponent
+    # for its view provider). Only the names have to exist for those class
+    # statements to run, and nothing in these tests constructs one, so they
+    # are plain classes rather than stand-ins with behaviour.
+    archcomponent = types.ModuleType("ArchComponent")
+    archcomponent.Component = _FakeArchComponent
+    archcomponent.ViewProviderComponent = _FakeArchViewProvider
+    sys.modules["ArchComponent"] = archcomponent
 
 
 _install_fakes()

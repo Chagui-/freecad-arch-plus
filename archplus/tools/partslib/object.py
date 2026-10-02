@@ -781,9 +781,23 @@ class _ViewProviderLibraryPart(ArchComponent.ViewProviderComponent):
 
 
 def isLibraryPart(obj):
-    """True when `obj` is a placed library part."""
+    """True when `obj` is a placed library part.
+
+    By the proxy's own Type marker rather than isinstance(): every class in
+    this module is re-created when the module is re-imported, and a part
+    placed before that keeps a proxy of the PREVIOUS class object, so an
+    isinstance check against the current one starts answering False for
+    parts that are perfectly fine - the editor then refuses them with "is
+    not a placed library part". A real document showed exactly that: 41 of
+    its 43 parts unrecognised after a session in which this module had been
+    reloaded. The walls tool answers the same question the same way
+    (Draft.getType(obj) == "Wall"), for the same reason.
+
+    A deleted object raises rather than answering False - FreeCAD hands out
+    dead references - so the guard stays."""
     try:
-        return isinstance(getattr(obj, "Proxy", None), _LibraryPart)
+        return (getattr(getattr(obj, "Proxy", None), "Type", None)
+                == "LibraryPart")
     except Exception:
         return False
 

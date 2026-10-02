@@ -168,6 +168,7 @@ def run():
             detail="objects=%d" % len(doc.Objects))
 
     _rebuild_all_checks()
+    _reimport_checks()
 
     return h.failures()
 
@@ -236,3 +237,38 @@ def _rebuild_all_checks():
     h.check("F7 a selection does not narrow the document-wide rebuild",
             rebuilt == [bed.Name, chest.Name],
             detail="rebuilt=%r with one part selected" % (rebuilt,))
+
+
+def _reimport_checks():
+    """F8: a re-import must not orphan the parts already in a document.
+
+    FreeCAD can re-import a workbench's Python, and anything else that
+    reloads this module leaves every placed part holding a proxy of the
+    PREVIOUS class object. An isinstance check against the current class
+    then answers False for parts that are perfectly fine, the editor refuses
+    them with "is not a placed library part", and a task panel that cannot
+    recognise its own object is what leaves the "close the open task panel"
+    message behind. A real document was found in exactly that state, 41 of
+    its 43 parts unrecognised."""
+    import importlib
+
+    from archplus.tools.partslib import gui as partslib_gui
+
+    doc = h.fresh_doc()
+    part = _make("basic/nightstand")
+    doc.recompute()
+    before = partslib_object.isLibraryPart(part)
+    importlib.reload(partslib_object)
+    h.check("F8 a re-import does not orphan a part already placed",
+            before and partslib_object.isLibraryPart(part),
+            detail="before=%r after=%r same class=%r"
+            % (before, partslib_object.isLibraryPart(part),
+               id(type(part.Proxy)) == id(partslib_object._LibraryPart)))
+    opened = partslib_object.editLibraryPart(part)
+    panel = partslib_gui._editPanel
+    h.check("F8 and the editor still opens on it",
+            panel is not None and panel.obj is part,
+            detail="opened=%r panel=%r obj=%r"
+            % (opened, panel is not None, getattr(panel, "obj", None)))
+    if panel is not None:
+        panel._onDiscard()
