@@ -346,7 +346,7 @@ class _Wall:
             return []
         nodes = [_claimNode(n) for n in getattr(root, "Group", []) if is_segment(n)]
         built, _warnings = model.resolve_claims(nodes, _sketchEdgeNames(sketch))
-        return sorted(built.get(obj, frozenset()))
+        return model.sort_edge_names(built.get(obj, frozenset()))
 
 
 def _claimNode(obj):
@@ -360,8 +360,8 @@ def _claimNode(obj):
 
 
 def _sketchEdgeNames(sketch):
-    return [n for n in sketch.Shape.ElementMap.values()
-            if n.startswith("Edge")]
+    return model.sort_edge_names(n for n in sketch.Shape.ElementMap.values()
+                                 if n.startswith("Edge"))
 
 
 def is_segment(obj):
@@ -1040,13 +1040,18 @@ def _bandFace(a, b):
 def _hostedOpenings(root):
     """The doors/windows cutting this wall: everything listed in
     Subtractions plus anything hosted Arch-style through a Hosts link,
-    deduplicated."""
+    deduplicated.
+
+    The openings are cut out of the segment's shape one after another, and
+    each cut hands the result a fresh sub-element order, so their order has
+    to be a property of the model and not of the document's dependency
+    graph: the InList-derived ones are sorted by name instead of taken in
+    whatever order InList happens to hold (re-hosting an opening moves it
+    in that list, and the wall's sub-element indices would follow)."""
     out = list(getattr(root, "Subtractions", None) or [])
-    for obj in root.InList:
-        if obj in out:
-            continue
-        if root in (getattr(obj, "Hosts", None) or []):
-            out.append(obj)
+    extra = [obj for obj in root.InList
+             if obj not in out and root in (getattr(obj, "Hosts", None) or [])]
+    out.extend(sorted(extra, key=lambda obj: obj.Name))
     return out
 
 

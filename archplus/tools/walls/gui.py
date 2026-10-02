@@ -684,7 +684,7 @@ def _claimedEdgePolylines(segment):
     out = []
     if sketch is None or not hasattr(sketch, "Shape"):
         return out
-    for sub in sorted(segment.Proxy._claimedEdges(segment)):
+    for sub in model.sort_edge_names(segment.Proxy._claimedEdges(segment)):
         try:
             edge = sketch.Shape.getElement(sub)
             pts = [edge.Vertexes[0].Point]
