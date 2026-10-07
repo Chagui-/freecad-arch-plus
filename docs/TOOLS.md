@@ -170,6 +170,21 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   by picking any segment face (the tool walks up to the root). Openings are
   found both among the root's `Subtractions` and, Arch-style, through the
   opening's `Hosts`, and an opening that spans two segments is cut from both.
+  They are cut in a fixed order (the `Subtractions` list, then any
+  `Hosts`-discovered ones by name), because each cut renumbers the built
+  shape's sub-elements.
+- **Build order follows the sketch, not the edge names** — a segment
+  extrudes its claimed edges in the sketch's own geometry order (`Edge2`
+  before `Edge10`, never the other way round from a plain string sort), and
+  fuses the resulting runs in that order. The built shape's faces, edges and
+  vertices are numbered in the order the booleans produce them, so anything
+  that references those sub-elements — a TechDraw dimension on a section
+  view, for one — only keeps pointing at the same feature if the order is a
+  property of the sketch. Appending a run to the sketch therefore leaves the
+  order of the runs already there alone. (An edit that changes a run's own
+  topology, such as adding or removing the opening it carries, still
+  renumbers the sub-elements after it: FreeCAD's TechDraw references are
+  plain element indices, with no name-based repair.)
 - **Section views and *Fuse Arch*** — wall segments report the `Wall` draft
   type (the root/segment distinction lives in an internal flag), so the stock
   fuse paths (`FuseArch` on a Draft Shape2DView / *Section View*, `JoinArch`

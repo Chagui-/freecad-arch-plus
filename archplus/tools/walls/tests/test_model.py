@@ -45,6 +45,34 @@ def test_config_offset_comes_from_the_root_dict():
     assert cfg["Offset"] == 50.0
 
 
+# --- edge ordering -----------------------------------------------------------
+
+def test_edge_order_is_the_sketchs_own_not_the_string_sort():
+    """Edge10 is the sketch's tenth edge, not its second. A plain string
+    sort puts it between Edge1 and Edge2, which scrambles the order the
+    wall's solids are fused in — and with them every sub-element index the
+    built shape hands out."""
+    assert model.sort_edge_names(
+        ["Edge10", "Edge2", "Edge1", "Edge21", "Edge3"]
+    ) == ["Edge1", "Edge2", "Edge3", "Edge10", "Edge21"]
+
+
+def test_edge_order_keeps_existing_edges_in_place_when_one_is_added():
+    """The whole point: appending a run to the sketch must not renumber the
+    build order of the runs already there. Under the old string sort
+    'Edge10' slotted in second and moved everything after it."""
+    before = model.sort_edge_names(["Edge%d" % i for i in range(1, 10)])
+    after = model.sort_edge_names(
+        ["Edge%d" % i for i in range(1, 11)])
+    assert before == ["Edge%d" % i for i in range(1, 10)]
+    assert after[:len(before)] == before
+
+
+def test_edge_order_sorts_unexpected_names_last_and_deterministically():
+    names = model.sort_edge_names(["Face1", "Edge2", "Edge10", "Edge1"])
+    assert names == ["Edge1", "Edge2", "Edge10", "Face1"]
+
+
 # --- resolve_claims ----------------------------------------------------------
 
 EDGES = ["Edge1", "Edge2", "Edge3", "Edge4"]

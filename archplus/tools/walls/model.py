@@ -41,6 +41,36 @@ def effective_config(chain, defaults=None):
     }
 
 
+def edge_sort_key(name):
+    """Sort key putting a sketch edge subname in the sketch's own geometry
+    order: the numeric index FreeCAD gives it ("Edge2" before "Edge10").
+    Names that are not Edge<number> sort after the numbered ones, by text,
+    so an unexpected subname is still ordered deterministically."""
+    if name.startswith("Edge"):
+        index = name[4:]
+        if index.isdigit():
+            return (0, int(index), "")
+    return (1, 0, name)
+
+
+def sort_edge_names(names):
+    """Edge subnames in the sketch's geometry order.
+
+    The plain string sort this replaces is outright wrong for a sketch of
+    ten or more edges — it puts Edge10 between Edge1 and Edge2 — and, worse,
+    it is not a property of the sketch: adding an edge that sorts early
+    (Edge10 to a nine-edge sketch, or any edge after a renumbering edit)
+    reorders every claim the wall builds, so the built shape hands out
+    completely different sub-element indices for unchanged geometry.
+    Downstream references into those indices (TechDraw dimensions on a
+    section view, for one) then read a different piece of the wall.
+
+    Sorting by index makes the build order the sketch's own order, so an
+    appended edge lands last and leaves the existing order — and the
+    sub-element indices the build produces — alone."""
+    return sorted(names, key=edge_sort_key)
+
+
 class ClaimNode:
     """One segment in the claim tree (plain data; node identity is the
     document object, passed in as an opaque handle)."""
