@@ -692,6 +692,8 @@ and in `run()`:
             view.Placement.Base == FreeCAD.Vector(0, 0, 0))
 
     # A plane with nothing to draw leaves an empty shape, not a stale one.
+    import ArchSectionPlane
+
     empty = doc.addObject("App::FeaturePython", "EmptyPlane")
     ArchSectionPlane._SectionPlane(empty)
     bare = sobj.makeSectionView(doc, base=empty)
@@ -982,8 +984,9 @@ git commit -m "Add a section view that draws exactly what Draft's draws"
 
 - [ ] **Step 1: Write the failing checks**
 
-Append to `verify_sections.py`, and call it from `run()` after the wall view
-checks:
+Append to `verify_sections.py`, and call it from `run()` after the last of the
+wall view checks (the no-base one) — the `import ArchSectionPlane` above it is
+then in scope for the part-only plane this block adds:
 
 ```python
 def _part_view(doc, plane):
