@@ -671,18 +671,20 @@ and in `run()`:
 
     # Draft's own view, as the reference behaviour.
     reference = doc.addObject("Part::Part2DObjectPython", "Reference")
-    import Draft
     import draftobjects.shape2dview as s2v
 
     s2v.Shape2DView(reference)
     reference.Base = plane
-    reference.FuseArch = True
     reference.ProjectionMode = "Solid"
     doc.recompute()
 
     from archplus.tools.sections import object as sobj
 
+    # Compared with the same settings set explicitly on both, rather than by
+    # relying on the two objects defaulting alike.
     view = sobj.makeSectionView(doc, base=plane)
+    view.FuseArch = True
+    reference.FuseArch = True
     doc.recompute()
 
     h.check("the new view draws something", len(view.Shape.Edges) > 0)
@@ -691,12 +693,54 @@ and in `run()`:
     h.check("the view keeps its own placement",
             view.Placement.Base == FreeCAD.Vector(0, 0, 0))
 
+    # A fresh view must default to what a fresh Draft view defaults to, or
+    # converting a view would change its drawing by the act of converting.
+    fresh_reference = doc.addObject("Part::Part2DObjectPython", "FreshReference")
+    s2v.Shape2DView(fresh_reference)
+    fresh = sobj.makeSectionView(doc)
+    h.check("a fresh view defaults like Draft's",
+            fresh.FuseArch == fresh_reference.FuseArch
+            and fresh.OnlySolids == fresh_reference.OnlySolids
+            and fresh.VisibleOnly == fresh_reference.VisibleOnly
+            and fresh.ProjectionMode == fresh_reference.ProjectionMode)
+
+    # A clipping plane does not clip here either: Draft declares Clip on the
+    # view itself (default False), so its Base.Clip branch is dead code.
+    plane.Clip = True
+    doc.recompute()
+    h.check("a clipping plane draws what Draft draws",
+            _visible_edges(view.Shape) == _visible_edges(reference.Shape))
+    plane.Clip = False
+    doc.recompute()
+
+    # With the fuse off, still exactly what Draft draws with it off: this is
+    # the only path that ever runs that branch on a converted view whose
+    # FuseArch is false.
+    view.FuseArch = False
+    reference.FuseArch = False
+    doc.recompute()
+    h.check("with FuseArch off, still what Draft draws",
+            _visible_edges(view.Shape) == _visible_edges(reference.Shape))
+    view.FuseArch = True
+    reference.FuseArch = True
+    doc.recompute()
+
+    # Emptying a plane that had geometry must leave an empty shape, not the
+    # last one it drew.
+    kept = list(plane.Objects or [])
+    plane.Objects = []
+    doc.recompute()
+    h.check("emptying a plane leaves an empty shape",
+            view.Shape.isNull() or len(view.Shape.Edges) == 0)
+    plane.Objects = kept
+    doc.recompute()
+
     # A plane with nothing to draw leaves an empty shape, not a stale one.
     import ArchSectionPlane
 
-    empty = doc.addObject("App::FeaturePython", "EmptyPlane")
-    ArchSectionPlane._SectionPlane(empty)
-    bare = sobj.makeSectionView(doc, base=empty)
+    empty_plane = doc.addObject("App::FeaturePython", "EmptyPlane")
+    ArchSectionPlane._SectionPlane(empty_plane)
+    bare = sobj.makeSectionView(doc, base=empty_plane)
     doc.recompute()
     h.check("an empty plane draws nothing", bare.Shape.isNull()
             or len(bare.Shape.Edges) == 0)
@@ -769,7 +813,10 @@ class _SectionView:
         if "FuseArch" not in pl:
             obj.addProperty("App::PropertyBool", "FuseArch", PROP_GROUP,
                             "Fuse wall and structure objects of one material")
-            obj.FuseArch = True
+            # False, as a fresh Draft view's is: this view has to draw what
+            # the view it replaces draws, and the convert command copies that
+            # view's value across.
+            obj.FuseArch = False
         if "OnlySolids" not in pl:
             obj.addProperty("App::PropertyBool", "OnlySolids", PROP_GROUP,
                             "Project solid geometry only")
@@ -895,13 +942,14 @@ class _SectionView:
         import TechDraw
 
         cutplane = plane.Shape
-        # Draft's own resolution: the plane's Clip, overridden by the view's
-        # if it has one. This view declares no Clip, and the convert command
-        # refuses a view that uses it, so in practice this is the plane's
-        # default - mirroring Draft keeps a hand-made view on a clipping
-        # plane behaving like the Draft view it replaces.
-        clip = bool(getattr(plane, "Clip", False))
-        clip = bool(getattr(obj, "Clip", clip))
+        # Draft's resolution, read as its code actually behaves: it declares
+        # Clip on the view itself (default False), so its `obj.Base.Clip`
+        # branch is dead - Draft's own TODO says as much - and the view's
+        # value always wins. This view declares no Clip, and the convert
+        # command refuses a view that sets it, so this is False: a clipping
+        # plane does not clip here either, exactly as in Draft. Depth *is* the
+        # plane's - Draft's Shape2DView has no Depth of its own.
+        clip = bool(getattr(obj, "Clip", False))
         depth = getattr(plane, "Depth", None)
         depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
@@ -1189,13 +1237,14 @@ projecting them:
         import TechDraw
 
         cutplane = plane.Shape
-        # Draft's own resolution: the plane's Clip, overridden by the view's
-        # if it has one. This view declares no Clip, and the convert command
-        # refuses a view that uses it, so in practice this is the plane's
-        # default - mirroring Draft keeps a hand-made view on a clipping
-        # plane behaving like the Draft view it replaces.
-        clip = bool(getattr(plane, "Clip", False))
-        clip = bool(getattr(obj, "Clip", clip))
+        # Draft's resolution, read as its code actually behaves: it declares
+        # Clip on the view itself (default False), so its `obj.Base.Clip`
+        # branch is dead - Draft's own TODO says as much - and the view's
+        # value always wins. This view declares no Clip, and the convert
+        # command refuses a view that sets it, so this is False: a clipping
+        # plane does not clip here either, exactly as in Draft. Depth *is* the
+        # plane's - Draft's Shape2DView has no Depth of its own.
+        clip = bool(getattr(obj, "Clip", False))
         depth = getattr(plane, "Depth", None)
         depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
