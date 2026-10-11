@@ -37,17 +37,25 @@ def add_frame(sketch, outer_p1, outer_p2, outer_p3, outer_p4,
 def plan_outline(shape, thickness=1.0):
     """The plan outline of `shape` as a thin slab, or None.
 
-    The outline is what a section view may draw instead of the part's solid,
-    so it has to show everything the solid's own plan drawing shows. It is
-    built by projecting the shape with the same hidden-line call Draft's
-    Shape2DView uses, taking TechDraw's own outer-wire extractor over the
-    result, and extruding that face a hair - a slab, not a bare wire, because
-    OnlySolids views and the section cut both drop non-solid geometry.
+    The outline is what a section view may draw instead of the part's solid:
+    the **filled outer boundary** of the shape's plan drawing. It is built by
+    projecting the shape with the same hidden-line call Draft's Shape2DView
+    uses, taking TechDraw's own outer-wire extractor over the result, and
+    extruding that face a hair - a slab, not a bare wire, because OnlySolids
+    views and the section cut both drop non-solid geometry.
 
-    Returns None whenever that cannot be trusted: no geometry, no outer wire,
-    a degenerate face, or - the case that matters - a shape whose drawing has
-    a part the outer wire does not cover (a part with two separate outlines,
-    like a waste bin with an overhanging lid). Callers then draw the solid.
+    What it deliberately does not reproduce: loops nested inside the outer
+    boundary - a smaller block on top of a bigger one, a table's top over its
+    pedestal, a hole through a part. There the drawing is a filled footprint.
+    Reproducing every loop was measured *bigger* than the solid's own drawing
+    (the bed: 48 edges against 16), which is the opposite of what this
+    feature exists to do. docs/TOOLS.md says the same to the user.
+
+    Returns None whenever the outline cannot be trusted: no geometry, no
+    outer wire, a degenerate face, or a shape whose own drawing reaches
+    *outside* the outer wire (a part with two separate outlines, like a
+    waste bin with an overhanging lid). Callers then draw the solid, which
+    is always right and merely slower.
 
     A view drawing this value draws its silhouette - the face it was
     extruded from, which sits in the projection plane (z = 0) where Draft's
@@ -83,7 +91,12 @@ def plan_outline(shape, thickness=1.0):
 
 
 def _covers(face, drawn, tolerance=0.5):
-    """True when every vertex the shape's own drawing shows lies on `face`."""
+    """True when the shape's own drawing stays inside `face`.
+
+    Containment, not equality: a loop nested inside the face is covered, and
+    dropping it is the documented simplification (see plan_outline). What
+    this rejects is a drawing that reaches *outside* the outline.
+    """
     for edge in drawn:
         for vertex in edge.Vertexes:
             try:

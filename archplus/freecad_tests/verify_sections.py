@@ -53,16 +53,30 @@ def run():
     h.check("the outline is a 1mm slab", outline is not None
             and abs(outline.BoundBox.ZLength - 1.0) < 1e-6
             and outline.Volume > 0)
-    h.check("the outline covers the box's drawing",
-            _visible_edges(part.Shape) <= _visible_edges(outline))
     # Counted on the *drawing*, not the raw shapes: the slab's own edges are
     # three times its silhouette's (top loop, bottom loop, 1mm verticals), so
     # a raw count would say nothing about what a view has to draw.
     h.check("the outline draws no more edges than the solid",
             len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
 
-    # A shape with two separate outlines: the outer wire is one of them, so the
-    # outline cannot cover the drawing and must be refused.
+    # The outline is the filled outer boundary: a loop nested inside it (a
+    # smaller block on top of a bigger one) is dropped on purpose, not
+    # refused. Reproducing it was measured bigger than the solid's own
+    # drawing, which is the thing this feature exists to shrink.
+    nested = Part.makeCompound([Part.makeBox(600, 400, 300),
+                                Part.makeBox(300, 200, 300,
+                                             FreeCAD.Vector(150, 100, 300))])
+    nested_outline = common_geometry.plan_outline(nested)
+    h.check("a nested loop is dropped, not refused",
+            nested_outline is not None
+            and len(_visible_edges(nested_outline)) == 4)
+
+    # A projection too small to be a usable outline is refused.
+    h.check("a hairline projection gets no outline",
+            common_geometry.plan_outline(Part.makeBox(0.5, 0.5, 10)) is None)
+
+    # A shape with two separate outlines: the outer wire is one of them, so
+    # the other reaches outside the outline and it must be refused.
     two = Part.makeCompound([Part.makeBox(400, 400, 300),
                              Part.makeBox(400, 400, 300,
                                           FreeCAD.Vector(2000, 0, 0))])
