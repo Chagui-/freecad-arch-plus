@@ -168,11 +168,16 @@ def run():
 
     outline = common_geometry.plan_outline(part.Shape)
     h.check("a box gets an outline", outline is not None)
-    h.check("the outline is a slab", outline is not None and len(outline.Faces) == 1)
+    h.check("the outline is a 1mm slab", outline is not None
+            and abs(outline.BoundBox.ZLength - 1.0) < 1e-6
+            and outline.Volume > 0)
     h.check("the outline covers the box's drawing",
             _visible_edges(part.Shape) <= _visible_edges(outline))
-    h.check("the outline is smaller than the drawing",
-            len(outline.Edges) < len(part.Shape.Edges))
+    # Counted on the *drawing*, not the raw shapes: the slab's own edges are
+    # three times its silhouette's (top loop, bottom loop, 1mm verticals), so
+    # a raw count would say nothing about what a view has to draw.
+    h.check("the outline draws no more edges than the solid",
+            len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
 
     # A shape with two separate outlines: the outer wire is one of them, so the
     # outline cannot cover the drawing and must be refused.
@@ -235,6 +240,10 @@ def plan_outline(shape, thickness=1.0):
     a degenerate face, or - the case that matters - a shape whose drawing has
     a part the outer wire does not cover (a part with two separate outlines,
     like a waste bin with an overhanging lid). Callers then draw the solid.
+
+    A view drawing this value draws its silhouette - the face it was
+    extruded from, which sits in the projection plane (z = 0) where Draft's
+    own projected edges sit.
     """
     import TechDraw
     from FreeCAD import Vector
@@ -902,7 +911,7 @@ that check is the feature's correctness gate.
 python3 -m pytest -q
 ```
 
-Expected: `556 passed`.
+Expected: `564 passed` (556 + the 8 rules tests Task 3 added).
 
 - [ ] **Step 6: Commit**
 
@@ -967,8 +976,12 @@ and in `run()`:
     plane.Objects = with_part
     doc.recompute()
 
-    h.check("outlines on: the drawing got smaller",
-            len(view.Shape.Edges) < len(solid_view.Shape.Edges))
+    # Not "smaller": for a plain box the outline's silhouette is the same
+    # rectangle the solid draws, so equal is the honest expectation here.
+    # The real parts (many visible edges) are where the drawing shrinks, and
+    # Task 7 measures that on the real document.
+    h.check("outlines on: the drawing did not grow",
+            len(view.Shape.Edges) <= len(solid_view.Shape.Edges))
     placed_outline = part.Proxy.planOutline(part).copy()
     placed_outline.Placement = part.Placement
     h.check("outlines on: the part's outline is what got drawn",
@@ -1060,7 +1073,13 @@ the split version:
                 (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
                 tuple(placement.Rotation.Axis), placement.Rotation.Angle):
             return None
-        outline = candidate.Proxy.planOutline(candidate)
+        # A library part from an older add-on build has no planOutline: draw
+        # its solid rather than raising into the recompute.
+        plan_outline = getattr(getattr(candidate, "Proxy", None),
+                               "planOutline", None)
+        if plan_outline is None:
+            return None
+        outline = plan_outline(candidate)
         if outline is None:
             return None
         placed = outline.copy()
@@ -1068,15 +1087,15 @@ the split version:
         return placed
 ```
 
-and in `_project`, take the outlines through the projection without cutting
-them:
+and in `_project`, draw the outlines' silhouettes without cutting or
+projecting them:
 
 ```python
     def _project(self, obj, shapes, outlines, plane, direction):
         """Cut the solids against the section volume, project everything -
-        Draft's own two steps, in Draft's own order. The outlines are already
-        projected (they came out of the same projection) and are not cut, so
-        they cost neither a boolean nor a hidden-line pass."""
+        Draft's own two steps, in Draft's own order. Each outline is drawn as
+        its silhouette, which came out of the same projection, so it costs
+        neither a boolean nor a hidden-line pass."""
         import Arch
         import Part
         import TechDraw
@@ -1111,7 +1130,19 @@ them:
         groups = TechDraw.projectEx(compound, direction)
         edges = [e for g in groups[0:5] if not g.isNull() for e in g.Edges]
         for outline in outlines:
-            edges.extend(outline.Edges)
+            # The silhouette: the face the slab was extruded from, which
+            # sits in the projection plane (z = 0) exactly where Draft's own
+            # projected edges sit. The slab's raw edges would draw the same
+            # picture three times over - top loop, bottom loop, and the 1mm
+            # verticals - and every one of them is an edge the redraw pays
+            # for.
+            flat = [f for f in outline.Faces
+                    if abs(f.BoundBox.ZLength) < 1e-9]
+            if flat:
+                edges.extend(min(flat, key=lambda f: f.BoundBox.ZMin)
+                             .OuterWire.Edges)
+            else:
+                edges.extend(outline.Edges)
         return Part.makeCompound(edges)
 ```
 
@@ -1130,7 +1161,7 @@ Expected: all `verify_sections` checks `PASS`, `0 check(s) failed`.
 python3 -m pytest -q
 ```
 
-Expected: `556 passed`.
+Expected: `564 passed`.
 
 - [ ] **Step 6: Commit**
 
@@ -1147,6 +1178,7 @@ git commit -m "Draw library parts as their cached plan outline in a section view
 - Create: `archplus/tools/sections/gui.py`
 - Create: `archplus/tools/sections/resources/icons/SectionView.svg`
 - Modify: `archplus/freecad_tests/verify_sections.py`
+- Modify: `archplus/common/tests/test_lazy_imports.py`
 - Modify: `InitGui.py`
 
 **Interfaces:**
@@ -1210,6 +1242,16 @@ and in `run()`:
     h.check("an unsupported setting is refused",
             sgu.convertSectionView(other) is False)
     h.check("the refused view is still there", doc.getObject("HiddenLines") is not None)
+
+    # A view that is not on a section plane is refused too: this view only
+    # gathers a section plane's objects, so converting one would draw blank.
+    base_less = doc.addObject("Part::Part2DObjectPython", "NoBase")
+    s2v.Shape2DView(base_less)
+    doc.recompute()
+    h.check("a view with no section plane is refused",
+            sgu.convertSectionView(base_less) is False)
+    h.check("the base-less view is still there",
+            doc.getObject("NoBase") is not None)
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -1295,6 +1337,11 @@ def convertSectionView(view):
         FreeCAD.Console.PrintWarning(
             "ArchPlus: '%s' is not a Draft section view\n" % view.Label)
         return False
+    if not _is_section_plane(view.Base):
+        FreeCAD.Console.PrintWarning(
+            "ArchPlus: '%s' is not on a section plane; not converted\n"
+            % view.Label)
+        return False
     found = unsupported_settings(view)
     if found:
         FreeCAD.Console.PrintWarning(
@@ -1325,6 +1372,19 @@ def convertSectionView(view):
 def _is_draft_view(view):
     proxy = getattr(view, "Proxy", None)
     return type(proxy).__name__ == "Shape2DView"
+
+
+def _is_section_plane(base):
+    """True when `base` is the kind of plane this view knows how to gather.
+
+    Draft's Shape2DView also accepts a building part or an IFC annotation as
+    its base, and gathers those differently (the level's Group, a synthetic
+    cut plane). This view reproduces the section plane case only, so any
+    other base is refused rather than converted into a blank drawing.
+    """
+    import Draft
+
+    return base is not None and Draft.getType(base) == "SectionPlane"
 
 
 def _copy_settings(view, new):
@@ -1381,7 +1441,24 @@ if FreeCAD.GuiUp:
     FreeCADGui.addCommand("ArchPlus_SectionView", ConvertSectionViewCommand())
 ```
 
-- [ ] **Step 4: Add the menu entry**
+- [ ] **Step 4: Add the menu entry, and put the new gui module under the import guard**
+
+The lazy-import guard exists for exactly the failure mode this file risks - a
+module-scope `Part`/`Draft` import in a gui.py that BIM's startup imports
+before those modules are safe to touch. Add it to the guard's list in
+`archplus/common/tests/test_lazy_imports.py`:
+
+```python
+MODULES = (
+    "archplus.tools.doors.gui",
+    "archplus.tools.windows.gui",
+    "archplus.tools.stairs.gui",
+    "archplus.tools.partslib.gui",
+    "archplus.tools.walk.gui",
+    "archplus.tools.sections.gui",
+    "archplus.common.widgets",
+)
+```
 
 In `InitGui.py`, add the command to the list and register it in the menu only
 (a one-shot migration command does not belong on the modelling toolbar, and
@@ -1416,13 +1493,13 @@ Expected: all `verify_sections` checks `PASS`, `0 check(s) failed`.
 python3 -m pytest -q
 ```
 
-Expected: `556 passed` (the lazy-import guard must stay green — `gui.py`
+Expected: `564 passed` (the lazy-import guard must stay green — `gui.py`
 imports `FreeCAD` only at module scope, everything else inside functions).
 
 - [ ] **Step 7: Commit**
 
 ```
-git add archplus/tools/sections/gui.py archplus/tools/sections/resources/icons/SectionView.svg archplus/freecad_tests/verify_sections.py InitGui.py
+git add archplus/tools/sections/gui.py archplus/tools/sections/resources/icons/SectionView.svg archplus/freecad_tests/verify_sections.py archplus/common/tests/test_lazy_imports.py InitGui.py
 git commit -m "Convert a Draft section view to an ArchPlus one, one view at a time"
 ```
 
