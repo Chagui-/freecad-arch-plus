@@ -171,16 +171,30 @@ def run():
     h.check("the outline is a 1mm slab", outline is not None
             and abs(outline.BoundBox.ZLength - 1.0) < 1e-6
             and outline.Volume > 0)
-    h.check("the outline covers the box's drawing",
-            _visible_edges(part.Shape) <= _visible_edges(outline))
     # Counted on the *drawing*, not the raw shapes: the slab's own edges are
     # three times its silhouette's (top loop, bottom loop, 1mm verticals), so
     # a raw count would say nothing about what a view has to draw.
     h.check("the outline draws no more edges than the solid",
             len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
 
-    # A shape with two separate outlines: the outer wire is one of them, so the
-    # outline cannot cover the drawing and must be refused.
+    # The outline is the filled outer boundary: a loop nested inside it (a
+    # smaller block on top of a bigger one) is dropped on purpose, not
+    # refused. Reproducing it was measured bigger than the solid's own
+    # drawing, which is the thing this feature exists to shrink.
+    nested = Part.makeCompound([Part.makeBox(600, 400, 300),
+                                Part.makeBox(300, 200, 300,
+                                             FreeCAD.Vector(150, 100, 300))])
+    nested_outline = common_geometry.plan_outline(nested)
+    h.check("a nested loop is dropped, not refused",
+            nested_outline is not None
+            and len(_visible_edges(nested_outline)) == 4)
+
+    # A projection too small to be a usable outline is refused.
+    h.check("a hairline projection gets no outline",
+            common_geometry.plan_outline(Part.makeBox(0.5, 0.5, 10)) is None)
+
+    # A shape with two separate outlines: the outer wire is one of them, so
+    # the other reaches outside the outline and it must be refused.
     two = Part.makeCompound([Part.makeBox(400, 400, 300),
                              Part.makeBox(400, 400, 300,
                                           FreeCAD.Vector(2000, 0, 0))])
@@ -229,17 +243,25 @@ which is what this file exists for):
 def plan_outline(shape, thickness=1.0):
     """The plan outline of `shape` as a thin slab, or None.
 
-    The outline is what a section view may draw instead of the part's solid,
-    so it has to show everything the solid's own plan drawing shows. It is
-    built by projecting the shape with the same hidden-line call Draft's
-    Shape2DView uses, taking TechDraw's own outer-wire extractor over the
-    result, and extruding that face a hair - a slab, not a bare wire, because
-    OnlySolids views and the section cut both drop non-solid geometry.
+    The outline is what a section view may draw instead of the part's solid:
+    the **filled outer boundary** of the shape's plan drawing. It is built by
+    projecting the shape with the same hidden-line call Draft's Shape2DView
+    uses, taking TechDraw's own outer-wire extractor over the result, and
+    extruding that face a hair - a slab, not a bare wire, because OnlySolids
+    views and the section cut both drop non-solid geometry.
 
-    Returns None whenever that cannot be trusted: no geometry, no outer wire,
-    a degenerate face, or - the case that matters - a shape whose drawing has
-    a part the outer wire does not cover (a part with two separate outlines,
-    like a waste bin with an overhanging lid). Callers then draw the solid.
+    What it deliberately does not reproduce: loops nested inside the outer
+    boundary - a smaller block on top of a bigger one, a table's top over its
+    pedestal, a hole through a part. There the drawing is a filled footprint.
+    Reproducing every loop was measured *bigger* than the solid's own drawing
+    (the bed: 48 edges against 16), which is the opposite of what this
+    feature exists to do. docs/TOOLS.md says the same to the user.
+
+    Returns None whenever the outline cannot be trusted: no geometry, no
+    outer wire, a degenerate face, or a shape whose own drawing reaches
+    *outside* the outer wire (a part with two separate outlines, like a
+    waste bin with an overhanging lid). Callers then draw the solid, which
+    is always right and merely slower.
 
     A view drawing this value draws its silhouette - the face it was
     extruded from, which sits in the projection plane (z = 0) where Draft's
@@ -275,7 +297,12 @@ def plan_outline(shape, thickness=1.0):
 
 
 def _covers(face, drawn, tolerance=0.5):
-    """True when every vertex the shape's own drawing shows lies on `face`."""
+    """True when the shape's own drawing stays inside `face`.
+
+    Containment, not equality: a loop nested inside the face is covered, and
+    dropping it is the documented simplification (see plan_outline). What
+    this rejects is a drawing that reaches *outside* the outline.
+    """
     for edge in drawn:
         for vertex in edge.Vertexes:
             try:
@@ -1555,11 +1582,16 @@ projection, computed once and reused until the part rebuilds. A furnished
 plan's drawings shrink by about a third and the section views rebuild in a
 fraction of the time, because the parts are most of what they project.
 
-The outline is only used when it cannot change the drawing: the view must be
-a plan cut, the part must not be rotated off plan, and the section plane
-must not cut through the part. Otherwise that part is drawn as its solid,
-exactly as before. Turning **PartOutlines** off on the view draws every part
-as its solid.
+The outline is the part's **filled footprint**: a boundary nested inside it
+(a smaller block on top of a bigger one, a hole through a part) is not drawn.
+Reproducing every loop was measured to make the drawings *bigger* than
+drawing the solids, which is the opposite of the point.
+
+The outline is used only where the drawing cannot mean something else: the
+view must be a plan cut, the part must not be rotated off plan, and the
+section plane must not cut through the part. Otherwise that part is drawn as
+its solid, exactly as before. Turning **PartOutlines** off on the view draws
+every part as its solid.
 
 Converting a view **renumbers it**, so the TechDraw dimensions measuring that
 view need re-picking once - convert one view, compare it, then convert the
