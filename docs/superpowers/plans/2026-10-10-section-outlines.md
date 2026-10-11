@@ -885,7 +885,7 @@ class _SectionView:
 
         onlysolids = bool(getattr(obj, "OnlySolids", False))
         shapes = []
-        if getattr(obj, "FuseArch", True):
+        if getattr(obj, "FuseArch", False):
             # Draft's Shape2DView.execute: wall and structure shapes fuse per
             # material, everything else is projected as it is.
             per_material = {}
