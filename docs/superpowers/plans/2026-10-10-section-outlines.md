@@ -619,6 +619,14 @@ git commit -m "Decide when a part's outline may stand in for its solid"
 
 - [ ] **Step 1: Write the failing check**
 
+While you are in the file, align its header comment with the contract
+`plan_outline` now states: the outline is the shape's **filled outer boundary**
+and is used when the solid's own drawing stays *inside* it — the header
+currently says "covers everything the solid's own drawing shows", which reads
+as the equality contract that was ruled out (reproducing every loop draws more
+edges than the solid). This is also the step where the header's other promise
+("and against Draft's own view") becomes true.
+
 Append to `verify_sections.py` (a new helper plus checks inside `run()`):
 
 ```python
