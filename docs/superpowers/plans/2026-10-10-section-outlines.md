@@ -526,7 +526,10 @@ def test_an_elevation_refuses_the_outline():
 python3 -m pytest archplus/tools/sections/tests/test_model.py -q
 ```
 
-Expected: `ModuleNotFoundError: No module named 'archplus.tools.sections.model'`.
+Expected: an import failure for the missing module —
+`ImportError: cannot import name 'model' from 'archplus.tools.sections'` (the
+package `__init__.py` from Step 1 imports fine; it is the submodule that is
+absent).
 
 - [ ] **Step 3: Implement the rules**
 
