@@ -1004,6 +1004,32 @@ and in `run()`:
     h.check("a part rotated off plan keeps its solid",
             len(view.Shape.Edges) == len(solid_view.Shape.Edges))
 
+    # A view that is not a plan (the plane tilted) keeps solids as well.
+    plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
+                                       FreeCAD.Rotation())
+    plane.Placement.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 30)
+    doc.recompute()
+    h.check("an elevation keeps the solid",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+    plane.Placement.Rotation = FreeCAD.Rotation()
+    doc.recompute()
+
+    # A part whose own drawing has two separate outlines gets no outline (the
+    # waste-bin case), so the view falls back to its solid.
+    bin_part = doc.addObject("Part::FeaturePython", "TwoOutlinePart")
+    pobj._LibraryPart(bin_part)
+    bin_part.Shape = Part.makeCompound([Part.makeBox(400, 400, 300),
+                                        Part.makeBox(400, 400, 300,
+                                                     FreeCAD.Vector(2000, 0, 0))])
+    bin_part.Placement = FreeCAD.Placement(FreeCAD.Vector(3000, 0, 0),
+                                           FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [bin_part]
+    doc.recompute()
+    h.check("a part with no trustworthy outline keeps its solid",
+            bin_part.Proxy.planOutline(bin_part) is None
+            and _visible_edges(bin_part.Shape) <= _visible_edges(view.Shape))
+
     # Turning the flag off draws the solid again.
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
                                        FreeCAD.Rotation())
