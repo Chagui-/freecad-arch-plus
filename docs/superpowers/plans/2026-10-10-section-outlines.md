@@ -651,7 +651,14 @@ def _walls_and_plane(doc):
     import ArchSectionPlane
 
     ArchSectionPlane._SectionPlane(plane)
-    plane.Objects = [wall]
+    # The wall root has no shape of its own - its segments carry the geometry
+    # - and Draft's gather does not descend into an ArchPlus wall root: the
+    # root is not a Draft group, so `walls=True` does not make it one. A
+    # section plane therefore has to reference the segments, which is what the
+    # real documents do. Referencing the root alone leaves Draft's own view
+    # raising IndexError on its empty material bucket, and this fixture would
+    # compare two empty drawings.
+    plane.Objects = list(wall.Group)
     plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
     doc.recompute()
     return wall, plane
