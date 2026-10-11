@@ -95,8 +95,54 @@ class _SectionView:
             return Part.makeCompound([])
         direction = plane.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
         objs = self._objects(obj, plane)
-        shapes = self._shapes(obj, objs)
-        return self._project(obj, shapes, plane, direction)
+        outlines = []
+        solids = []
+        for o in objs:
+            outline = self._outline_for(obj, o, plane, direction)
+            if outline is not None:
+                outlines.append(outline)
+            else:
+                solids.append(o)
+        shapes = self._shapes(obj, solids)
+        return self._project(obj, shapes, outlines, plane, direction)
+
+    def _outline_for(self, obj, candidate, plane, direction):
+        """The placed outline for a library part, or None to draw its solid.
+
+        Every condition here is one the design doc pins: the flag is on, the
+        part has an outline, the view is a plan, the part is not rotated off
+        plan, and the cut does not pass through it. Any of them failing means
+        the solid is drawn - correct, just slower.
+        """
+        if not getattr(obj, "PartOutlines", True):
+            return None
+        from archplus.tools.partslib import object as pobj
+
+        if not pobj.isLibraryPart(candidate):
+            return None
+        shape = getattr(candidate, "Shape", None)
+        if shape is None or shape.isNull():
+            return None
+        from archplus.tools.sections import model
+
+        placement = candidate.Placement
+        box = shape.BoundBox
+        if not model.use_outline(
+                (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
+                tuple(placement.Rotation.Axis), placement.Rotation.Angle):
+            return None
+        # A library part from an older add-on build has no planOutline: draw
+        # its solid rather than raising into the recompute.
+        plan_outline = getattr(getattr(candidate, "Proxy", None),
+                               "planOutline", None)
+        if plan_outline is None:
+            return None
+        # Already in world coordinates: a Part::Feature's Shape carries the
+        # object's own placement, so plan_outline projected the *placed* part
+        # and the result must not be placed a second time - that would draw
+        # the part at twice its offset. It is also the cache's own object:
+        # never mutate it, the next ask hands out the same shape.
+        return plan_outline(candidate)
 
     def _objects(self, obj, plane):
         """The plane's objects, expanded and filtered the way Draft does."""
@@ -116,7 +162,7 @@ class _SectionView:
 
         onlysolids = bool(getattr(obj, "OnlySolids", False))
         shapes = []
-        if getattr(obj, "FuseArch", True):
+        if getattr(obj, "FuseArch", False):
             # Draft's Shape2DView.execute: wall and structure shapes fuse per
             # material, everything else is projected as it is.
             per_material = {}
@@ -165,9 +211,11 @@ class _SectionView:
             return shape.SubShapes
         return [shape.copy()]
 
-    def _project(self, obj, shapes, plane, direction):
-        """Cut against the section volume, then project - Draft's own two
-        steps, in Draft's own order."""
+    def _project(self, obj, shapes, outlines, plane, direction):
+        """Cut the solids against the section volume, project everything -
+        Draft's own two steps, in Draft's own order. Each outline is drawn as
+        its silhouette, which came out of the same projection, so it costs
+        neither a boolean nor a hidden-line pass."""
         import Arch
         import Part
         import TechDraw
@@ -203,6 +251,21 @@ class _SectionView:
         # Draft's getProjected: the visible edge groups of the projection.
         groups = TechDraw.projectEx(compound, direction)
         edges = [e for g in groups[0:5] if not g.isNull() for e in g.Edges]
+        for outline in outlines:
+            # The silhouette: the face the slab was extruded from, which
+            # sits in the projection plane (z = 0) exactly where Draft's own
+            # projected edges sit. The slab's raw edges would draw the same
+            # picture three times over - top loop, bottom loop, and the 1mm
+            # verticals - and every one of them is an edge the redraw pays
+            # for. Read-only: `outline` is the part's cached shape, shared
+            # with every later recompute.
+            flat = [f for f in outline.Faces
+                    if abs(f.BoundBox.ZLength) < 1e-9]
+            if flat:
+                edges.extend(min(flat, key=lambda f: f.BoundBox.ZMin)
+                             .OuterWire.Edges)
+            else:
+                edges.extend(outline.Edges)
         return Part.makeCompound(edges)
 
 

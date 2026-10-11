@@ -75,6 +75,21 @@ def _walls_and_plane(doc):
     return wall, plane
 
 
+def _part_view(doc, plane):
+    """A section plane whose objects include a placed library part, and the
+    same view with outlines off, for comparison."""
+    from archplus.tools.partslib import object as pobj
+
+    part = doc.addObject("Part::FeaturePython", "PlacedPart")
+    pobj._LibraryPart(part)
+    part.Shape = Part.makeBox(600, 400, 700)
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
+                                       FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [part]
+    doc.recompute()
+    return part
+
+
 def run():
     doc = h.fresh_doc("ArchPlusSections")
     part = _a_part()
@@ -219,6 +234,125 @@ def run():
     doc.recompute()
     h.check("no base draws nothing", nothing.Shape.isNull()
             or len(nothing.Shape.Edges) == 0)
+
+    part = _part_view(doc, plane)
+    view.PartOutlines = True
+    doc.recompute()
+    solid_view = sobj.makeSectionView(doc, base=plane)
+    solid_view.PartOutlines = False
+    doc.recompute()
+
+    # With the part out of the plane, outlines on and off must draw the walls
+    # identically: the substitution may only ever change the parts.
+    with_part = list(plane.Objects or [])
+    plane.Objects = [o for o in with_part if o is not part]
+    doc.recompute()
+    h.check("with the part out, outlines change nothing",
+            _visible_edges(view.Shape) == _visible_edges(solid_view.Shape))
+    plane.Objects = with_part
+    doc.recompute()
+
+    # Not "smaller": for a plain box the outline's silhouette is the same
+    # rectangle the solid draws, so equal is the honest expectation here.
+    # The real parts (many visible edges) are where the drawing shrinks, and
+    # Task 7 measures that on the real document.
+    h.check("outlines on: the drawing did not grow",
+            len(view.Shape.Edges) <= len(solid_view.Shape.Edges))
+    h.check("outlines on: the part's outline is what got drawn",
+            _visible_edges(part.Proxy.planOutline(part))
+            <= _visible_edges(view.Shape))
+
+    # The outline is already in world coordinates, so the view must not place
+    # it again: on a plane holding only this part, the drawing must sit
+    # exactly on the part. Placing it twice would put it at (1000, 1000).
+    alone = doc.addObject("App::FeaturePython", "PartOnlyPlane")
+    ArchSectionPlane._SectionPlane(alone)
+    alone.Objects = [part]
+    alone.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    alone_view = sobj.makeSectionView(doc, base=alone)
+    doc.recompute()
+    box = alone_view.Shape.BoundBox
+    h.check("the outline sits where the part is",
+            abs(box.XMin - 500) < 1e-3 and abs(box.YMin - 500) < 1e-3
+            and abs(box.XMax - 1100) < 1e-3 and abs(box.YMax - 900) < 1e-3)
+
+    # A part the cut passes through keeps its solid: same edge count either way.
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1200),
+                                       FreeCAD.Rotation())
+    plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    doc.recompute()
+    h.check("a part the cut passes through keeps its solid",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+
+    # A part tilted about X keeps its solid too.
+    plane.Placement.Base = FreeCAD.Vector(0, 0, 5000)
+    part.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(500, 500, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 30))
+    doc.recompute()
+    h.check("a part rotated off plan keeps its solid",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+
+    # A view that is not a plan (the plane tilted) keeps solids as well.
+    plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
+                                       FreeCAD.Rotation())
+    plane.Placement.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 30)
+    doc.recompute()
+    h.check("an elevation keeps the solid",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+    plane.Placement.Rotation = FreeCAD.Rotation()
+    doc.recompute()
+
+    # A part whose own drawing has two separate outlines gets no outline (the
+    # waste-bin case), so the view falls back to its solid.
+    bin_part = doc.addObject("Part::FeaturePython", "TwoOutlinePart")
+    pobj._LibraryPart(bin_part)
+    bin_part.Shape = Part.makeCompound([Part.makeBox(400, 400, 300),
+                                        Part.makeBox(400, 400, 300,
+                                                     FreeCAD.Vector(2000, 0, 0))])
+    # Clear of the wall band: the check is that the fallback draws this part's
+    # solid, and a part buried in the wall has its edges hidden, so they would
+    # not be in the drawing at all.
+    bin_part.Placement = FreeCAD.Placement(FreeCAD.Vector(3000, 2000, 0),
+                                           FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [bin_part]
+    doc.recompute()
+    h.check("a part with no trustworthy outline keeps its solid",
+            bin_part.Proxy.planOutline(bin_part) is None
+            and bin_part.Proxy._outline_key is not None  # the None is cached
+            and _visible_edges(bin_part.Shape) <= _visible_edges(view.Shape))
+
+    # The substitution is only visible on a part whose outline differs from its
+    # own drawing: a block on a bigger block draws 8 edges as a solid and 4 as
+    # an outline (its outer boundary). This is the check that fails when the
+    # substitution does not happen at all - a plain box draws the same
+    # rectangle either way.
+    nested_part = doc.addObject("Part::FeaturePython", "NestedPart")
+    pobj._LibraryPart(nested_part)
+    nested_part.Shape = Part.makeCompound([Part.makeBox(600, 400, 300),
+                                           Part.makeBox(300, 200, 300,
+                                                        FreeCAD.Vector(150, 100, 300))])
+    nested_part.Placement = FreeCAD.Placement(FreeCAD.Vector(6000, 2000, 0),
+                                              FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [nested_part]
+    doc.recompute()
+    nested_solid_view = sobj.makeSectionView(doc, base=plane)
+    nested_solid_view.PartOutlines = False
+    doc.recompute()
+    h.check("the substituted drawing is the outline, not the solid",
+            len(view.Shape.Edges) < len(nested_solid_view.Shape.Edges))
+    h.check("and what it drops is the nested loop",
+            len(_visible_edges(nested_part.Shape) - _visible_edges(view.Shape))
+            == 4)
+
+    # Turning the flag off draws the solid again.
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
+                                       FreeCAD.Rotation())
+    view.PartOutlines = False
+    doc.recompute()
+    h.check("PartOutlines off draws the solid again",
+            _visible_edges(view.Shape) == _visible_edges(solid_view.Shape))
 
     FreeCAD.closeDocument(doc.Name)
     return h.failures()
