@@ -4,10 +4,10 @@
 #
 # A section view draws library parts as their cached plan outline instead of
 # their solid. The outline is an optimisation, never a wrong drawing: it is
-# used only when it covers everything the solid's own drawing shows, and this
-# module is where that claim is tested - on a real part, a part the cut passes
-# through, a part rotated off-plan, and against Draft's own view, which must
-# keep drawing the walls identically.
+# the shape's filled outer boundary, used when the solid's own drawing stays
+# inside it, and this module is where that claim is tested - on a real part, a
+# part the cut passes through, a part rotated off-plan, and against Draft's
+# own view, which must keep drawing the walls identically.
 
 import FreeCAD
 import Part
@@ -42,6 +42,37 @@ def _visible_edges(shape, direction=None):
             out.append(tuple(sorted(((round(a.x, 3), round(a.y, 3), round(a.z, 3)),
                                      (round(b.x, 3), round(b.y, 3), round(b.z, 3))))))
     return set(out)
+
+
+def _walls_and_plane(doc):
+    """A wall on a sketch, and a section plane through it - the smallest
+    document whose section view has real geometry."""
+    import Sketcher
+
+    sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
+    sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0),
+                                        FreeCAD.Vector(4000, 0, 0)), False)
+    sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(4000, 0, 0),
+                                        FreeCAD.Vector(4000, 3000, 0)), False)
+
+    from archplus.tools.walls import object as wobj
+
+    wall = wobj.makeWall(doc, sketch=sketch)
+    plane = doc.addObject("App::FeaturePython", "Section")
+    import ArchSectionPlane
+
+    ArchSectionPlane._SectionPlane(plane)
+    # The wall root has no shape of its own - its segments carry the geometry
+    # - and Draft's gather does not descend into an ArchPlus wall root: the
+    # root is not a Draft group, so `walls=True` does not make it one. A
+    # section plane therefore has to reference the segments, which is what the
+    # real documents do. Referencing the root alone leaves Draft's own view
+    # raising IndexError on its empty material bucket, and this fixture would
+    # compare two empty drawings.
+    plane.Objects = list(wall.Group)
+    plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    doc.recompute()
+    return wall, plane
 
 
 def run():
@@ -104,6 +135,46 @@ def run():
     empty = pobj._LibraryPart.__new__(pobj._LibraryPart)
     h.check("a part with no shape answers None",
             empty.planOutline(Part.Shape()) is None)
+
+    wall, plane = _walls_and_plane(doc)
+
+    # Draft's own view, as the reference behaviour.
+    reference = doc.addObject("Part::Part2DObjectPython", "Reference")
+    import Draft
+    import draftobjects.shape2dview as s2v
+
+    s2v.Shape2DView(reference)
+    reference.Base = plane
+    reference.FuseArch = True
+    reference.ProjectionMode = "Solid"
+    doc.recompute()
+
+    from archplus.tools.sections import object as sobj
+
+    view = sobj.makeSectionView(doc, base=plane)
+    doc.recompute()
+
+    h.check("the new view draws something", len(view.Shape.Edges) > 0)
+    h.check("the new view draws exactly what Draft draws",
+            _visible_edges(view.Shape) == _visible_edges(reference.Shape))
+    h.check("the view keeps its own placement",
+            view.Placement.Base == FreeCAD.Vector(0, 0, 0))
+
+    # A plane with nothing to draw leaves an empty shape, not a stale one.
+    import ArchSectionPlane
+
+    empty = doc.addObject("App::FeaturePython", "EmptyPlane")
+    ArchSectionPlane._SectionPlane(empty)
+    bare = sobj.makeSectionView(doc, base=empty)
+    doc.recompute()
+    h.check("an empty plane draws nothing", bare.Shape.isNull()
+            or len(bare.Shape.Edges) == 0)
+
+    # No base at all must not raise into the recompute.
+    nothing = sobj.makeSectionView(doc, base=None)
+    doc.recompute()
+    h.check("no base draws nothing", nothing.Shape.isNull()
+            or len(nothing.Shape.Edges) == 0)
 
     FreeCAD.closeDocument(doc.Name)
     return h.failures()
