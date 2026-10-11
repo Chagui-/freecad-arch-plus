@@ -1017,10 +1017,23 @@ and in `run()`:
     # Task 7 measures that on the real document.
     h.check("outlines on: the drawing did not grow",
             len(view.Shape.Edges) <= len(solid_view.Shape.Edges))
-    placed_outline = part.Proxy.planOutline(part).copy()
-    placed_outline.Placement = part.Placement
     h.check("outlines on: the part's outline is what got drawn",
-            _visible_edges(placed_outline) <= _visible_edges(view.Shape))
+            _visible_edges(part.Proxy.planOutline(part))
+            <= _visible_edges(view.Shape))
+
+    # The outline is already in world coordinates, so the view must not place
+    # it again: on a plane holding only this part, the drawing must sit
+    # exactly on the part. Placing it twice would put it at (1000, 1000).
+    alone = doc.addObject("App::FeaturePython", "PartOnlyPlane")
+    ArchSectionPlane._SectionPlane(alone)
+    alone.Objects = [part]
+    alone.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    alone_view = sobj.makeSectionView(doc, base=alone)
+    doc.recompute()
+    box = alone_view.Shape.BoundBox
+    h.check("the outline sits where the part is",
+            abs(box.XMin - 500) < 1e-3 and abs(box.YMin - 500) < 1e-3
+            and abs(box.XMax - 1100) < 1e-3 and abs(box.YMax - 900) < 1e-3)
 
     # A part the cut passes through keeps its solid: same edge count either way.
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1200),
@@ -1063,6 +1076,7 @@ and in `run()`:
     doc.recompute()
     h.check("a part with no trustworthy outline keeps its solid",
             bin_part.Proxy.planOutline(bin_part) is None
+            and bin_part.Proxy._outline_key is not None  # the None is cached
             and _visible_edges(bin_part.Shape) <= _visible_edges(view.Shape))
 
     # Turning the flag off draws the solid again.
@@ -1140,12 +1154,12 @@ the split version:
                                "planOutline", None)
         if plan_outline is None:
             return None
-        outline = plan_outline(candidate)
-        if outline is None:
-            return None
-        placed = outline.copy()
-        placed.Placement = placement
-        return placed
+        # Already in world coordinates: a Part::Feature's Shape carries the
+        # object's own placement, so plan_outline projected the *placed* part
+        # and the result must not be placed a second time - that would draw
+        # the part at twice its offset. It is also the cache's own object:
+        # never mutate it, the next ask hands out the same shape.
+        return plan_outline(candidate)
 ```
 
 and in `_project`, draw the outlines' silhouettes without cutting or
@@ -1196,7 +1210,8 @@ projecting them:
             # projected edges sit. The slab's raw edges would draw the same
             # picture three times over - top loop, bottom loop, and the 1mm
             # verticals - and every one of them is an edge the redraw pays
-            # for.
+            # for. Read-only: `outline` is the part's cached shape, shared
+            # with every later recompute.
             flat = [f for f in outline.Faces
                     if abs(f.BoundBox.ZLength) < 1e-9]
             if flat:
