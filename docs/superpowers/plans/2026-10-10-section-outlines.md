@@ -1182,8 +1182,9 @@ del %TEMP%\archplus_verify.marker
 "C:\Program Files\FreeCAD 1.1\bin\freecad.exe" archplus/freecad_tests/run_all.py
 ```
 
-Expected: `FAIL` on "the drawing got smaller" — `PartOutlines` is declared but
-ignored.
+Expected: `FAIL` on "the substituted drawing is the outline, not the solid" —
+`PartOutlines` is declared but ignored, so the view draws the nested part's
+solid and the two drawings are the same size.
 
 - [ ] **Step 3: Implement the substitution**
 
