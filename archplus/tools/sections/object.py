@@ -44,7 +44,10 @@ class _SectionView:
         if "FuseArch" not in pl:
             obj.addProperty("App::PropertyBool", "FuseArch", PROP_GROUP,
                             "Fuse wall and structure objects of one material")
-            obj.FuseArch = True
+            # False, as a fresh Draft view's is: this view has to draw what
+            # the view it replaces draws, and the convert command copies that
+            # view's value across.
+            obj.FuseArch = False
         if "OnlySolids" not in pl:
             obj.addProperty("App::PropertyBool", "OnlySolids", PROP_GROUP,
                             "Project solid geometry only")
@@ -170,13 +173,14 @@ class _SectionView:
         import TechDraw
 
         cutplane = plane.Shape
-        # Draft's own resolution: the plane's Clip, overridden by the view's
-        # if it has one. This view declares no Clip, and the convert command
-        # refuses a view that uses it, so in practice this is the plane's
-        # default - mirroring Draft keeps a hand-made view on a clipping
-        # plane behaving like the Draft view it replaces.
-        clip = bool(getattr(plane, "Clip", False))
-        clip = bool(getattr(obj, "Clip", clip))
+        # Draft's resolution, read as its code actually behaves: it declares
+        # Clip on the view itself (default False), so its `obj.Base.Clip`
+        # branch is dead - Draft's own TODO says as much - and the view's
+        # value always wins. This view declares no Clip, and the convert
+        # command refuses a view that sets it, so this is False: a clipping
+        # plane does not clip here either, exactly as in Draft. Depth *is* the
+        # plane's - Draft's Shape2DView has no Depth of its own.
+        clip = bool(getattr(obj, "Clip", False))
         depth = getattr(plane, "Depth", None)
         depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)

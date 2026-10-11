@@ -140,18 +140,20 @@ def run():
 
     # Draft's own view, as the reference behaviour.
     reference = doc.addObject("Part::Part2DObjectPython", "Reference")
-    import Draft
     import draftobjects.shape2dview as s2v
 
     s2v.Shape2DView(reference)
     reference.Base = plane
-    reference.FuseArch = True
     reference.ProjectionMode = "Solid"
     doc.recompute()
 
     from archplus.tools.sections import object as sobj
 
+    # Compared with the same settings set explicitly on both, rather than by
+    # relying on the two objects defaulting alike.
     view = sobj.makeSectionView(doc, base=plane)
+    view.FuseArch = True
+    reference.FuseArch = True
     doc.recompute()
 
     h.check("the new view draws something", len(view.Shape.Edges) > 0)
@@ -160,12 +162,54 @@ def run():
     h.check("the view keeps its own placement",
             view.Placement.Base == FreeCAD.Vector(0, 0, 0))
 
+    # A fresh view must default to what a fresh Draft view defaults to, or
+    # converting a view would change its drawing by the act of converting.
+    fresh_reference = doc.addObject("Part::Part2DObjectPython", "FreshReference")
+    s2v.Shape2DView(fresh_reference)
+    fresh = sobj.makeSectionView(doc)
+    h.check("a fresh view defaults like Draft's",
+            fresh.FuseArch == fresh_reference.FuseArch
+            and fresh.OnlySolids == fresh_reference.OnlySolids
+            and fresh.VisibleOnly == fresh_reference.VisibleOnly
+            and fresh.ProjectionMode == fresh_reference.ProjectionMode)
+
+    # A clipping plane does not clip here either: Draft declares Clip on the
+    # view itself (default False), so its Base.Clip branch is dead code.
+    plane.Clip = True
+    doc.recompute()
+    h.check("a clipping plane draws what Draft draws",
+            _visible_edges(view.Shape) == _visible_edges(reference.Shape))
+    plane.Clip = False
+    doc.recompute()
+
+    # With the fuse off, still exactly what Draft draws with it off: this is
+    # the only path that ever runs that branch on a converted view whose
+    # FuseArch is false.
+    view.FuseArch = False
+    reference.FuseArch = False
+    doc.recompute()
+    h.check("with FuseArch off, still what Draft draws",
+            _visible_edges(view.Shape) == _visible_edges(reference.Shape))
+    view.FuseArch = True
+    reference.FuseArch = True
+    doc.recompute()
+
+    # Emptying a plane that had geometry must leave an empty shape, not the
+    # last one it drew.
+    kept = list(plane.Objects or [])
+    plane.Objects = []
+    doc.recompute()
+    h.check("emptying a plane leaves an empty shape",
+            view.Shape.isNull() or len(view.Shape.Edges) == 0)
+    plane.Objects = kept
+    doc.recompute()
+
     # A plane with nothing to draw leaves an empty shape, not a stale one.
     import ArchSectionPlane
 
-    empty = doc.addObject("App::FeaturePython", "EmptyPlane")
-    ArchSectionPlane._SectionPlane(empty)
-    bare = sobj.makeSectionView(doc, base=empty)
+    empty_plane = doc.addObject("App::FeaturePython", "EmptyPlane")
+    ArchSectionPlane._SectionPlane(empty_plane)
+    bare = sobj.makeSectionView(doc, base=empty_plane)
     doc.recompute()
     h.check("an empty plane draws nothing", bare.Shape.isNull()
             or len(bare.Shape.Edges) == 0)
