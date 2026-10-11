@@ -87,5 +87,23 @@ def run():
     h.check("an empty shape gets no outline",
             common_geometry.plan_outline(Part.Shape()) is None)
 
+    from archplus.tools.partslib import object as pobj
+
+    proxy = part.Proxy
+    first = proxy.planOutline(part)
+    h.check("a placed part answers with an outline", first is not None)
+    h.check("the outline is cached, not rebuilt",
+            proxy.planOutline(part) is first)
+    before = proxy._outline_key
+    part.Shape = Part.makeBox(900, 400, 700)
+    h.check("a rebuild drops the cache", proxy.planOutline(part) is not first)
+    h.check("the new outline is cached too",
+            proxy.planOutline(part) is proxy.planOutline(part))
+    h.check("the key followed the rebuild", proxy._outline_key != before)
+
+    empty = pobj._LibraryPart.__new__(pobj._LibraryPart)
+    h.check("a part with no shape answers None",
+            empty.planOutline(Part.Shape()) is None)
+
     FreeCAD.closeDocument(doc.Name)
     return h.failures()
