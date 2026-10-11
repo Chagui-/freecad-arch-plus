@@ -1131,7 +1131,10 @@ and in `run()`:
     bin_part.Shape = Part.makeCompound([Part.makeBox(400, 400, 300),
                                         Part.makeBox(400, 400, 300,
                                                      FreeCAD.Vector(2000, 0, 0))])
-    bin_part.Placement = FreeCAD.Placement(FreeCAD.Vector(3000, 0, 0),
+    # Clear of the wall band: the check is that the fallback draws this part's
+    # solid, and a part buried in the wall has its edges hidden, so they would
+    # not be in the drawing at all.
+    bin_part.Placement = FreeCAD.Placement(FreeCAD.Vector(3000, 2000, 0),
                                            FreeCAD.Rotation())
     plane.Objects = list(plane.Objects or []) + [bin_part]
     doc.recompute()
@@ -1139,6 +1142,29 @@ and in `run()`:
             bin_part.Proxy.planOutline(bin_part) is None
             and bin_part.Proxy._outline_key is not None  # the None is cached
             and _visible_edges(bin_part.Shape) <= _visible_edges(view.Shape))
+
+    # The substitution is only visible on a part whose outline differs from its
+    # own drawing: a block on a bigger block draws 8 edges as a solid and 4 as
+    # an outline (its outer boundary). This is the check that fails when the
+    # substitution does not happen at all - a plain box draws the same
+    # rectangle either way.
+    nested_part = doc.addObject("Part::FeaturePython", "NestedPart")
+    pobj._LibraryPart(nested_part)
+    nested_part.Shape = Part.makeCompound([Part.makeBox(600, 400, 300),
+                                           Part.makeBox(300, 200, 300,
+                                                        FreeCAD.Vector(150, 100, 300))])
+    nested_part.Placement = FreeCAD.Placement(FreeCAD.Vector(6000, 2000, 0),
+                                              FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [nested_part]
+    doc.recompute()
+    nested_solid_view = sobj.makeSectionView(doc, base=plane)
+    nested_solid_view.PartOutlines = False
+    doc.recompute()
+    h.check("the substituted drawing is the outline, not the solid",
+            len(view.Shape.Edges) < len(nested_solid_view.Shape.Edges))
+    h.check("and what it drops is the nested loop",
+            len(_visible_edges(nested_part.Shape) - _visible_edges(view.Shape))
+            == 4)
 
     # Turning the flag off draws the solid again.
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
