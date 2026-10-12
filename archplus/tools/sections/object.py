@@ -115,14 +115,20 @@ class _SectionView:
         objs = self._objects(obj, plane)
         outlines = []
         solids = []
+        # The substituted objects too: they are not drawn as solids, but the
+        # cut volume is sized from every gathered shape, and Draft sizes it
+        # from these as well (see _project).
+        spare = []
         for o in objs:
             outline = self._outline_for(obj, o, plane, direction, depth)
             if outline is not None:
                 outlines.append(outline)
+                spare.append(o)
             else:
                 solids.append(o)
         shapes = self._shapes(obj, solids)
-        return self._project(obj, shapes, outlines, plane, direction, depth)
+        return self._project(obj, shapes, outlines, plane, direction, depth,
+                             spare=spare)
 
     def _outline_for(self, obj, candidate, plane, direction, depth):
         """The placed outline for a library part, or None to draw its solid.
@@ -231,11 +237,14 @@ class _SectionView:
             return shape.SubShapes
         return [shape.copy()]
 
-    def _project(self, obj, shapes, outlines, plane, direction, depth):
+    def _project(self, obj, shapes, outlines, plane, direction, depth,
+                 spare=()):
         """Cut the solids against the section volume, then project the cut
         solids *and* the outlines in one compound - Draft's own two steps, in
         Draft's own order.
 
+        `spare` is the objects that took an outline instead of a solid: their
+        shapes are handed to the cut volume below and read for nothing else.
         The outlines ride in the same compound as the solids, which is what
         gives them their occlusion: hidden-line removal works across the
         compound, in depth, so a wall band hides a part behind it and a floor
@@ -264,7 +273,21 @@ class _SectionView:
         # resolved by the caller, so this cut and the substitution rule above
         # read the same number.
         clip = bool(getattr(obj, "Clip", False))
-        _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
+        # Draft sizes the cut volume - and so decides at all whether the
+        # plane cuts anything (bb.isCutPlane, a straddle test on the gathered
+        # shapes' enlarged bound box) - from every gathered shape. A part
+        # that took an outline is not in `shapes`, and the substitution rule
+        # only takes parts at or below the plane, so omitting it can only
+        # drop the bound box's positive side: with a Depth set, the plane
+        # would come out uncut and the view would draw the material Draft's
+        # cut removes. These shapes are read for their bound boxes alone -
+        # they are still neither cut nor projected.
+        cut_inputs = list(shapes)
+        for o in spare:
+            shape = getattr(o, "Shape", None)
+            if shape is not None and not shape.isNull():
+                cut_inputs.append(shape)
+        _cutp, cutv, _iv = Arch.getCutVolume(cutplane, cut_inputs, clip, depth)
 
         cuts = []
         for sh in shapes:
