@@ -12,6 +12,7 @@
 # projection mode would draw something the user did not ask for.
 
 import FreeCAD
+import FreeCADGui
 
 # Draft's Shape2DView settings that change what it draws, with the value that
 # means "not used" for each. `InPlace` and `Depth` are deliberately absent:
@@ -68,15 +69,17 @@ def convertSectionView(view):
         return False
 
     doc = view.Document
+    # Captured before the transaction: `view` is dead the moment
+    # `doc.removeObject` runs, so the handler below must not touch it, and
+    # the label has to be set after the removal or FreeCAD uniquifies it.
+    label = view.Label
+    # Captured too, and applied after the build below: a view frozen before
+    # it ever drew would otherwise come out blank *and* frozen, where the
+    # Draft view it replaces keeps the drawing it was frozen with.
+    auto_update = getattr(view, "AutoUpdate", True)
     doc.openTransaction("Convert to ArchPlus section view")
     try:
         new = sections_object.makeSectionView(doc, base=view.Base)
-        label = view.Label  # captured: `view` is dead after removeObject
-        # Captured too, and applied after the build below: a view frozen
-        # before it ever drew would otherwise come out blank *and* frozen,
-        # where the Draft view it replaces keeps the drawing it was frozen
-        # with.
-        auto_update = getattr(view, "AutoUpdate", True)
         new.Placement = view.Placement
         _copy_settings(view, new)
         if not _repoint_sources(doc, view, new):
@@ -90,7 +93,7 @@ def convertSectionView(view):
     except Exception as exc:
         doc.abortTransaction()
         FreeCAD.Console.PrintError(
-            "ArchPlus: could not convert '%s': %s\n" % (view.Label, exc))
+            "ArchPlus: could not convert '%s': %s\n" % (label, exc))
         return False
     doc.commitTransaction()
     doc.recompute()
@@ -169,7 +172,7 @@ def _selected_views():
             if _is_draft_view(sel.Object)]
 
 
-if FreeCAD.GuiUp:
-    import FreeCADGui
-
+# Register the command (FreeCAD 1.1 has no removeCommand; addCommand is a
+# no-op if it's already registered, so guard to stay reload-safe).
+if "ArchPlus_SectionView" not in FreeCADGui.listCommands():
     FreeCADGui.addCommand("ArchPlus_SectionView", ConvertSectionViewCommand())
