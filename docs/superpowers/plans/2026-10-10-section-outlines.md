@@ -1250,8 +1250,8 @@ declared default now is and what Draft's own fallback is:
 
         Every condition here is one the design doc pins: the flag is on, the
         part has an outline, the view is a plan, the part is not rotated off
-        plan, and the cut does not pass through it. Any of them failing means
-        the solid is drawn - correct, just slower.
+        plan, and the part lies wholly below the cut. Any of them failing
+        means the solid is drawn - correct, just slower.
         """
         if not getattr(obj, "PartOutlines", True):
             return None
