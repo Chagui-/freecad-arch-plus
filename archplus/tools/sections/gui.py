@@ -82,6 +82,7 @@ def convertSectionView(view):
         new = sections_object.makeSectionView(doc, base=view.Base)
         new.Placement = view.Placement
         _copy_settings(view, new)
+        _copy_view_properties(view, new)
         if not _repoint_sources(doc, view, new):
             raise RuntimeError("a TechDraw view could not be re-pointed")
         doc.removeObject(view.Name)
@@ -130,6 +131,30 @@ def _copy_settings(view, new):
             setattr(new, name, getattr(view, name))
     if hasattr(view, "ExclusionNames"):
         new.ExclusionNames = list(view.ExclusionNames or [])
+
+
+# The Draft view's 3D appearance, which its own view provider holds.
+DISPLAY_PROPERTIES = ("LineColor", "LineWidth", "DrawStyle", "ShapeColor",
+                      "Visibility")
+
+
+def _copy_view_properties(view, new):
+    """Copy the Draft view's 3D appearance onto the converted view.
+
+    The converted view is a bare `Part::FeaturePython` with no view provider
+    of its own, so without this its line colour and width, draw style, shape
+    colour and visibility revert to Part's defaults where the Draft view had
+    its own - the drawing would be right and look different. Read before the
+    old view is removed, because its ViewObject dies with it; None in a
+    headless run, and a property the old view does not have is left alone.
+    """
+    old = getattr(view, "ViewObject", None)
+    fresh = getattr(new, "ViewObject", None)
+    if old is None or fresh is None:
+        return
+    for name in DISPLAY_PROPERTIES:
+        if hasattr(old, name) and hasattr(fresh, name):
+            setattr(fresh, name, getattr(old, name))
 
 
 def _repoint_sources(doc, old, new):

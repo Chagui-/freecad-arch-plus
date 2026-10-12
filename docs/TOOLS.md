@@ -272,7 +272,9 @@ the view draws every part as its solid.
 
 Converting a view **renumbers it**, so the TechDraw dimensions measuring that
 view need re-picking once — convert one view, compare it, then convert the
-rest. A view using `HiddenLines`, `Tessellation`, `Clip`, `ExclusionPoints` or
+rest. The converted view keeps the colour, line width, draw style and
+visibility the Draft view had, so it does not change appearance in the 3D
+view. A view using `HiddenLines`, `Tessellation`, `Clip`, `ExclusionPoints` or
 a projection mode other than `Solid` is refused rather than converted, because
 this view does not reproduce those; so is a view sitting on anything other
 than a Draft section plane. The section plane's own `Depth` is honoured, as it
