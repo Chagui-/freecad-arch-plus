@@ -38,11 +38,12 @@ is built from a fraction of the edges, and every stage that scales with edges
   them through groups did not move).
 - **Occlusion is resolved across the compound**, not per object: a box inside
   a box projects to 4 visible edges as a compound and 8 projected separately.
-  An outline riding in the same compound keeps its occlusion against the walls.
-  The outlines pay for that with a caveat: a slab carries no height, so every
-  outline sits in the projection plane, and two qualifying parts whose
-  footprints overlap occlude one another — where their solids would be
-  resolved by depth.
+  An outline riding in the same compound keeps its occlusion against the walls
+  — and against the floor slabs under it: it is extruded over the part's own
+  height at the part's own z, so what hides the part hides its outline too. The
+  first measurement of the compound change got that wrong (a 1 mm slab in the
+  projection plane, hidden by the level-2 planes' floor slabs: 15/15, 21/21 and
+  28/28 furniture outlines gone from those three views, which the height fixes).
 - **A part's shape is local, its placement is mirrored into the `TopoShape`**
   (`Shape.Placement` equals `o.Placement`), so anything substituted for it
   must carry the same placement or be baked global.
@@ -67,8 +68,11 @@ Computed from the part's built solid, in its own frame:
    uses, taking the visible edge groups.
 2. `TechDraw.findOuterWire(edges)` — TechDraw's own boundary extractor
    (*"planar graph traversal finds OuterWire in edge pile"*).
-3. `Part.Face(wire)`, extruded 1 mm — a **thin slab**, so it survives
-   `OnlySolids` and behaves like a solid through `cut` and `projectEx`.
+3. `Part.Face(wire)`, extruded from the part's own base over the part's own
+   height — a solid prism, so it survives `OnlySolids` and behaves like a
+   solid through `cut` and `projectEx`, and so that what hides the part hides
+   its outline: hidden-line removal works in depth, and a flat slab in the
+   projection plane would be hidden by whatever the part stands on.
 
 Measured over the 23 part types placed in the real document:
 
@@ -115,10 +119,11 @@ A new tool folder `archplus/tools/sections/` (`object.py`, `gui.py`,
   (`Arch.getCutVolume`) and projected exactly as Draft does.
 - **Substitution conditions** — the outline is used only when it cannot change
   the drawing: the view projects along +Z, the part's rotation is about Z, and
-  the part lies wholly below the section plane. A part the plane cuts through,
-  and one wholly above it that the cut removes altogether, both draw their
-  solid. Anything else, or a part failing its self-check, projects its solid
-  (today's drawing).
+  the part lies wholly inside the band the cut keeps — below the section plane,
+  and above `plane_z - Depth` when the plane sets a Depth. A part the plane cuts
+  through, one wholly above it that the cut removes altogether, and one under
+  that floor all draw their solid. Anything else, or a part failing its
+  self-check, projects its solid (today's drawing).
 - **No FreeCAD module is patched.** Everything is public API calls of the kind
   ArchPlus already makes: `Draft.getType`, `groups.get_group_contents`,
   `Arch.getCutVolume`, `Part`, `TechDraw.projectEx`, `TechDraw.findOuterWire`.

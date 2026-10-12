@@ -9,7 +9,8 @@ edges and every stage that scales with edges gets cheaper.
 **Architecture:** One new geometry helper (`common/geometry.py`) computes a
 part's plan outline by projecting its solid with the same hidden-line call
 Draft uses and taking TechDraw's own outer-wire extractor over the result, as
-a thin slab; the parts library caches it per placed part; and a new
+a prism over the part's own height; the parts library caches it per placed
+part; and a new
 ArchPlus-owned section view replaces Draft's `Shape2DView` one view at a time,
 substituting each part's outline for its solid only when that cannot change the
 drawing. No FreeCAD module is patched — only public API calls.
@@ -83,7 +84,7 @@ into the recompute (Task 4, Task 5).
 
 | File | Responsibility |
 |---|---|
-| `archplus/common/geometry.py` (modify) | Add `plan_outline(shape)`: a shape's plan outline as a thin slab, or `None` when it cannot be trusted. The FreeCAD-side geometry helper — the repo's existing lazy-import boundary. |
+| `archplus/common/geometry.py` (modify) | Add `plan_outline(shape)`: a shape's plan outline as a prism over its own height, or `None` when it cannot be trusted. The FreeCAD-side geometry helper — the repo's existing lazy-import boundary. |
 | `archplus/tools/partslib/object.py` (modify) | Add `_LibraryPart.planOutline(obj)`: the per-part cache in front of `plan_outline`. |
 | `archplus/tools/sections/__init__.py` (create) | Package marker, empty like its siblings. |
 | `archplus/tools/sections/model.py` (create) | Pure rules: is the view a plan, is the rotation about Z, does the part lie wholly below the cut, and the decision that combines them. No FreeCAD imports. |
@@ -112,9 +113,9 @@ the real-document measurement). Tasks 4 and 5 depend on 1–3; task 6 depends on
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `plan_outline(shape, thickness=1.0) -> Part.Shape | None` in
-  `archplus.common.geometry` — a flat outline slab at z = 0 in the shape's own
-  frame, or `None` when the outline cannot be trusted. Task 2 calls it; Tasks 4
-  and 5 consume its result.
+  `archplus.common.geometry` — a prism over the shape's own height, from the
+  shape's own z, in the shape's own frame, or `None` when the outline cannot be
+  trusted. Task 2 calls it; Tasks 4 and 5 consume its result.
 
 - [ ] **Step 1: Write the failing check**
 
@@ -173,11 +174,12 @@ def run():
 
     outline = common_geometry.plan_outline(part.Shape)
     h.check("a box gets an outline", outline is not None)
-    h.check("the outline is a 1mm slab", outline is not None
-            and abs(outline.BoundBox.ZLength - 1.0) < 1e-6
+    h.check("the outline is as tall as the part", outline is not None
+            and abs(outline.BoundBox.ZLength
+                    - part.Shape.BoundBox.ZLength) < 1e-6
             and outline.Volume > 0)
-    # Counted on the *drawing*, not the raw shapes: the slab's own edges are
-    # three times its silhouette's (top loop, bottom loop, 1mm verticals), so
+    # Counted on the *drawing*, not the raw shapes: the prism's own edges are
+    # three times its silhouette's (top loop, bottom loop, the verticals), so
     # a raw count would say nothing about what a view has to draw.
     h.check("the outline draws no more edges than the solid",
             len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
@@ -246,14 +248,22 @@ which is what this file exists for):
 
 ```python
 def plan_outline(shape, thickness=1.0):
-    """The plan outline of `shape` as a thin slab, or None.
+    """The plan outline of `shape` as a prism over its own height, or None.
 
     The outline is what a section view may draw instead of the part's solid:
     the **filled outer boundary** of the shape's plan drawing. It is built by
     projecting the shape with the same hidden-line call Draft's Shape2DView
     uses, taking TechDraw's own outer-wire extractor over the result, and
-    extruding that face a hair - a slab, not a bare wire, because OnlySolids
-    views and the section cut both drop non-solid geometry.
+    extruding that face - a solid, not a bare wire, because OnlySolids views
+    and the section cut both drop non-solid geometry.
+
+    The prism is extruded from the shape's own base over the shape's own
+    height, and is never thinner than `thickness`. That is what lets a
+    section view put it in the same compound as everything else: hidden-line
+    removal works in depth, so an outline that carried no height - a 1 mm
+    slab in the projection plane - would sit *under* whatever the part stands
+    on, and the floor slab or wall band above it would delete the part from
+    the drawing. An outline is an optimisation, never a wrong drawing.
 
     What it deliberately does not reproduce: loops nested inside the outer
     boundary - a smaller block on top of a bigger one, a table's top over its
@@ -268,9 +278,10 @@ def plan_outline(shape, thickness=1.0):
     waste bin with an overhanging lid). Callers then draw the solid, which
     is always right and merely slower.
 
-    A view drawing this value draws its silhouette - the face it was
-    extruded from, which sits in the projection plane (z = 0) where Draft's
-    own projected edges sit.
+    A view drawing this value draws its silhouette: the boundary comes from
+    the projected edges themselves, which lie in the projection plane where
+    Draft's own projected edges sit, and the prism's height only decides what
+    hides it.
     """
     import TechDraw
     from FreeCAD import Vector
@@ -298,7 +309,12 @@ def plan_outline(shape, thickness=1.0):
         return None
     if not _covers(face, drawn):
         return None
-    return face.extrude(Vector(0, 0, thickness))
+    # Moved onto the shape's own z only after the check above: `drawn` is
+    # flat, so a face already lifted to the shape's height could not be
+    # compared with it any more.
+    box = shape.BoundBox
+    return face.translate(Vector(0, 0, box.ZMin)).extrude(
+        Vector(0, 0, max(box.ZLength, thickness)))
 
 
 def _covers(face, drawn, tolerance=0.5):
@@ -390,7 +406,8 @@ In `archplus/tools/partslib/object.py`, add to `_LibraryPart` (after
 
 ```python
     def planOutline(self, obj):
-        """The part's cached plan outline (a thin slab), or None.
+        """The part's cached plan outline (a prism over the part's own
+        height), or None.
 
         What a section view draws instead of the solid. Computed on the first
         ask and kept until the part rebuilds, keyed by the shape it was built
@@ -1226,7 +1243,9 @@ solid and the two drawings are the same size.
 In `archplus/tools/sections/object.py`, replace `_build` and `_shapes` with
 the split version — and while you are in `_shapes`, change its
 `getattr(obj, "FuseArch", True)` fallback to `False`, which is what the
-declared default now is and what Draft's own fallback is:
+declared default now is and what Draft's own fallback is. The plane's `Depth`
+is resolved once, by a module-level `_cut_depth(plane)` (0.0 when the plane has
+none), and handed to both the substitution rule and the cut:
 
 ```python
     def _build(self, obj):
@@ -1236,25 +1255,30 @@ declared default now is and what Draft's own fallback is:
         if plane is None:
             return Part.makeCompound([])
         direction = plane.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+        # Resolved once, here, and handed to both the substitution rule and
+        # the cut: what a plane's Depth cuts away must not take an outline
+        # either, and two readings of the same property could disagree.
+        depth = _cut_depth(plane)
         objs = self._objects(obj, plane)
         outlines = []
         solids = []
         for o in objs:
-            outline = self._outline_for(obj, o, plane, direction)
+            outline = self._outline_for(obj, o, plane, direction, depth)
             if outline is not None:
                 outlines.append(outline)
             else:
                 solids.append(o)
         shapes = self._shapes(obj, solids)
-        return self._project(obj, shapes, outlines, plane, direction)
+        return self._project(obj, shapes, outlines, plane, direction, depth)
 
-    def _outline_for(self, obj, candidate, plane, direction):
+    def _outline_for(self, obj, candidate, plane, direction, depth):
         """The placed outline for a library part, or None to draw its solid.
 
         Every condition here is one the design doc pins: the flag is on, the
         part has an outline, the view is a plan, the part is not rotated off
-        plan, and the part lies wholly below the cut. Any of them failing
-        means the solid is drawn - correct, just slower.
+        plan, and the part lies wholly below the plane - above the floor the
+        plane's Depth cuts at, when it has one. Any of them failing means the
+        solid is drawn - correct, just slower.
         """
         if not getattr(obj, "PartOutlines", True):
             return None
@@ -1271,7 +1295,8 @@ declared default now is and what Draft's own fallback is:
         box = shape.BoundBox
         if not model.use_outline(
                 (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
-                tuple(placement.Rotation.Axis), placement.Rotation.Angle):
+                tuple(placement.Rotation.Axis), placement.Rotation.Angle,
+                depth):
             return None
         # A library part from an older add-on build has no planOutline: draw
         # its solid rather than raising into the recompute.
@@ -1287,15 +1312,28 @@ declared default now is and what Draft's own fallback is:
         return plan_outline(candidate)
 ```
 
-and in `_project`, draw the outlines' silhouettes without cutting or
-projecting them:
+and in `_project`, project the outlines in the same compound as the cut solids,
+so hidden-line removal gives each one the part's own occlusion:
 
 ```python
-    def _project(self, obj, shapes, outlines, plane, direction):
-        """Cut the solids against the section volume, project everything -
-        Draft's own two steps, in Draft's own order. Each outline is drawn as
-        its silhouette, which came out of the same projection, so it costs
-        neither a boolean nor a hidden-line pass."""
+    def _project(self, obj, shapes, outlines, plane, direction, depth):
+        """Cut the solids against the section volume, then project the cut
+        solids *and* the outlines in one compound - Draft's own two steps, in
+        Draft's own order.
+
+        The outlines ride in the same compound as the solids, which is what
+        gives them their occlusion: hidden-line removal works across the
+        compound, in depth, so a wall band hides a part behind it and a floor
+        slab hides nothing it should not - exactly as it hides the part's own
+        solid. That holds for the outline only because it is a prism over the
+        part's own height at the part's own z: a flat slab in the projection
+        plane sits under whatever the part stands on, and the view would
+        delete the part instead of drawing it cheaply.
+
+        Projecting the outlines separately and appending their edges would
+        instead draw all of them, hidden or not. Riding in the compound also
+        means each outline is drawn as its own silhouette, so no outer wire
+        has to be picked out by hand."""
         import Arch
         import Part
         import TechDraw
@@ -1307,10 +1345,10 @@ projecting them:
         # value always wins. This view declares no Clip, and the convert
         # command refuses a view that sets it, so this is False: a clipping
         # plane does not clip here either, exactly as in Draft. Depth *is* the
-        # plane's - Draft's Shape2DView has no Depth of its own.
+        # plane's - Draft's Shape2DView has no Depth of its own - and it is
+        # resolved by the caller, so this cut and the substitution rule above
+        # read the same number.
         clip = bool(getattr(obj, "Clip", False))
-        depth = getattr(plane, "Depth", None)
-        depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
 
         cuts = []
@@ -1326,25 +1364,14 @@ projecting them:
                     cuts.extend(self._sub_shapes(cut, obj.OnlySolids))
             else:
                 cuts.extend(self._sub_shapes(sh, obj.OnlySolids))
-        compound = Part.makeCompound(cuts)
+        # The outlines are not cut: one is the part's footprint over its own
+        # height, which is what the cut keeps of that part. Read-only - it is
+        # the part's cached shape, handed out again by every later recompute.
+        compound = Part.makeCompound(cuts + list(outlines))
 
+        # Draft's getProjected: the visible edge groups of the projection.
         groups = TechDraw.projectEx(compound, direction)
         edges = [e for g in groups[0:5] if not g.isNull() for e in g.Edges]
-        for outline in outlines:
-            # The silhouette: the face the slab was extruded from, which
-            # sits in the projection plane (z = 0) exactly where Draft's own
-            # projected edges sit. The slab's raw edges would draw the same
-            # picture three times over - top loop, bottom loop, and the 1mm
-            # verticals - and every one of them is an edge the redraw pays
-            # for. Read-only: `outline` is the part's cached shape, shared
-            # with every later recompute.
-            flat = [f for f in outline.Faces
-                    if abs(f.BoundBox.ZLength) < 1e-9]
-            if flat:
-                edges.extend(min(flat, key=lambda f: f.BoundBox.ZMin)
-                             .OuterWire.Edges)
-            else:
-                edges.extend(outline.Edges)
         return Part.makeCompound(edges)
 ```
 
