@@ -86,7 +86,7 @@ into the recompute (Task 4, Task 5).
 | `archplus/common/geometry.py` (modify) | Add `plan_outline(shape)`: a shape's plan outline as a thin slab, or `None` when it cannot be trusted. The FreeCAD-side geometry helper — the repo's existing lazy-import boundary. |
 | `archplus/tools/partslib/object.py` (modify) | Add `_LibraryPart.planOutline(obj)`: the per-part cache in front of `plan_outline`. |
 | `archplus/tools/sections/__init__.py` (create) | Package marker, empty like its siblings. |
-| `archplus/tools/sections/model.py` (create) | Pure rules: is the view a plan, is the rotation about Z, does the cut straddle the part, and the decision that combines them. No FreeCAD imports. |
+| `archplus/tools/sections/model.py` (create) | Pure rules: is the view a plan, is the rotation about Z, does the part lie wholly below the cut, and the decision that combines them. No FreeCAD imports. |
 | `archplus/tools/sections/object.py` (create) | `_SectionView` proxy (properties, `execute`, `_build`), the factory `makeSectionView`. Mirrors Draft's `execute` for the parts it is not substituting. |
 | `archplus/tools/sections/gui.py` (create) | The convert command and its registration. Lazy imports only. |
 | `archplus/tools/sections/tests/__init__.py`, `tests/test_model.py` (create) | Headless unit tests for the pure rules. |
@@ -476,7 +476,7 @@ tools), then `archplus/tools/sections/tests/test_model.py`:
 # The rules that decide whether a part's cached outline may stand in for its
 # solid. Pure data, so they are testable without FreeCAD - which matters,
 # because each one is a way a drawing could come out wrong: a view that is not
-# a plan, a part rotated off plan, and a part the cut plane passes through.
+# a plan, a part rotated off plan, and a part the cut does not leave whole.
 
 from archplus.tools.sections import model
 

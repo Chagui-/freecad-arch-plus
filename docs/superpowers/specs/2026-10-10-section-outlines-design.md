@@ -219,8 +219,8 @@ plane's* property, honoured as Draft honours it, not one a view can set.
 - **Convert command**: converts, re-points the TechDraw `Source`, removes the
   old view; refuses a wrong selection and unsupported settings.
 - **Pure unit tests** for the validity rules over plain data (direction,
-  rotation axis, cut straddle, self-check decision), using the existing
-  `conftest.py` fakes.
+  rotation axis, the part lying wholly below the cut, self-check decision),
+  using the existing `conftest.py` fakes.
 - **The real document**: convert one view, then measure the section views'
   `execute` and the redraw before and after — the honest payoff number, since
   the ~4–5 s estimate is assembled from measured pieces rather than measured
