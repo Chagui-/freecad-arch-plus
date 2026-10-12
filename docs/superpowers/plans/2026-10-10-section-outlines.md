@@ -1514,19 +1514,17 @@ Then create `archplus/tools/sections/gui.py`:
 
 import FreeCAD
 
-# Draft's Shape2DView settings this view does not reproduce, with the value
-# that means "not used" (None = the property is absent on that object).
+# Draft's Shape2DView settings that change what it draws, with the value that
+# means "not used" for each. `InPlace` and `Depth` are deliberately absent:
+# InPlace only means anything in the Cutlines/Cutfaces modes, which the
+# ProjectionMode entry already refuses, and Depth is the *section plane's*
+# property - this view honours it exactly as Draft does, and Draft's view has
+# none of its own, so a `hasattr` guard could never fire on it.
 UNSUPPORTED = (
     ("ProjectionMode", "Solid"),
     ("HiddenLines", False),
     ("Tessellation", False),
-    # Draft defaults InPlace to True, and it only means anything in the
-    # Cutlines/Cutfaces modes, which the ProjectionMode entry above refuses -
-    # so True is this table's "not used". False here would refuse every
-    # default Draft view.
-    ("InPlace", True),
     ("Clip", False),
-    ("Depth", 0.0),
 )
 
 
@@ -1774,16 +1772,19 @@ Reproducing every loop was measured to make the drawings *bigger* than
 drawing the solids, which is the opposite of the point.
 
 The outline is used only where the drawing cannot mean something else: the
-view must be a plan cut, the part must not be rotated off plan, and the
-section plane must not cut through the part. Otherwise that part is drawn as
-its solid, exactly as before. Turning **PartOutlines** off on the view draws
-every part as its solid.
+view must be a plan cut, the part must not be rotated off plan, and the part
+must lie wholly below the section plane — a part the plane cuts through shows
+a section, and one wholly above it the cut removes altogether. Otherwise that
+part is drawn as its solid, exactly as before. Turning **PartOutlines** off on
+the view draws every part as its solid.
 
 Converting a view **renumbers it**, so the TechDraw dimensions measuring that
-view need re-picking once - convert one view, compare it, then convert the
-rest. A view using `HiddenLines`, `Tessellation`, `Clip`, `Depth`,
-`InPlace`, `ExclusionPoints` or a projection mode other than `Solid` is
-refused rather than converted, because this view does not reproduce those.
+view need re-picking once — convert one view, compare it, then convert the
+rest. A view using `HiddenLines`, `Tessellation`, `Clip`, `ExclusionPoints` or
+a projection mode other than `Solid` is refused rather than converted, because
+this view does not reproduce those; so is a view sitting on anything other
+than a Draft section plane. The section plane's own `Depth` is honoured, as it
+is in Draft.
 
 While modelling, two switches keep the drawings from chasing every change:
 set **KeepUpdated** to false on the TechDraw page, and hide the section
