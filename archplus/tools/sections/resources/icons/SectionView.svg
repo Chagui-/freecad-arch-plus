@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- A plan cut with the plan outline drawn inside it: the ArchPlus section
+       view's icon, for the command that converts a Draft section view. -->
+  <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="#000000" stroke-width="1.2"/>
+  <rect x="4.5" y="4.5" width="7" height="7" fill="none" stroke="#000000" stroke-width="0.8" stroke-dasharray="1.5 1"/>
+</svg>

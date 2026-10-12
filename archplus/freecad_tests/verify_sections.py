@@ -92,6 +92,27 @@ def _part_view(doc, plane):
     return part
 
 
+def _convert(doc, plane):
+    """A Draft view to convert, plus a TechDraw view reading it."""
+    import TechDraw
+
+    draft = doc.addObject("Part::Part2DObjectPython", "ToConvert")
+    import draftobjects.shape2dview as s2v
+
+    s2v.Shape2DView(draft)
+    draft.Base = plane
+    draft.FuseArch = True
+    draft.ProjectionMode = "Solid"
+    draft.Placement = FreeCAD.Placement(FreeCAD.Vector(9000, 0, 0),
+                                        FreeCAD.Rotation())
+    doc.recompute()
+
+    reader = doc.addObject("TechDraw::DrawProjGroupItem", "Reader")
+    reader.Source = [draft]
+    doc.recompute()
+    return draft, reader
+
+
 def run():
     doc = h.fresh_doc("ArchPlusSections")
     part = _a_part()
@@ -370,6 +391,59 @@ def run():
     doc.recompute()
     h.check("PartOutlines off draws the solid again",
             _visible_edges(view.Shape) == _visible_edges(solid_view.Shape))
+
+    draft, reader = _convert(doc, plane)
+    old_bbox = draft.Shape.BoundBox
+
+    from archplus.tools.sections import gui as sgu
+
+    h.check("the conversion reports success", sgu.convertSectionView(draft))
+    h.check("the old view is gone", doc.getObject("ToConvert") is None)
+    converted = next((o for o in doc.Objects if o.Label == "ToConvert"), None)
+    # Found by label on purpose: the converted view keeps the label of the
+    # view it replaced, which is what makes it read as the same view.
+    h.check("the converted view keeps the label", converted is not None)
+    h.check("the reader points at the new view",
+            converted is not None and converted in list(reader.Source or []))
+    h.check("the placement came across",
+            converted is not None
+            and abs(converted.Placement.Base.x - 9000) < 1e-6)
+    h.check("the drawing did not jump",
+            converted is not None
+            and abs(converted.Shape.BoundBox.XMin - old_bbox.XMin) < 1e-3)
+
+    # A frozen view stays frozen: converting it must not undo the freeze the
+    # user set.
+    frozen = doc.addObject("Part::Part2DObjectPython", "Frozen")
+    s2v.Shape2DView(frozen)
+    frozen.Base = plane
+    frozen.AutoUpdate = False
+    doc.recompute()
+    h.check("a frozen view converts", sgu.convertSectionView(frozen))
+    converted_frozen = next((o for o in doc.Objects if o.Label == "Frozen"),
+                            None)
+    h.check("and stays frozen",
+            converted_frozen is not None and not converted_frozen.AutoUpdate)
+
+    # A view using a setting the new object does not reproduce is refused.
+    other = doc.addObject("Part::Part2DObjectPython", "HiddenLines")
+    s2v.Shape2DView(other)
+    other.Base = plane
+    other.HiddenLines = True
+    doc.recompute()
+    h.check("an unsupported setting is refused",
+            sgu.convertSectionView(other) is False)
+    h.check("the refused view is still there", doc.getObject("HiddenLines") is not None)
+
+    # A view that is not on a section plane is refused too: this view only
+    # gathers a section plane's objects, so converting one would draw blank.
+    base_less = doc.addObject("Part::Part2DObjectPython", "NoBase")
+    s2v.Shape2DView(base_less)
+    doc.recompute()
+    h.check("a view with no section plane is refused",
+            sgu.convertSectionView(base_less) is False)
+    h.check("the base-less view is still there",
+            doc.getObject("NoBase") is not None)
 
     FreeCAD.closeDocument(doc.Name)
     return h.failures()

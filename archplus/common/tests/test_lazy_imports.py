@@ -36,6 +36,7 @@ MODULES = (
     "archplus.tools.stairs.gui",
     "archplus.tools.partslib.gui",
     "archplus.tools.walk.gui",
+    "archplus.tools.sections.gui",
     "archplus.common.widgets",
 )
 

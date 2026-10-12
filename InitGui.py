@@ -21,6 +21,7 @@ def _injectIntoBIM():
     toolbar = "ArchPlus"
     commands = ["ArchPlus_Stairs", "ArchPlus_Doors", "ArchPlus_Windows",
                 "ArchPlus_PartsLibrary", "ArchPlus_WalkThrough", "ArchPlus_WallTools"]
+    menu_only = ["ArchPlus_SectionView"]
     wb = Gui.getWorkbench("BIMWorkbench")
     if wb is None:
         FreeCAD.Console.PrintWarning(
@@ -41,8 +42,9 @@ def _injectIntoBIM():
         import archplus.tools.partslib.gui  # noqa: F401
         import archplus.tools.walk.gui  # noqa: F401
         import archplus.tools.walls.gui  # noqa: F401
+        import archplus.tools.sections.gui  # noqa: F401
         workbench.appendToolbar(toolbar, commands)
-        workbench.appendMenu(toolbar, commands)
+        workbench.appendMenu(toolbar, commands + menu_only)
 
     _origInitialize = wb.Initialize
 
