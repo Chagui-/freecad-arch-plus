@@ -450,5 +450,16 @@ def run():
     h.check("the base-less view is still there",
             doc.getObject("NoBase") is not None)
 
+    # A default Draft view must not be refused: every entry in the refusal
+    # table is a value that means "not used", so a view nobody has touched
+    # converts.
+    h.check("a default Draft view is not refused",
+            sgu.unsupported_settings(reference) == [])
+
+    # A view that is not a Draft section view at all is refused, by name.
+    plain = doc.addObject("Part::Feature", "PlainFeature")
+    h.check("a plain feature is refused",
+            sgu.convertSectionView(plain) is False)
+
     FreeCAD.closeDocument(doc.Name)
     return h.failures()

@@ -13,19 +13,17 @@
 
 import FreeCAD
 
-# Draft's Shape2DView settings this view does not reproduce, with the value
-# that means "not used" (None = the property is absent on that object).
+# Draft's Shape2DView settings that change what it draws, with the value that
+# means "not used" for each. `InPlace` and `Depth` are deliberately absent:
+# InPlace only means anything in the Cutlines/Cutfaces modes, which the
+# ProjectionMode entry already refuses, and Depth is the *section plane's*
+# property - this view honours it exactly as Draft does, and Draft's view has
+# none of its own, so a `hasattr` guard could never fire on it.
 UNSUPPORTED = (
     ("ProjectionMode", "Solid"),
     ("HiddenLines", False),
     ("Tessellation", False),
-    # Draft defaults InPlace to True, and it only means anything in the
-    # Cutlines/Cutfaces modes, which the ProjectionMode entry above refuses -
-    # so True is this table's "not used". False here would refuse every
-    # default Draft view.
-    ("InPlace", True),
     ("Clip", False),
-    ("Depth", 0.0),
 )
 
 
@@ -36,8 +34,6 @@ def unsupported_settings(view):
         if not hasattr(view, name):
             continue
         value = getattr(view, name)
-        if name == "Depth":
-            value = value.Value
         if value != neutral:
             found.append("%s = %s" % (name, value))
     points = list(getattr(view, "ExclusionPoints", None) or [])
