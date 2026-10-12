@@ -155,6 +155,19 @@ def _convert(doc, plane):
     return draft, reader
 
 
+def _draft_reader(doc, view):
+    """A TechDraw view reading `view` through a single-link Source.
+
+    TechDraw::DrawViewDraft declares Source as an App::PropertyLink - one
+    object, not a list - and BIM's TD View command reads every Draft view on a
+    page through one of these. That is the reader shape the conversion
+    shipped unable to re-point, and no fixture in this file had one."""
+    reader = doc.addObject("TechDraw::DrawViewDraft", "DraftReader")
+    reader.Source = view
+    doc.recompute()
+    return reader
+
+
 def run():
     doc = h.fresh_doc("ArchPlusSections")
     part = _a_part()
@@ -343,16 +356,6 @@ def run():
     plane.Objects = with_part
     doc.recompute()
 
-    # Not "smaller": for a plain box the outline's silhouette is the same
-    # rectangle the solid draws, so equal is the honest expectation here.
-    # The real parts (many visible edges) are where the drawing shrinks, and
-    # Task 7 measures that on the real document.
-    h.check("outlines on: the drawing did not grow",
-            len(view.Shape.Edges) <= len(solid_view.Shape.Edges))
-    h.check("outlines on: the part's outline is what got drawn",
-            _visible_edges(part.Proxy.planOutline(part))
-            <= _visible_edges(view.Shape))
-
     # The outline is already in world coordinates, so the view must not place
     # it again: on a plane holding only this part, the drawing must sit
     # exactly on the part. Placing it twice would put it at (1000, 1000).
@@ -366,6 +369,19 @@ def run():
     h.check("the outline sits where the part is",
             abs(box.XMin - 500) < 1e-3 and abs(box.YMin - 500) < 1e-3
             and abs(box.XMax - 1100) < 1e-3 and abs(box.YMax - 900) < 1e-3)
+
+    # The cache key is taken from obj.Shape, which carries the placement, so a
+    # move must drop it: a placement-blind key would hand this view the
+    # outline cached at the part's old position and the drawing would stay
+    # behind. Still wholly below the plane, so the rules still allow it.
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(1500, 500, 0),
+                                       FreeCAD.Rotation())
+    doc.recompute()
+    box = alone_view.Shape.BoundBox
+    h.check("the drawing follows the part's move",
+            abs(box.XMin - 1500) < 1e-3 and abs(box.YMin - 500) < 1e-3
+            and abs(box.XMax - 2100) < 1e-3 and abs(box.YMax - 900) < 1e-3,
+            detail="drawn at %s" % (box,))
 
     # A part with its base exactly on the plane is above the cut, so the cut
     # removes it from both drawings: this pins that no outline is added at the
@@ -395,14 +411,31 @@ def run():
     h.check("a part rotated off plan keeps its solid",
             len(view.Shape.Edges) == len(solid_view.Shape.Edges))
 
-    # A view that is not a plan (the plane tilted) keeps solids as well.
+    # A view that is not a plan (the plane tilted) keeps solids as well. The
+    # fixture is a nested block, whose outline is not its own drawing: a plain
+    # box draws the same rectangle either way, so the check held whether or
+    # not the plane's rotation ever reached the direction rule, and replacing
+    # that derivation with a constant (0, 0, 1) left this module passing.
+    elevation = doc.addObject("Part::FeaturePython", "ElevatedPart")
+    pobj._LibraryPart(elevation)
+    elevation.Shape = Part.makeCompound(
+        [Part.makeBox(600, 400, 300),
+         Part.makeBox(300, 200, 300, FreeCAD.Vector(150, 100, 300))])
+    # Clear of the wall band and the door, so the projection is about this
+    # part alone.
+    elevation.Placement = FreeCAD.Placement(FreeCAD.Vector(-2000, 2000, 0),
+                                            FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [elevation]
     plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
                                        FreeCAD.Rotation())
     plane.Placement.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 30)
     doc.recompute()
     h.check("an elevation keeps the solid",
-            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+            elevation.Proxy.planOutline(elevation) is not None
+            and len(view.Shape.Edges) > 0
+            and len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+    plane.Objects = [o for o in plane.Objects if o is not elevation]
     plane.Placement.Rotation = FreeCAD.Rotation()
     doc.recompute()
 
@@ -448,6 +481,19 @@ def run():
     h.check("and what it drops is the nested loop",
             len(_visible_edges(nested_part.Shape) - _visible_edges(view.Shape))
             == 4)
+
+    # The two acceptance claims about a substituted drawing, both on the one
+    # part here whose outline is not its own drawing. On the plain box they
+    # were vacuous - the outline is the box, so both views draw the same
+    # rectangle whatever the substitution does - and they passed for a view
+    # that had stopped substituting parts altogether. The bound in the first
+    # is now a real one: the outline could grow the drawing, and this is the
+    # fixture that would show it.
+    h.check("outlines on: the drawing did not grow",
+            len(view.Shape.Edges) <= len(nested_solid_view.Shape.Edges))
+    h.check("outlines on: the part's outline is what got drawn",
+            _visible_edges(nested_part.Proxy.planOutline(nested_part))
+            <= _visible_edges(view.Shape))
 
     # A part the wall hides must stay hidden when its outline is what is
     # drawn. The outline rides in the same compound as the wall, so
@@ -498,6 +544,53 @@ def run():
                       deeper.Proxy.planOutline(deeper) is not None))
     plane.Depth = 0
     doc.recompute()
+
+    # The cut volume is sized from every gathered shape, the substituted parts
+    # included. Arch.getCutVolume builds its cut face - and decides at all
+    # whether the plane cuts anything, via bb.isCutPlane on the gathered
+    # shapes' bound box enlarged by 1 mm - from the list it is handed, so a
+    # part left out of that list can turn the cut off altogether. Here the
+    # substituted part's top is exactly at the plane, so it is the only shape
+    # that reaches the plane, and the block is more than 1 mm below it and
+    # under the Depth floor - the cut removes it entirely. Leave the part out
+    # of the cut inputs and no cut volume is built: the block is drawn, which
+    # is not what Draft draws. Draft always sizes its cut from everything, so
+    # its own view on the same plane and Depth is the reference.
+    deep_plane = doc.addObject("App::FeaturePython", "DeepPlane")
+    ArchSectionPlane._SectionPlane(deep_plane)
+    deep_plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
+    deep_part = doc.addObject("Part::FeaturePython", "DeepPart")
+    pobj._LibraryPart(deep_part)
+    deep_part.Shape = Part.makeBox(600, 400, 200)   # 1000..1200, top at the plane
+    deep_part.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 2000, 1000),
+                                            FreeCAD.Rotation())
+    deep_block = doc.addObject("Part::Box", "DeepBlock")
+    deep_block.Length, deep_block.Width = 1000.0, 1000.0
+    deep_block.Height = 150.0                       # under the 200 floor
+    deep_block.Placement = FreeCAD.Placement(FreeCAD.Vector(0, -2000, 0),
+                                             FreeCAD.Rotation())
+    deep_plane.Objects = [deep_part, deep_block]
+    deep_plane.Depth = 1000
+    doc.recompute()
+    deep_reference = doc.addObject("Part::Part2DObjectPython", "DeepReference")
+    s2v.Shape2DView(deep_reference)
+    deep_reference.Base = deep_plane
+    deep_view = sobj.makeSectionView(doc, base=deep_plane)
+    # Same flags on both: the comparison has to be about the drawn geometry,
+    # and Draft's own defaults are not this view's.
+    for name in ("FuseArch", "OnlySolids", "VisibleOnly"):
+        setattr(deep_reference, name, getattr(deep_view, name))
+    doc.recompute()
+    h.check("the substituted part still sizes the cut",
+            deep_part.Proxy.planOutline(deep_part) is not None
+            and len(deep_view.Shape.Edges) > 0
+            and _visible_edges(deep_view.Shape)
+            == _visible_edges(deep_reference.Shape),
+            detail="outlines drew %d edges, Draft drew %d; the part's outline "
+                   "is %s"
+                   % (len(deep_view.Shape.Edges),
+                      len(deep_reference.Shape.Edges),
+                      deep_part.Proxy.planOutline(deep_part) is not None))
 
     # The shape of plane the real document has: a floor slab listed with the
     # furniture standing on it. The slab is drawn - it is under the cut - and
@@ -572,6 +665,23 @@ def run():
             bool(appearance) and converted is not None
             and all(getattr(converted.ViewObject, name) == value
                     for name, value in appearance.items()))
+
+    # A reader whose Source is a single App::PropertyLink, as BIM's TD View
+    # command builds from a Draft view (TechDraw::DrawViewDraft). Reading such
+    # a property back yields the object itself, not a list, so a re-point that
+    # iterated it raised - and the conversion aborted, transaction and all, on
+    # a reader it had no business refusing.
+    linked = doc.addObject("Part::Part2DObjectPython", "LinkedDraft")
+    s2v.Shape2DView(linked)
+    linked.Base = plane
+    linked_reader = _draft_reader(doc, linked)
+    h.check("a single-link reader starts on the Draft view",
+            linked_reader.Source is linked)
+    h.check("a single-link reader converts and is re-pointed",
+            sgu.convertSectionView(linked) is True
+            and linked_reader.Source is not None
+            and linked_reader.Source is not linked
+            and linked_reader.Source.Label == "LinkedDraft")
 
     # A frozen view stays frozen, and keeps a drawing: the fixture draws
     # first, so a conversion that froze the view before it ever built would

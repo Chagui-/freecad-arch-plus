@@ -418,9 +418,12 @@ class _LibraryPart(ArchComponent.Component):
         height), or None.
 
         What a section view draws instead of the solid. Computed on the first
-        ask and kept until the part rebuilds, keyed by the shape it was built
-        from, because the projection costs 10-30ms and a view asks on every
-        recompute.
+        ask and kept while the part is not changed, because the projection
+        costs 10-30ms and a view asks on every recompute. The key is taken
+        from obj.Shape, which carries the placement, so a move drops the cache
+        and the part is re-outlined at its new position: the outline is in
+        world coordinates, so a key that ignored the placement would hand a
+        moved part the outline it cached at its old one.
 
         None means "no outline to be had" - no shape, or a projection whose
         outer wire does not cover the part's own drawing (see
