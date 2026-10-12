@@ -93,11 +93,14 @@ rather than assumed: **an outline is an optimisation, never a wrong drawing**.
 - **On the part's proxy**, not a property — the same hard-won reason
   `partRoles` is not one: declaring a new property on a placed part breaks
   FreeCAD's undo/redo of that object's *other* properties.
-- **Lazily** on the first ask by a view, keyed by the shape the part last built
-  (its hash, recorded by the part as it rebuilds), dropped when the part
-  rebuilds. One-off ~8 s for all 84 parts on a full rebuild; 10–30 ms per
-  changed part afterwards — against ~13 s of section-view work on *every*
-  recompute today.
+- **Lazily** on the first ask by a view, keyed by the part's *placed* shape —
+  its hash plus its face count and rounded volume, computed on the ask rather
+  than recorded at rebuild — and dropped when that shape or its placement
+  changes, so a moved part is re-outlined at its new position. (The cached
+  outline is in world coordinates, so a key that ignored the placement would
+  hand a moved part an outline at its old position.) One-off ~8 s for all 84
+  parts on a full rebuild; 10–30 ms per changed part afterwards — against
+  ~13 s of section-view work on *every* recompute today.
 
 ## The view
 
@@ -218,9 +221,10 @@ plane's* property, honoured as Draft honours it, not one a view can set.
   cut removes it altogether), a part rotated about X, a non-plan projection
   direction, and a part whose outline fails the self-check each project their
   solids.
-- **Cache**: computed once per part and reused across views and after a move;
-  dropped when a part's parameters change. Asserted as *work skipped*, not as
-  wall-clock time.
+- **Cache**: computed once per part and reused across views and while the part
+  is not changed; dropped when the part's shape or placement changes, so a
+  move re-outlines the moved part (the key is taken from `obj.Shape`, which
+  carries the placement). Asserted as *work skipped*, not as wall-clock time.
 - **Convert command**: converts, re-points the TechDraw `Source`, removes the
   old view; refuses a wrong selection and unsupported settings.
 - **Pure unit tests** for the validity rules over plain data (direction,

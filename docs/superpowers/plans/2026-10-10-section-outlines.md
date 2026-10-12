@@ -21,6 +21,16 @@ scripted verification inside FreeCAD for anything that touches geometry.
 
 **Spec:** `docs/superpowers/specs/2026-10-10-section-outlines-design.md`
 
+**A note on the code blocks.** Every block that claims to be a whole file is
+the shipped file as of this branch's final commit, not the file as it stood
+when that task was executed; the `verify_sections.py` blocks are excerpts
+(marked as appends) and are not that file's whole content. Where a later
+ruling changed a task's output — the Depth floor, the outline's own height —
+the block shows the shipped result rather than that task's intermediate state,
+so a later task's replacement steps may describe a change the earlier block
+already contains. Read the blocks as the target state and the steps as the
+history that reached it.
+
 ## Global Constraints
 
 - FreeCAD 1.1. The reference behaviour is
@@ -48,7 +58,7 @@ scripted verification inside FreeCAD for anything that touches geometry.
 
 ## Review Focus
 
-The five inputs most likely to bite a user of this feature, each pinned to a
+The six inputs most likely to bite a user of this feature, each pinned to a
 test in the task that owns the code:
 
 1. **A part whose plan projection has two separate outlines** (the waste-bin):
@@ -61,13 +71,18 @@ test in the task that owns the code:
    or, for a part wholly above the plane, where the cut removes the part
    outright → Task 3 (`part_is_below_the_cut`) and Task 5 (the view projects
    the solid).
-3. **A part rotated about X or Y** (not about Z): its local plan projection is
+3. **A section plane with a Depth** (a 4200 plan with `Depth` 1000): the cut
+   keeps only the 3200–4200 band, so a part under that floor is removed from
+   the drawing and one straddling it is sliced — neither is its footprint
+   → Task 3 (`part_above_the_depth_floor`) and Task 5 (the view projects the
+   solid).
+4. **A part rotated about X or Y** (not about Z): its local plan projection is
    not its placed one → Task 3 (`rotation_is_about_z`) and Task 5.
-4. **A view converted without its Placement** (the user arranged the four views
+5. **A view converted without its Placement** (the user arranged the four views
    on the page at offsets like `(10856, 0, 0)`): the drawing would jump to the
    model's own coordinates → Task 6 (the convert command copies Placement, and
    the check asserts the converted view's shape bbox matches the old one's).
-5. **A view whose settings the new object does not reproduce** (`HiddenLines`,
+6. **A view whose settings the new object does not reproduce** (`HiddenLines`,
    `Tessellation`, `Clip`, `ExclusionPoints`, a `ProjectionMode` other than
    `Solid`, or a base that is not a section plane): silently converting it
    would draw something different → Task 6 (the command refuses, naming the
@@ -491,9 +506,10 @@ git commit -m "Cache each placed part's plan outline until it rebuilds"
 **Interfaces:**
 - Consumes: nothing (plain data in, plain answers out).
 - Produces: `is_plan_direction(direction)`, `rotation_is_about_z(axis, angle)`,
-  `part_is_below_the_cut(z_max, plane_z)` and
-  `use_outline(z_range, plane_z, direction, axis, angle) -> bool`, all in
-  `archplus.tools.sections.model`. Task 5 calls `use_outline`.
+  `part_is_below_the_cut(z_max, plane_z)`,
+  `part_above_the_depth_floor(z_min, plane_z, depth)` and
+  `use_outline(z_range, plane_z, direction, axis, angle, depth=0.0) -> bool`,
+  all in `archplus.tools.sections.model`. Task 5 calls `use_outline`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -685,7 +701,7 @@ def use_outline(z_range, plane_z, direction, axis, angle, depth=0.0):
 python3 -m pytest archplus/tools/sections/tests/test_model.py -q
 ```
 
-Expected: `8 passed`.
+Expected: `10 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -1180,7 +1196,7 @@ that check is the feature's correctness gate.
 python3 -m pytest -q
 ```
 
-Expected: `564 passed` (556 + the 8 rules tests Task 3 added).
+Expected: `566 passed` (556 + the 10 rules tests Task 3 added).
 
 - [ ] **Step 6: Commit**
 
@@ -1200,9 +1216,11 @@ git commit -m "Add a section view that draws exactly what Draft's draws"
 **Interfaces:**
 - Consumes: `model.use_outline(...)` (Task 3), `part.Proxy.planOutline(part)`
   (Task 2).
-- Produces: `_SectionView._outline_for(obj, part, plane, direction) ->
-  Part.Shape | None` — the placed outline for a part, or `None` to draw its
-  solid. Nothing later depends on it.
+- Produces: `_SectionView._outline_for(obj, candidate, plane, direction,
+  depth) -> Part.Shape | None` — the placed outline for a part, or `None` to
+  draw its solid — and the module-level `_cut_depth(plane)` that resolves the
+  plane's `Depth` once, for the substitution rule and the cut alike. Nothing
+  later depends on them.
 
 - [ ] **Step 1: Write the failing checks**
 
@@ -1529,7 +1547,7 @@ Expected: all `verify_sections` checks `PASS`, `0 check(s) failed`.
 python3 -m pytest -q
 ```
 
-Expected: `564 passed`.
+Expected: `566 passed`.
 
 - [ ] **Step 6: Commit**
 
@@ -1923,7 +1941,7 @@ Expected: all `verify_sections` checks `PASS`, `0 check(s) failed`.
 python3 -m pytest -q
 ```
 
-Expected: `564 passed` (the lazy-import guard must stay green — `gui.py`
+Expected: `566 passed` (the lazy-import guard must stay green — `gui.py`
 imports `FreeCAD` only at module scope, everything else inside functions).
 
 - [ ] **Step 7: Commit**
@@ -2017,7 +2035,7 @@ its self-check (Task 1), the cache on the proxy (Task 2), the substitution
 conditions (Tasks 3 and 5), the view object and its flags (Task 4), the
 outline path and its fallbacks (Task 5), the convert command and its refusals
 (Task 6), the docs and the real-document measurement (Task 7). The spec's
-"Verification" list is Tasks 1, 2, 4, 5 and 6; "Out of scope" items (the
+"Verification" list is Tasks 1, 2, 3, 4, 5, 6 and 7; "Out of scope" items (the
 freeze toggle, non-plan views, per-part switches, other projection modes, the
 level compounds, the lowercase claims) appear in no task, deliberately.
 
@@ -2026,14 +2044,15 @@ its code, its command and its expected output.
 
 **Type consistency:** `plan_outline(shape, thickness=1.0)` is defined in Task 1
 and called only by `_LibraryPart.planOutline` in Task 2;
-`use_outline(z_range, plane_z, direction, axis, angle)` is defined and tested
-in Task 3 and called in Task 5 with exactly those arguments;
+`use_outline(z_range, plane_z, direction, axis, angle, depth=0.0)` — and
+`part_above_the_depth_floor(z_min, plane_z, depth)` behind it — is defined and
+tested in Task 3 and called in Task 5 with those arguments;
 `makeSectionView(doc, base, name)` is defined in Task 4 and used in Tasks 5
 and 6; `convertSectionView(view)` is defined and used in Task 6.
 
-**Review Focus:** the five inputs named at the top are each pinned — the
+**Review Focus:** the six inputs named at the top are each pinned — the
 two-outline part (Task 1's compound check, Task 5's fallback), the
-cut-straddling part and the off-plan part (Task 3's tests, Task 5's checks),
-the lost Placement (Task 6's "drawing did not jump"), the unsupported settings
-(Task 6's refusal check). Empty `Base`, empty `Objects` and a missing outline
-are pinned in Tasks 4 and 5.
+cut-straddling part, the depth-cut part and the off-plan part (Task 3's tests,
+Task 5's checks), the lost Placement (Task 6's "drawing did not jump"), the
+unsupported settings (Task 6's refusal check). Empty `Base`, empty `Objects`
+and a missing outline are pinned in Tasks 4 and 5.
