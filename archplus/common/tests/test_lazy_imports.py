@@ -95,7 +95,7 @@ def test_gui_modules_do_not_import_banned_names_at_module_scope():
             "module-scope import of %r in %s" % (hits[0], modname)
 
 
-# The test above only proves these six real files are currently clean - it
+# The test above only proves these seven real files are currently clean - it
 # says nothing about whether the checker itself is capable of catching a
 # violation if one were introduced. Feed it synthetic source for every
 # dangerous import spelling (including the `from archplus.common import geometry as

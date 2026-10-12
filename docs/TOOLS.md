@@ -254,21 +254,25 @@ existing segment to move the faces' runs into.
 `Shape2DView` with an ArchPlus one. The difference is what it draws for
 placed library parts: instead of projecting their solids, it draws each
 part's cached plan outline — the outer boundary of the part's own plan
-projection, computed once and reused until the part rebuilds. A furnished
-plan's drawings shrink by about a third and the section views rebuild in a
-fraction of the time, because the parts are most of what they project.
+projection, computed once and reused until the part rebuilds or is moved. A
+furnished plan's drawings shrink by about a third and the section views
+rebuild in a fraction of the time, because the parts are most of what they
+project.
 
 The outline is the part's **filled footprint**: a boundary nested inside it
 (a smaller block on top of a bigger one, a hole through a part) is not drawn.
-Reproducing every loop was measured to make the drawings *bigger* than
-drawing the solids, which is the opposite of the point.
+Keeping those inner loops was measured to draw roughly three times the
+footprint (the king bed: 48 edges against 16), which gives back much of the
+saving.
 
 The outline is used only where the drawing cannot mean something else: the
 view must be a plan cut, the part must not be rotated off plan, and the part
-must lie wholly below the section plane — a part the plane cuts through shows
-a section, and one wholly above it the cut removes altogether. Otherwise that
-part is drawn as its solid, exactly as before. Turning **PartOutlines** off on
-the view draws every part as its solid.
+must lie wholly inside the band the cut keeps — below the section plane, and
+above the floor a non-zero Depth cuts at (the plane's z minus its Depth). A
+part the plane cuts through shows a section, one wholly above it the cut
+removes altogether, and one under that floor is cut away too. Otherwise that
+part is drawn as its solid, exactly as before. Turning **PartOutlines** off
+on the view draws every part as its solid.
 
 Converting a view **renumbers it**, so the TechDraw dimensions measuring that
 view need re-picking once — convert one view, compare it, then convert the

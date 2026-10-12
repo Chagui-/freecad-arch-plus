@@ -55,9 +55,10 @@ def plan_outline(shape, thickness=1.0):
     What it deliberately does not reproduce: loops nested inside the outer
     boundary - a smaller block on top of a bigger one, a table's top over its
     pedestal, a hole through a part. There the drawing is a filled footprint.
-    Reproducing every loop was measured *bigger* than the solid's own drawing
-    (the bed: 48 edges against 16), which is the opposite of what this
-    feature exists to do. docs/TOOLS.md says the same to the user.
+    Keeping those inner loops was measured to draw roughly three times the
+    footprint (the bed: 48 edges against the footprint's 16), which gives
+    back much of the saving this feature exists to make. docs/TOOLS.md says
+    the same to the user.
 
     Returns None whenever the outline cannot be trusted: no geometry, no
     outer wire, a degenerate face, or a shape whose own drawing reaches
