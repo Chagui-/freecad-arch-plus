@@ -42,13 +42,29 @@ def part_is_below_the_cut(z_max, plane_z, tolerance=TOLERANCE):
     return z_max <= plane_z + tolerance
 
 
-def use_outline(z_range, plane_z, direction, axis, angle):
+def part_above_the_depth_floor(z_min, plane_z, depth, tolerance=TOLERANCE):
+    """True when the part clears the floor a non-zero Depth cuts at.
+
+    A plane with a Depth does not keep everything below it: Arch's
+    getCutVolume fuses the volume above the plane with everything below
+    `plane_z - depth`, so the cut keeps only the band between the two. A part
+    under that floor is removed from the drawing entirely, and one straddling
+    it is sliced - neither is drawn as its footprint, so neither may take an
+    outline. A Depth of zero (the default) sets no floor.
+    """
+    return depth <= tolerance or z_min >= plane_z - depth - tolerance
+
+
+def use_outline(z_range, plane_z, direction, axis, angle, depth=0.0):
     """Whether a part's cached outline may stand in for its solid.
 
-    All three conditions must hold: the view is a plan, the part is not
-    rotated off plan, and the part lies below the cut. Anything else draws
-    the solid, which is what the view drew before this feature.
+    All four conditions must hold: the view is a plan, the part is not
+    rotated off plan, the part lies below the cut, and - when the plane has a
+    Depth - the part is above the floor that Depth cuts at. Anything else
+    draws the solid, which is what the view drew before this feature.
+    `depth` is the plane's own Depth, as a number.
     """
     return (is_plan_direction(direction)
             and rotation_is_about_z(axis, angle)
-            and part_is_below_the_cut(z_range[1], plane_z))
+            and part_is_below_the_cut(z_range[1], plane_z)
+            and part_above_the_depth_floor(z_range[0], plane_z, depth))
