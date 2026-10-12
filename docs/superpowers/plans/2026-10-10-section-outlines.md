@@ -1432,6 +1432,19 @@ and in `run()`:
             converted is not None
             and abs(converted.Shape.BoundBox.XMin - old_bbox.XMin) < 1e-3)
 
+    # A frozen view stays frozen: converting it must not undo the freeze the
+    # user set.
+    frozen = doc.addObject("Part::Part2DObjectPython", "Frozen")
+    s2v.Shape2DView(frozen)
+    frozen.Base = plane
+    frozen.AutoUpdate = False
+    doc.recompute()
+    h.check("a frozen view converts", sgu.convertSectionView(frozen))
+    converted_frozen = next((o for o in doc.Objects if o.Label == "Frozen"),
+                            None)
+    h.check("and stays frozen",
+            converted_frozen is not None and not converted_frozen.AutoUpdate)
+
     # A view using a setting the new object does not reproduce is refused.
     other = doc.addObject("Part::Part2DObjectPython", "HiddenLines")
     s2v.Shape2DView(other)
@@ -1500,7 +1513,11 @@ UNSUPPORTED = (
     ("ProjectionMode", "Solid"),
     ("HiddenLines", False),
     ("Tessellation", False),
-    ("InPlace", False),
+    # Draft defaults InPlace to True, and it only means anything in the
+    # Cutlines/Cutfaces modes, which the ProjectionMode entry above refuses -
+    # so True is this table's "not used". False here would refuse every
+    # default Draft view.
+    ("InPlace", True),
     ("Clip", False),
     ("Depth", 0.0),
 )
@@ -1587,7 +1604,9 @@ def _is_section_plane(base):
 
 
 def _copy_settings(view, new):
-    for name in ("FuseArch", "OnlySolids", "VisibleOnly"):
+    # AutoUpdate is copied too: a view the user froze that way must stay
+    # frozen, or converting it would silently undo the freeze.
+    for name in ("FuseArch", "OnlySolids", "VisibleOnly", "AutoUpdate"):
         if hasattr(view, name):
             setattr(new, name, getattr(view, name))
     if hasattr(view, "ExclusionNames"):
