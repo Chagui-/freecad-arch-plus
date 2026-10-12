@@ -52,10 +52,12 @@ test in the task that owns the code:
    `findOuterWire` returns one loop, so the outline would silently drop the
    other → Task 1 (`_covers` rejects it, the part keeps its solid) and Task 5
    (the view falls back for it).
-2. **A part the section plane cuts through** (a floor-to-ceiling wardrobe in a
-   plan cut at 1400): the outline is flat at the part's base, so it would draw
-   the whole footprint where the solid draws a slice → Task 3 (`cut_straddles`)
-   and Task 5 (the view projects the solid).
+2. **A part the section plane reaches** (a floor-to-ceiling wardrobe in a plan
+   cut at 1400, or a wall cabinet wholly above it): the outline is flat at the
+   part's base, so it would draw a footprint where the solid draws a slice -
+   or, for a part wholly above the plane, where the cut removes the part
+   outright → Task 3 (`part_is_below_the_cut`) and Task 5 (the view projects
+   the solid).
 3. **A part rotated about X or Y** (not about Z): its local plan projection is
    not its placed one → Task 3 (`rotation_is_about_z`) and Task 5.
 4. **A view converted without its Placement** (the user arranged the four views
@@ -455,7 +457,7 @@ git commit -m "Cache each placed part's plan outline until it rebuilds"
 **Interfaces:**
 - Consumes: nothing (plain data in, plain answers out).
 - Produces: `is_plan_direction(direction)`, `rotation_is_about_z(axis, angle)`,
-  `cut_straddles(z_min, z_max, plane_z)` and
+  `part_is_below_the_cut(z_max, plane_z)` and
   `use_outline(z_range, plane_z, direction, axis, angle) -> bool`, all in
   `archplus.tools.sections.model`. Task 5 calls `use_outline`.
 
