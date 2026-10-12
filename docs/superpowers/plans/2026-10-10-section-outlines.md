@@ -128,10 +128,10 @@ Create `archplus/freecad_tests/verify_sections.py`:
 #
 # A section view draws library parts as their cached plan outline instead of
 # their solid. The outline is an optimisation, never a wrong drawing: it is
-# used only when it covers everything the solid's own drawing shows, and this
-# module is where that claim is tested - on a real part, a part the cut passes
-# through, a part rotated off-plan, and against Draft's own view, which must
-# keep drawing the walls identically.
+# the shape's filled outer boundary, used when the solid's own drawing stays
+# inside it, and this module is where that claim is tested - on a real part, a
+# part the cut passes through, a part rotated off-plan, and against Draft's
+# own view, which must keep drawing the walls identically.
 
 import FreeCAD
 import Part
@@ -174,10 +174,24 @@ def run():
 
     outline = common_geometry.plan_outline(part.Shape)
     h.check("a box gets an outline", outline is not None)
-    h.check("the outline is as tall as the part", outline is not None
+    # A prism over the part's own height, at the part's own z - that is what
+    # makes the view's hidden-line pass treat the outline as the part, so a
+    # floor slab or a wall band occludes it exactly as it occludes the solid.
+    # A 1 mm slab would be hidden by whatever the part stands on.
+    h.check("the outline is as tall as the part",
+            outline is not None
             and abs(outline.BoundBox.ZLength
                     - part.Shape.BoundBox.ZLength) < 1e-6
             and outline.Volume > 0)
+    raised = part.Shape.copy()
+    raised.translate(FreeCAD.Vector(0, 0, 500))
+    raised_outline = common_geometry.plan_outline(raised)
+    h.check("the outline sits at the part's own z",
+            raised_outline is not None
+            and abs(raised_outline.BoundBox.ZMin
+                    - raised.BoundBox.ZMin) < 1e-6
+            and abs(raised_outline.BoundBox.ZLength
+                    - raised.BoundBox.ZLength) < 1e-6)
     # Counted on the *drawing*, not the raw shapes: the prism's own edges are
     # three times its silhouette's (top loop, bottom loop, the verticals), so
     # a raw count would say nothing about what a view has to draw.
@@ -550,6 +564,31 @@ def test_an_off_axis_rotation_refuses_the_outline():
 def test_an_elevation_refuses_the_outline():
     assert not model.use_outline((3000.0, 3900.0), 4200.0,
                                  (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), 0.0)
+
+
+def test_a_depth_floor_refuses_the_parts_it_cuts_away():
+    # A 4200 plan with Depth 1000 keeps only the 3200..4200 band. A ground
+    # floor part at 0..700 is cut away entirely, so an outline there would be
+    # a part the drawing does not have.
+    assert not model.part_above_the_depth_floor(0.0, 4200.0, 1000.0)
+    assert not model.use_outline((0.0, 700.0), 4200.0, (0.0, 0.0, 1.0),
+                                 (0.0, 0.0, 1.0), 0.0, 1000.0)
+    # Straddling the floor at 3200: the solid is sliced rather than whole, so
+    # its footprint is not the shape the cut keeps either.
+    assert not model.part_above_the_depth_floor(3000.0, 4200.0, 1000.0)
+    assert not model.use_outline((3000.0, 3900.0), 4200.0, (0.0, 0.0, 1.0),
+                                 (0.0, 0.0, 1.0), 0.0, 1000.0)
+
+
+def test_a_part_inside_the_depth_band_uses_its_outline():
+    # 3300..3900 lies inside the 3200..4200 band, so the cut leaves it whole.
+    assert model.part_above_the_depth_floor(3300.0, 4200.0, 1000.0)
+    assert model.use_outline((3300.0, 3900.0), 4200.0, (0.0, 0.0, 1.0),
+                             (0.0, 0.0, 1.0), 0.0, 1000.0)
+    # A Depth of zero (the default) sets no floor at all.
+    assert model.part_above_the_depth_floor(0.0, 4200.0, 0.0)
+    assert model.use_outline((0.0, 700.0), 4200.0, (0.0, 0.0, 1.0),
+                             (0.0, 0.0, 1.0), 0.0)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -612,16 +651,32 @@ def part_is_below_the_cut(z_max, plane_z, tolerance=TOLERANCE):
     return z_max <= plane_z + tolerance
 
 
-def use_outline(z_range, plane_z, direction, axis, angle):
+def part_above_the_depth_floor(z_min, plane_z, depth, tolerance=TOLERANCE):
+    """True when the part clears the floor a non-zero Depth cuts at.
+
+    A plane with a Depth does not keep everything below it: Arch's
+    getCutVolume fuses the volume above the plane with everything below
+    `plane_z - depth`, so the cut keeps only the band between the two. A part
+    under that floor is removed from the drawing entirely, and one straddling
+    it is sliced - neither is drawn as its footprint, so neither may take an
+    outline. A Depth of zero (the default) sets no floor.
+    """
+    return depth <= tolerance or z_min >= plane_z - depth - tolerance
+
+
+def use_outline(z_range, plane_z, direction, axis, angle, depth=0.0):
     """Whether a part's cached outline may stand in for its solid.
 
-    All three conditions must hold: the view is a plan, the part is not
-    rotated off plan, and the part lies below the cut. Anything else draws
-    the solid, which is what the view drew before this feature.
+    All four conditions must hold: the view is a plan, the part is not
+    rotated off plan, the part lies below the cut, and - when the plane has a
+    Depth - the part is above the floor that Depth cuts at. Anything else
+    draws the solid, which is what the view drew before this feature.
+    `depth` is the plane's own Depth, as a number.
     """
     return (is_plan_direction(direction)
             and rotation_is_about_z(axis, angle)
-            and part_is_below_the_cut(z_range[1], plane_z))
+            and part_is_below_the_cut(z_range[1], plane_z)
+            and part_above_the_depth_floor(z_range[0], plane_z, depth))
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -824,6 +879,20 @@ import FreeCAD
 PROP_GROUP = "Section"
 
 
+def _cut_depth(plane):
+    """The plane's Depth as a number, 0.0 when it has none.
+
+    Draft reads it the same way (`obj.Base.Depth.Value`) and passes it to
+    `Arch.getCutVolume`, which turns a non-zero Depth into a *band*: the
+    volume above the plane fused with everything below `plane_z - depth`, so
+    the cut keeps only what lies between the two. One resolution, both users:
+    the rule that decides whether a part may take an outline, and the cut
+    itself. Two readings of the same property could disagree.
+    """
+    depth = getattr(plane, "Depth", None)
+    return (depth.Value if depth is not None else 0.0) or 0.0
+
+
 class _SectionView:
     def __init__(self, obj):
         obj.Proxy = self
@@ -884,12 +953,12 @@ class _SectionView:
             return
         try:
             shape = self._build(obj)
+            obj.Shape = shape
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
                 "ArchPlus: section view '%s' could not rebuild (%s); "
                 "keeping the last shape\n" % (obj.Label, exc))
             return
-        obj.Shape = shape
 
     def _build(self, obj):
         import Part
@@ -898,9 +967,61 @@ class _SectionView:
         if plane is None:
             return Part.makeCompound([])
         direction = plane.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+        # Resolved once, here, and handed to both the substitution rule and
+        # the cut: what a plane's Depth cuts away must not take an outline
+        # either, and two readings of the same property could disagree.
+        depth = _cut_depth(plane)
         objs = self._objects(obj, plane)
-        shapes = self._shapes(obj, objs)
-        return self._project(obj, shapes, plane, direction)
+        outlines = []
+        solids = []
+        for o in objs:
+            outline = self._outline_for(obj, o, plane, direction, depth)
+            if outline is not None:
+                outlines.append(outline)
+            else:
+                solids.append(o)
+        shapes = self._shapes(obj, solids)
+        return self._project(obj, shapes, outlines, plane, direction, depth)
+
+    def _outline_for(self, obj, candidate, plane, direction, depth):
+        """The placed outline for a library part, or None to draw its solid.
+
+        Every condition here is one the design doc pins: the flag is on, the
+        part has an outline, the view is a plan, the part is not rotated off
+        plan, and the part lies wholly below the plane - above the floor the
+        plane's Depth cuts at, when it has one. Any of them failing means the
+        solid is drawn - correct, just slower.
+        """
+        if not getattr(obj, "PartOutlines", True):
+            return None
+        from archplus.tools.partslib import object as pobj
+
+        if not pobj.isLibraryPart(candidate):
+            return None
+        shape = getattr(candidate, "Shape", None)
+        if shape is None or shape.isNull():
+            return None
+        from archplus.tools.sections import model
+
+        placement = candidate.Placement
+        box = shape.BoundBox
+        if not model.use_outline(
+                (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
+                tuple(placement.Rotation.Axis), placement.Rotation.Angle,
+                depth):
+            return None
+        # A library part from an older add-on build has no planOutline: draw
+        # its solid rather than raising into the recompute.
+        plan_outline = getattr(getattr(candidate, "Proxy", None),
+                               "planOutline", None)
+        if plan_outline is None:
+            return None
+        # Already in world coordinates: a Part::Feature's Shape carries the
+        # object's own placement, so plan_outline projected the *placed* part
+        # and the result must not be placed a second time - that would draw
+        # the part at twice its offset. It is also the cache's own object:
+        # never mutate it, the next ask hands out the same shape.
+        return plan_outline(candidate)
 
     def _objects(self, obj, plane):
         """The plane's objects, expanded and filtered the way Draft does."""
@@ -969,9 +1090,24 @@ class _SectionView:
             return shape.SubShapes
         return [shape.copy()]
 
-    def _project(self, obj, shapes, plane, direction):
-        """Cut against the section volume, then project - Draft's own two
-        steps, in Draft's own order."""
+    def _project(self, obj, shapes, outlines, plane, direction, depth):
+        """Cut the solids against the section volume, then project the cut
+        solids *and* the outlines in one compound - Draft's own two steps, in
+        Draft's own order.
+
+        The outlines ride in the same compound as the solids, which is what
+        gives them their occlusion: hidden-line removal works across the
+        compound, in depth, so a wall band hides a part behind it and a floor
+        slab hides nothing it should not - exactly as it hides the part's own
+        solid. That holds for the outline only because it is a prism over the
+        part's own height at the part's own z: a flat slab in the projection
+        plane sits under whatever the part stands on, and the view would
+        delete the part instead of drawing it cheaply.
+
+        Projecting the outlines separately and appending their edges would
+        instead draw all of them, hidden or not. Riding in the compound also
+        means each outline is drawn as its own silhouette, so no outer wire
+        has to be picked out by hand."""
         import Arch
         import Part
         import TechDraw
@@ -983,10 +1119,10 @@ class _SectionView:
         # value always wins. This view declares no Clip, and the convert
         # command refuses a view that sets it, so this is False: a clipping
         # plane does not clip here either, exactly as in Draft. Depth *is* the
-        # plane's - Draft's Shape2DView has no Depth of its own.
+        # plane's - Draft's Shape2DView has no Depth of its own - and it is
+        # resolved by the caller, so this cut and the substitution rule above
+        # read the same number.
         clip = bool(getattr(obj, "Clip", False))
-        depth = getattr(plane, "Depth", None)
-        depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
 
         cuts = []
@@ -1002,7 +1138,10 @@ class _SectionView:
                     cuts.extend(self._sub_shapes(cut, obj.OnlySolids))
             else:
                 cuts.extend(self._sub_shapes(sh, obj.OnlySolids))
-        compound = Part.makeCompound(cuts)
+        # The outlines are not cut: one is the part's footprint over its own
+        # height, which is what the cut keeps of that part. Read-only - it is
+        # the part's cached shape, handed out again by every later recompute.
+        compound = Part.makeCompound(cuts + list(outlines))
 
         # Draft's getProjected: the visible edge groups of the projection.
         groups = TechDraw.projectEx(compound, direction)
@@ -1541,6 +1680,7 @@ Then create `archplus/tools/sections/gui.py`:
 # projection mode would draw something the user did not ask for.
 
 import FreeCAD
+import FreeCADGui
 
 # Draft's Shape2DView settings that change what it draws, with the value that
 # means "not used" for each. `InPlace` and `Depth` are deliberately absent:
@@ -1563,8 +1703,6 @@ def unsupported_settings(view):
         if not hasattr(view, name):
             continue
         value = getattr(view, name)
-        if name == "Depth":
-            value = value.Value
         if value != neutral:
             found.append("%s = %s" % (name, value))
     points = list(getattr(view, "ExclusionPoints", None) or [])
@@ -1599,17 +1737,20 @@ def convertSectionView(view):
         return False
 
     doc = view.Document
+    # Captured before the transaction: `view` is dead the moment
+    # `doc.removeObject` runs, so the handler below must not touch it, and
+    # the label has to be set after the removal or FreeCAD uniquifies it.
+    label = view.Label
+    # Captured too, and applied after the build below: a view frozen before
+    # it ever drew would otherwise come out blank *and* frozen, where the
+    # Draft view it replaces keeps the drawing it was frozen with.
+    auto_update = getattr(view, "AutoUpdate", True)
     doc.openTransaction("Convert to ArchPlus section view")
     try:
         new = sections_object.makeSectionView(doc, base=view.Base)
-        label = view.Label  # captured: `view` is dead after removeObject
-        # Captured too, and applied after the build below: a view frozen
-        # before it ever drew would otherwise come out blank *and* frozen,
-        # where the Draft view it replaces keeps the drawing it was frozen
-        # with.
-        auto_update = getattr(view, "AutoUpdate", True)
         new.Placement = view.Placement
         _copy_settings(view, new)
+        _copy_view_properties(view, new)
         if not _repoint_sources(doc, view, new):
             raise RuntimeError("a TechDraw view could not be re-pointed")
         doc.removeObject(view.Name)
@@ -1621,7 +1762,7 @@ def convertSectionView(view):
     except Exception as exc:
         doc.abortTransaction()
         FreeCAD.Console.PrintError(
-            "ArchPlus: could not convert '%s': %s\n" % (view.Label, exc))
+            "ArchPlus: could not convert '%s': %s\n" % (label, exc))
         return False
     doc.commitTransaction()
     doc.recompute()
@@ -1658,6 +1799,30 @@ def _copy_settings(view, new):
             setattr(new, name, getattr(view, name))
     if hasattr(view, "ExclusionNames"):
         new.ExclusionNames = list(view.ExclusionNames or [])
+
+
+# The Draft view's 3D appearance, which its own view provider holds.
+DISPLAY_PROPERTIES = ("LineColor", "LineWidth", "DrawStyle", "ShapeColor",
+                      "Visibility")
+
+
+def _copy_view_properties(view, new):
+    """Copy the Draft view's 3D appearance onto the converted view.
+
+    The converted view is a bare `Part::FeaturePython` with no view provider
+    of its own, so without this its line colour and width, draw style, shape
+    colour and visibility revert to Part's defaults where the Draft view had
+    its own - the drawing would be right and look different. Read before the
+    old view is removed, because its ViewObject dies with it; None in a
+    headless run, and a property the old view does not have is left alone.
+    """
+    old = getattr(view, "ViewObject", None)
+    fresh = getattr(new, "ViewObject", None)
+    if old is None or fresh is None:
+        return
+    for name in DISPLAY_PROPERTIES:
+        if hasattr(old, name) and hasattr(fresh, name):
+            setattr(fresh, name, getattr(old, name))
 
 
 def _repoint_sources(doc, old, new):
@@ -1700,9 +1865,9 @@ def _selected_views():
             if _is_draft_view(sel.Object)]
 
 
-if FreeCAD.GuiUp:
-    import FreeCADGui
-
+# Register the command (FreeCAD 1.1 has no removeCommand; addCommand is a
+# no-op if it's already registered, so guard to stay reload-safe).
+if "ArchPlus_SectionView" not in FreeCADGui.listCommands():
     FreeCADGui.addCommand("ArchPlus_SectionView", ConvertSectionViewCommand())
 ```
 
