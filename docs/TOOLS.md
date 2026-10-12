@@ -1,8 +1,8 @@
 # ArchPlus tools
 
-User guide for the enhanced **Stairs**, **Doors**, **Windows** and **Walls**
-tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md); for the
-road ahead see [ROADMAP.md](ROADMAP.md).
+User guide for the enhanced **Stairs**, **Doors**, **Windows**, **Walls** and
+**Section views** tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md);
+for the road ahead see [ROADMAP.md](ROADMAP.md).
 
 Stairs, doors and windows are each a modifiable copy of a native FreeCAD
 module — `ArchStairs` and `ArchWindow` respectively — so every native feature
@@ -253,7 +253,7 @@ existing segment to move the faces' runs into.
 **Convert section view** (BIM workbench, ArchPlus menu) replaces a Draft
 `Shape2DView` with an ArchPlus one. The difference is what it draws for
 placed library parts: instead of projecting their solids, it draws each
-part's cached plan outline - the outer boundary of the part's own plan
+part's cached plan outline — the outer boundary of the part's own plan
 projection, computed once and reused until the part rebuilds. A furnished
 plan's drawings shrink by about a third and the section views rebuild in a
 fraction of the time, because the parts are most of what they project.
@@ -270,7 +270,7 @@ its solid, exactly as before. Turning **PartOutlines** off on the view draws
 every part as its solid.
 
 Converting a view **renumbers it**, so the TechDraw dimensions measuring that
-view need re-picking once - convert one view, compare it, then convert the
+view need re-picking once — convert one view, compare it, then convert the
 rest. A view using `HiddenLines`, `Tessellation`, `Clip`, `Depth`,
 `InPlace`, `ExclusionPoints` or a projection mode other than `Solid` is
 refused rather than converted, because this view does not reproduce those.
