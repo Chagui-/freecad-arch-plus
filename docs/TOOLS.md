@@ -248,6 +248,38 @@ existing segment to move the faces' runs into.
   face that matches no run is reported in the Report view and nothing is
   split for it.
 
+## Section views
+
+**Convert section view** (BIM workbench, ArchPlus menu) replaces a Draft
+`Shape2DView` with an ArchPlus one. The difference is what it draws for
+placed library parts: instead of projecting their solids, it draws each
+part's cached plan outline - the outer boundary of the part's own plan
+projection, computed once and reused until the part rebuilds. A furnished
+plan's drawings shrink by about a third and the section views rebuild in a
+fraction of the time, because the parts are most of what they project.
+
+The outline is the part's **filled footprint**: a boundary nested inside it
+(a smaller block on top of a bigger one, a hole through a part) is not drawn.
+Reproducing every loop was measured to make the drawings *bigger* than
+drawing the solids, which is the opposite of the point.
+
+The outline is used only where the drawing cannot mean something else: the
+view must be a plan cut, the part must not be rotated off plan, and the
+section plane must not cut through the part. Otherwise that part is drawn as
+its solid, exactly as before. Turning **PartOutlines** off on the view draws
+every part as its solid.
+
+Converting a view **renumbers it**, so the TechDraw dimensions measuring that
+view need re-picking once - convert one view, compare it, then convert the
+rest. A view using `HiddenLines`, `Tessellation`, `Clip`, `Depth`,
+`InPlace`, `ExclusionPoints` or a projection mode other than `Solid` is
+refused rather than converted, because this view does not reproduce those.
+
+While modelling, two switches keep the drawings from chasing every change:
+set **KeepUpdated** to false on the TechDraw page, and hide the section
+views in the 3D view. Both are reversible, and the drawings catch up when
+you turn them back on.
+
 ## Regenerating the images
 
 The layout images above are generated, not hand-captured: `docs/gen_images.py`
