@@ -1422,7 +1422,9 @@ and in `run()`:
     h.check("the conversion reports success", sgu.convertSectionView(draft))
     h.check("the old view is gone", doc.getObject("ToConvert") is None)
     converted = next((o for o in doc.Objects if o.Label == "ToConvert"), None)
-    h.check("the new view exists", converted is not None)
+    # Found by label on purpose: the converted view keeps the label of the
+    # view it replaced, which is what makes it read as the same view.
+    h.check("the converted view keeps the label", converted is not None)
     h.check("the reader points at the new view",
             converted is not None and converted in list(reader.Source or []))
     h.check("the placement came across",
@@ -1569,12 +1571,17 @@ def convertSectionView(view):
     doc.openTransaction("Convert to ArchPlus section view")
     try:
         new = sections_object.makeSectionView(doc, base=view.Base)
-        new.Label = view.Label
+        label = view.Label  # captured: `view` is dead after removeObject
         new.Placement = view.Placement
         _copy_settings(view, new)
         if not _repoint_sources(doc, view, new):
             raise RuntimeError("a TechDraw view could not be re-pointed")
         doc.removeObject(view.Name)
+        # Only now: while the old view still held the label, FreeCAD would
+        # have uniquified this one to "ToConvert001", and the suffix survives
+        # the removal - so the converted view would stop reading as the view
+        # it replaced.
+        new.Label = label
     except Exception as exc:
         doc.abortTransaction()
         FreeCAD.Console.PrintError(
