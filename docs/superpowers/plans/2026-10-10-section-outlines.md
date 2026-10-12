@@ -1434,11 +1434,13 @@ and in `run()`:
             converted is not None
             and abs(converted.Shape.BoundBox.XMin - old_bbox.XMin) < 1e-3)
 
-    # A frozen view stays frozen: converting it must not undo the freeze the
-    # user set.
+    # A frozen view stays frozen, and keeps a drawing: the fixture draws
+    # first, so a conversion that froze the view before it ever built would
+    # come out blank and fail the second check.
     frozen = doc.addObject("Part::Part2DObjectPython", "Frozen")
     s2v.Shape2DView(frozen)
     frozen.Base = plane
+    doc.recompute()
     frozen.AutoUpdate = False
     doc.recompute()
     h.check("a frozen view converts", sgu.convertSectionView(frozen))
@@ -1446,6 +1448,9 @@ and in `run()`:
                             None)
     h.check("and stays frozen",
             converted_frozen is not None and not converted_frozen.AutoUpdate)
+    h.check("with the drawing it was frozen with",
+            converted_frozen is not None
+            and len(converted_frozen.Shape.Edges) > 0)
 
     # A view using a setting the new object does not reproduce is refused.
     other = doc.addObject("Part::Part2DObjectPython", "HiddenLines")
@@ -1572,6 +1577,11 @@ def convertSectionView(view):
     try:
         new = sections_object.makeSectionView(doc, base=view.Base)
         label = view.Label  # captured: `view` is dead after removeObject
+        # Captured too, and applied after the build below: a view frozen
+        # before it ever drew would otherwise come out blank *and* frozen,
+        # where the Draft view it replaces keeps the drawing it was frozen
+        # with.
+        auto_update = getattr(view, "AutoUpdate", True)
         new.Placement = view.Placement
         _copy_settings(view, new)
         if not _repoint_sources(doc, view, new):
@@ -1589,6 +1599,10 @@ def convertSectionView(view):
         return False
     doc.commitTransaction()
     doc.recompute()
+    if not auto_update:
+        # After the recompute on purpose: the new view has to draw once, or
+        # freezing it would leave it blank.
+        new.AutoUpdate = auto_update
     return True
 
 
@@ -1611,9 +1625,9 @@ def _is_section_plane(base):
 
 
 def _copy_settings(view, new):
-    # AutoUpdate is copied too: a view the user froze that way must stay
-    # frozen, or converting it would silently undo the freeze.
-    for name in ("FuseArch", "OnlySolids", "VisibleOnly", "AutoUpdate"):
+    # AutoUpdate is deliberately absent: the caller applies it after the
+    # recompute, because a view frozen before it drew would come out blank.
+    for name in ("FuseArch", "OnlySolids", "VisibleOnly"):
         if hasattr(view, name):
             setattr(new, name, getattr(view, name))
     if hasattr(view, "ExclusionNames"):
