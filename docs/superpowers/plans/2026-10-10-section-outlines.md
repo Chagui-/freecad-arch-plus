@@ -30,8 +30,10 @@ scripted verification inside FreeCAD for anything that touches geometry.
   `archplus/common/tests/test_lazy_imports.py`. Import them inside functions.
 - Pure logic (no FreeCAD) lives in a `model.py`-style module, the walls
   precedent (`archplus/tools/walls/model.py`).
-- Every new file starts with `# SPDX-License-Identifier: LGPL-2.1-or-later`
-  and a comment saying why the file exists.
+- Every new code or markdown file starts with
+  `# SPDX-License-Identifier: LGPL-2.1-or-later` and a comment saying why the
+  file exists. An SVG icon follows the existing icons, which carry no SPDX
+  line.
 - Headless tests: `python3 -m pytest -q` from the repo root (556 tests pass on
   this branch before any change).
 - FreeCAD tests: `"C:\Program Files\FreeCAD 1.1\bin\freecad.exe"
@@ -1392,8 +1394,6 @@ Append to `verify_sections.py`, and call from `run()`:
 ```python
 def _convert(doc, plane):
     """A Draft view to convert, plus a TechDraw view reading it."""
-    import TechDraw
-
     draft = doc.addObject("Part::Part2DObjectPython", "ToConvert")
     import draftobjects.shape2dview as s2v
 
