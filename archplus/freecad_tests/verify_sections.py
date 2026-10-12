@@ -44,6 +44,22 @@ def _visible_edges(shape, direction=None):
     return set(out)
 
 
+def _appearance(view):
+    """The view's display properties, captured before it is removed.
+
+    The converted view is a bare Part::FeaturePython with no view provider of
+    its own, so a conversion has to carry these across or the drawing changes
+    colour and line style in the 3D view. Captured, not compared afterwards:
+    a removed view's handle is dead. A headless run has no ViewObject at all,
+    which is why this is allowed to be empty."""
+    vobj = getattr(view, "ViewObject", None)
+    if vobj is None:
+        return {}
+    return {name: getattr(vobj, name)
+            for name in ("LineColor", "LineWidth", "DrawStyle", "ShapeColor")
+            if hasattr(vobj, name)}
+
+
 def _walls_and_plane(doc):
     """A wall on a sketch, and a section plane through it - the smallest
     document whose section view has real geometry."""
@@ -75,6 +91,34 @@ def _walls_and_plane(doc):
     return wall, plane
 
 
+def _door_in(doc, wall, plane):
+    """Host a door in `wall` and add it to the plane - a real opening.
+
+    The spec's acceptance is about walls *and* openings: without a door the
+    two drawings below would agree about a wall with no opening in it. Made
+    from the repo's own door builders, and placed the way a real door sits -
+    the sketch is drawn in the door's elevation plane, so the placement is
+    what stands it up in the wall."""
+    from archplus.tools.doors import gui as dgui
+    from archplus.tools.doors import object as dobj
+
+    spec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
+                height=2100.0, frameWidth=70.0, panelThk=45.0,
+                frameDepth=100.0, swingSide="Left", swingDir="Inward",
+                panelPos="Centered")
+    dsketch, parts = dgui._makeDoorGeometry(spec)
+    door = dobj.makeWindow(dsketch, 900.0, 2100.0, parts, name="SectionDoor")
+    dsketch.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    door.Hosts = [wall]
+    wall.Subtractions = [door]
+    doc.recompute()
+    plane.Objects = list(plane.Objects or []) + [door]
+    doc.recompute()
+    return door
+
+
 def _part_view(doc, plane):
     """Add a placed library part to `plane`, and return it.
 
@@ -94,8 +138,6 @@ def _part_view(doc, plane):
 
 def _convert(doc, plane):
     """A Draft view to convert, plus a TechDraw view reading it."""
-    import TechDraw
-
     draft = doc.addObject("Part::Part2DObjectPython", "ToConvert")
     import draftobjects.shape2dview as s2v
 
@@ -175,6 +217,14 @@ def run():
             empty.planOutline(Part.Shape()) is None)
 
     wall, plane = _walls_and_plane(doc)
+
+    # The opening has to be real: without this the Draft comparison below
+    # could pass while comparing two drawings that both have no opening in
+    # them, and the acceptance criterion names walls *and* openings.
+    wall_volume = sum(s.Shape.Volume for s in wall.Group)
+    door = _door_in(doc, wall, plane)
+    h.check("the door cuts an opening in the wall",
+            sum(s.Shape.Volume for s in wall.Group) < wall_volume - 1.0)
 
     # Draft's own view, as the reference behaviour.
     reference = doc.addObject("Part::Part2DObjectPython", "Reference")
@@ -384,6 +434,56 @@ def run():
             len(_visible_edges(nested_part.Shape) - _visible_edges(view.Shape))
             == 4)
 
+    # A part the wall hides must stay hidden when its outline is what is
+    # drawn. The outline rides in the same compound as the wall, so
+    # hidden-line removal drops it exactly as it drops the solid: adding the
+    # part must change neither drawing. This is the check that fails when the
+    # slabs are projected separately and their edges appended, which draws
+    # the part through the wall - the substituted view would gain the part's
+    # outline edges while the solid view, whose part really is hidden, does
+    # not.
+    hidden = doc.addObject("Part::FeaturePython", "WalledIn")
+    pobj._LibraryPart(hidden)
+    hidden.Shape = Part.makeBox(600, 200, 700)
+    # Inside the wall's 300mm band, and clear of the door's opening.
+    hidden.Placement = FreeCAD.Placement(FreeCAD.Vector(2600, -100, 0),
+                                         FreeCAD.Rotation())
+    showing = _visible_edges(view.Shape)
+    solid_showing = _visible_edges(solid_view.Shape)
+    plane.Objects = list(plane.Objects or []) + [hidden]
+    doc.recompute()
+    h.check("a part the wall hides draws nothing in either view",
+            hidden.Proxy.planOutline(hidden) is not None
+            and _visible_edges(view.Shape) == showing
+            and _visible_edges(solid_view.Shape) == solid_showing,
+            detail="outlines: %d -> %d edges, solid: %d -> %d"
+                   % (len(showing), len(_visible_edges(view.Shape)),
+                      len(solid_showing), len(_visible_edges(solid_view.Shape))))
+
+    # A plane with a Depth cuts a band, not everything below it: the cut
+    # removes what is under `plane_z - depth` too, so a part down there is in
+    # neither drawing and must not take an outline. With Depth set every part
+    # of this plane is under the floor, so the substituted view draws no
+    # footprint at all and the two drawings agree - compared as drawings, not
+    # as edge counts, because a footprint kept here and a footprint dropped
+    # there would cancel out in a count.
+    deeper = doc.addObject("Part::FeaturePython", "UnderTheFloor")
+    pobj._LibraryPart(deeper)
+    deeper.Shape = Part.makeBox(600, 400, 150)
+    deeper.Placement = FreeCAD.Placement(FreeCAD.Vector(6000, -1000, 0),
+                                         FreeCAD.Rotation())
+    plane.Objects = list(plane.Objects or []) + [deeper]
+    plane.Depth = 1000      # the 1200 plane now keeps only 200..1200
+    doc.recompute()
+    h.check("a part under the depth band adds no outline",
+            deeper.Proxy.planOutline(deeper) is not None
+            and _visible_edges(view.Shape) == _visible_edges(solid_view.Shape),
+            detail="outlines drew %d edges, solids %d; the part's outline is %s"
+                   % (len(view.Shape.Edges), len(solid_view.Shape.Edges),
+                      deeper.Proxy.planOutline(deeper) is not None))
+    plane.Depth = 0
+    doc.recompute()
+
     # Turning the flag off draws the solid again.
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
                                        FreeCAD.Rotation())
@@ -394,6 +494,14 @@ def run():
 
     draft, reader = _convert(doc, plane)
     old_bbox = draft.Shape.BoundBox
+    # Given an appearance of its own, so the copy below has something to
+    # carry across that Part's default does not already give.
+    if draft.ViewObject is not None:
+        draft.ViewObject.LineColor = (0.9, 0.1, 0.1)
+        draft.ViewObject.LineWidth = 3.0
+        draft.ViewObject.ShapeColor = (0.1, 0.2, 0.9)
+        draft.ViewObject.DrawStyle = "Dashed"
+    appearance = _appearance(draft)
 
     from archplus.tools.sections import gui as sgu
 
@@ -411,6 +519,10 @@ def run():
     h.check("the drawing did not jump",
             converted is not None
             and abs(converted.Shape.BoundBox.XMin - old_bbox.XMin) < 1e-3)
+    h.check("the converted view keeps the Draft view's appearance",
+            bool(appearance) and converted is not None
+            and all(getattr(converted.ViewObject, name) == value
+                    for name, value in appearance.items()))
 
     # A frozen view stays frozen, and keeps a drawing: the fixture draws
     # first, so a conversion that froze the view before it ever built would
@@ -455,6 +567,35 @@ def run():
     # converts.
     h.check("a default Draft view is not refused",
             sgu.unsupported_settings(reference) == [])
+
+    # And neither must a view with InPlace off. All four of the user's real
+    # views carry InPlace = False, and it is inert in Solid mode - the only
+    # mode this view has - so refusing it would refuse every view there is.
+    off_place = doc.addObject("Part::Part2DObjectPython", "NotInPlace")
+    s2v.Shape2DView(off_place)
+    off_place.Base = plane
+    off_place.InPlace = False
+    doc.recompute()
+    h.check("a view with InPlace off converts",
+            sgu.convertSectionView(off_place) is True)
+
+    # A TechDraw view that cannot be re-pointed aborts the conversion: the
+    # old view has to still be there afterwards. `Immutable` is the one
+    # property status that refuses assignment from Python, which is how a
+    # reader that refuses is staged.
+    stubborn = doc.addObject("Part::Part2DObjectPython", "Stubborn")
+    s2v.Shape2DView(stubborn)
+    stubborn.Base = plane
+    doc.recompute()
+    blocker = doc.addObject("Part::FeaturePython", "StubbornReader")
+    blocker.addProperty("App::PropertyLinkList", "Source", "Checks")
+    blocker.Source = [stubborn]
+    blocker.setPropertyStatus("Source", "Immutable")
+    doc.recompute()
+    h.check("a view whose reader refuses re-pointing is not converted",
+            sgu.convertSectionView(stubborn) is False)
+    h.check("the original view survives the abort",
+            doc.getObject("Stubborn") is not None)
 
     # A view that is not a Draft section view at all is refused, by name.
     plain = doc.addObject("Part::Feature", "PlainFeature")
