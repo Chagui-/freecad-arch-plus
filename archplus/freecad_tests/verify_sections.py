@@ -161,11 +161,26 @@ def run():
 
     outline = common_geometry.plan_outline(part.Shape)
     h.check("a box gets an outline", outline is not None)
-    h.check("the outline is a 1mm slab", outline is not None
-            and abs(outline.BoundBox.ZLength - 1.0) < 1e-6
+    # A prism over the part's own height, at the part's own z - that is what
+    # makes the view's hidden-line pass treat the outline as the part, so a
+    # floor slab or a wall band occludes it exactly as it occludes the solid.
+    # A 1 mm slab would be hidden by whatever the part stands on.
+    h.check("the outline is as tall as the part",
+            outline is not None
+            and abs(outline.BoundBox.ZLength
+                    - part.Shape.BoundBox.ZLength) < 1e-6
             and outline.Volume > 0)
-    # Counted on the *drawing*, not the raw shapes: the slab's own edges are
-    # three times its silhouette's (top loop, bottom loop, 1mm verticals), so
+    raised = part.Shape.copy()
+    raised.translate(FreeCAD.Vector(0, 0, 500))
+    raised_outline = common_geometry.plan_outline(raised)
+    h.check("the outline sits at the part's own z",
+            raised_outline is not None
+            and abs(raised_outline.BoundBox.ZMin
+                    - raised.BoundBox.ZMin) < 1e-6
+            and abs(raised_outline.BoundBox.ZLength
+                    - raised.BoundBox.ZLength) < 1e-6)
+    # Counted on the *drawing*, not the raw shapes: the prism's own edges are
+    # three times its silhouette's (top loop, bottom loop, the verticals), so
     # a raw count would say nothing about what a view has to draw.
     h.check("the outline draws no more edges than the solid",
             len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
@@ -483,6 +498,40 @@ def run():
                       deeper.Proxy.planOutline(deeper) is not None))
     plane.Depth = 0
     doc.recompute()
+
+    # The shape of plane the real document has: a floor slab listed with the
+    # furniture standing on it. The slab is drawn - it is under the cut - and
+    # it has to occlude the outline exactly as it occludes the solid. A flat
+    # outline in the projection plane would instead sit *under* the slab and
+    # vanish, which is how a view loses its furniture: this is the check that
+    # fails unless the outline carries the part's own height.
+    slab = doc.addObject("Part::Box", "FloorSlab")
+    slab.Length, slab.Width, slab.Height = 6000.0, 6000.0, 300.0
+    slab.Placement = FreeCAD.Placement(FreeCAD.Vector(-1000, -1000, 0),
+                                       FreeCAD.Rotation())
+    on_slab = doc.addObject("Part::FeaturePython", "OnTheSlab")
+    pobj._LibraryPart(on_slab)
+    on_slab.Shape = Part.makeBox(600, 400, 700)
+    # Standing on it: the slab spans 0..300, the part 300..1000.
+    on_slab.Placement = FreeCAD.Placement(FreeCAD.Vector(1000, 1000, 300),
+                                          FreeCAD.Rotation())
+    doc.recompute()
+    slab_plane = doc.addObject("App::FeaturePython", "SlabPlane")
+    ArchSectionPlane._SectionPlane(slab_plane)
+    slab_plane.Objects = [slab, on_slab]
+    slab_plane.Placement.Base = FreeCAD.Vector(0, 0, 1500)
+    slab_view = sobj.makeSectionView(doc, base=slab_plane)
+    slab_solid_view = sobj.makeSectionView(doc, base=slab_plane)
+    slab_solid_view.PartOutlines = False
+    doc.recompute()
+    h.check("a floor slab under a part does not hide its outline",
+            _visible_edges(on_slab.Proxy.planOutline(on_slab))
+            <= _visible_edges(slab_view.Shape)
+            and _visible_edges(slab_view.Shape)
+            == _visible_edges(slab_solid_view.Shape),
+            detail="outlines drew %d edges, solids %d"
+                   % (len(slab_view.Shape.Edges),
+                      len(slab_solid_view.Shape.Edges)))
 
     # Turning the flag off draws the solid again.
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 0),
