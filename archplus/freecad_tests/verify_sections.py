@@ -412,11 +412,13 @@ def run():
             converted is not None
             and abs(converted.Shape.BoundBox.XMin - old_bbox.XMin) < 1e-3)
 
-    # A frozen view stays frozen: converting it must not undo the freeze the
-    # user set.
+    # A frozen view stays frozen, and keeps a drawing: the fixture draws
+    # first, so a conversion that froze the view before it ever built would
+    # come out blank and fail the second check.
     frozen = doc.addObject("Part::Part2DObjectPython", "Frozen")
     s2v.Shape2DView(frozen)
     frozen.Base = plane
+    doc.recompute()
     frozen.AutoUpdate = False
     doc.recompute()
     h.check("a frozen view converts", sgu.convertSectionView(frozen))
@@ -424,6 +426,9 @@ def run():
                             None)
     h.check("and stays frozen",
             converted_frozen is not None and not converted_frozen.AutoUpdate)
+    h.check("with the drawing it was frozen with",
+            converted_frozen is not None
+            and len(converted_frozen.Shape.Edges) > 0)
 
     # A view using a setting the new object does not reproduce is refused.
     other = doc.addObject("Part::Part2DObjectPython", "HiddenLines")
