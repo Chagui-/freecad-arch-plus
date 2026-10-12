@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" color="#1a5fb4">
   <!-- A plan cut with the plan outline drawn inside it: the ArchPlus section
        view's icon, for the command that converts a Draft section view. -->
-  <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="#000000" stroke-width="1.2"/>
-  <rect x="4.5" y="4.5" width="7" height="7" fill="none" stroke="#000000" stroke-width="0.8" stroke-dasharray="1.5 1"/>
+  <!-- The plan cut, tinted and outlined like the other command icons. The
+       line art is stroked in currentColor per the add-on's rule, with the
+       family's blue pinned on the root: currentColor on its own renders
+       black, which is invisible on the dark theme's menu - the defect this
+       icon was redrawn for. -->
+  <g fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round">
+    <rect x="8" y="8" width="48" height="48" rx="1" fill="#cfe3ff"/>
+  </g>
+  <!-- The outline the view draws for a placed part, in the family's green and
+       dashed because it stands in for geometry this view does not project. -->
+  <rect x="22" y="22" width="20" height="20" fill="none" stroke="#2ec27e" stroke-width="3" stroke-dasharray="6 5"/>
 </svg>

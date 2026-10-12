@@ -158,10 +158,27 @@ def _copy_view_properties(view, new):
 
 
 def _repoint_sources(doc, old, new):
-    """Point every TechDraw view that read `old` at `new` instead."""
+    """Point every TechDraw view that read `old` at `new` instead.
+
+    False means a reader could not be re-pointed; the caller aborts the
+    conversion, because a reader left on a removed view has lost its source.
+    """
     for obj in doc.Objects:
         source = getattr(obj, "Source", None)
         if not source:
+            continue
+        # TechDraw's DrawViewArch, DrawViewDraft and DrawViewSpreadsheet, and
+        # BIM's PanelCut, declare Source as a single App::PropertyLink, which
+        # reads back as the object itself: iterating one raises, and that must
+        # not fail the conversion of an unrelated view - these are the
+        # companions a BIM plan comes with.
+        if not isinstance(source, (list, tuple)):
+            if source is not old:
+                continue
+            try:
+                obj.Source = new
+            except Exception:
+                return False
             continue
         if not any(item is old for item in source):
             continue
