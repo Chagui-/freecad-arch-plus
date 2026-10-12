@@ -67,9 +67,10 @@ test in the task that owns the code:
    model's own coordinates → Task 6 (the convert command copies Placement, and
    the check asserts the converted view's shape bbox matches the old one's).
 5. **A view whose settings the new object does not reproduce** (`HiddenLines`,
-   `Tessellation`, `Clip`, `Depth`, `InPlace`, `ExclusionPoints`, a
-   `ProjectionMode` other than `Solid`): silently converting it would draw
-   something different → Task 6 (the command refuses, naming the setting).
+   `Tessellation`, `Clip`, `ExclusionPoints`, a `ProjectionMode` other than
+   `Solid`, or a base that is not a section plane): silently converting it
+   would draw something different → Task 6 (the command refuses, naming the
+   setting).
 
 Also pinned: an empty or `None` `Base`, a plane whose `Objects` list is empty,
 and a part whose outline cannot be computed at all — all three must leave the

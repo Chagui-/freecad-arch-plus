@@ -132,9 +132,12 @@ first, so the first 104 indices are unchanged) while 535 of the first 639
 shift, and the view ends up roughly a third smaller.
 
 The command refuses to convert a view whose settings it does not reproduce
-(`HiddenLines`, `Tessellation`, `InPlace`, `Clip`, `Depth`, `ExclusionPoints`,
-or a `ProjectionMode` other than `Solid`), naming the setting — a converted
-view can never silently draw differently.
+(`HiddenLines`, `Tessellation`, `Clip`, `ExclusionPoints`, or a
+`ProjectionMode` other than `Solid`), naming the setting — a converted
+view can never silently draw differently. `InPlace` and `Depth` are not
+among them: `InPlace` only means anything in the Cutlines/Cutfaces modes,
+which the projection mode already refuses, and `Depth` is the *section
+plane's* property, honoured as Draft honours it, not one a view can set.
 
 ## Expected payoff, and what it is not
 
@@ -187,7 +190,9 @@ view can never silently draw differently.
   and sections project their solids.
 - **Per-part switches** (outline / block / none per manifest).
 - **`ProjectionMode` other than Solid**, `HiddenLines`, `Tessellation`,
-  `Clip`/`Depth`, `InPlace`, `ExclusionPoints`.
+  `Clip`, `ExclusionPoints`. (`InPlace` and `Depth` are not in this list: the
+  former is inert in Solid mode, the latter is the section plane's own
+  property and is honoured.)
 - **The level compounds** (27 MB of the 56 MB file) and the load/save cost they
   cause.
 - **The lowercase duplicate claims** (`edge10`, `edge23`) that print a
