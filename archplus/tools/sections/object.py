@@ -20,6 +20,20 @@ import FreeCAD
 PROP_GROUP = "Section"
 
 
+def _cut_depth(plane):
+    """The plane's Depth as a number, 0.0 when it has none.
+
+    Draft reads it the same way (`obj.Base.Depth.Value`) and passes it to
+    `Arch.getCutVolume`, which turns a non-zero Depth into a *band*: the
+    volume above the plane fused with everything below `plane_z - depth`, so
+    the cut keeps only what lies between the two. One resolution, both users:
+    the rule that decides whether a part may take an outline, and the cut
+    itself. Two readings of the same property could disagree.
+    """
+    depth = getattr(plane, "Depth", None)
+    return (depth.Value if depth is not None else 0.0) or 0.0
+
+
 class _SectionView:
     def __init__(self, obj):
         obj.Proxy = self
@@ -80,12 +94,12 @@ class _SectionView:
             return
         try:
             shape = self._build(obj)
+            obj.Shape = shape
         except Exception as exc:
             FreeCAD.Console.PrintWarning(
                 "ArchPlus: section view '%s' could not rebuild (%s); "
                 "keeping the last shape\n" % (obj.Label, exc))
             return
-        obj.Shape = shape
 
     def _build(self, obj):
         import Part
@@ -94,25 +108,30 @@ class _SectionView:
         if plane is None:
             return Part.makeCompound([])
         direction = plane.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+        # Resolved once, here, and handed to both the substitution rule and
+        # the cut: what a plane's Depth cuts away must not take an outline
+        # either, and two readings of the same property could disagree.
+        depth = _cut_depth(plane)
         objs = self._objects(obj, plane)
         outlines = []
         solids = []
         for o in objs:
-            outline = self._outline_for(obj, o, plane, direction)
+            outline = self._outline_for(obj, o, plane, direction, depth)
             if outline is not None:
                 outlines.append(outline)
             else:
                 solids.append(o)
         shapes = self._shapes(obj, solids)
-        return self._project(obj, shapes, outlines, plane, direction)
+        return self._project(obj, shapes, outlines, plane, direction, depth)
 
-    def _outline_for(self, obj, candidate, plane, direction):
+    def _outline_for(self, obj, candidate, plane, direction, depth):
         """The placed outline for a library part, or None to draw its solid.
 
         Every condition here is one the design doc pins: the flag is on, the
         part has an outline, the view is a plan, the part is not rotated off
-        plan, and the cut does not pass through it. Any of them failing means
-        the solid is drawn - correct, just slower.
+        plan, and the part lies wholly below the plane - above the floor the
+        plane's Depth cuts at, when it has one. Any of them failing means the
+        solid is drawn - correct, just slower.
         """
         if not getattr(obj, "PartOutlines", True):
             return None
@@ -129,7 +148,8 @@ class _SectionView:
         box = shape.BoundBox
         if not model.use_outline(
                 (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
-                tuple(placement.Rotation.Axis), placement.Rotation.Angle):
+                tuple(placement.Rotation.Axis), placement.Rotation.Angle,
+                depth):
             return None
         # A library part from an older add-on build has no planOutline: draw
         # its solid rather than raising into the recompute.
@@ -211,11 +231,27 @@ class _SectionView:
             return shape.SubShapes
         return [shape.copy()]
 
-    def _project(self, obj, shapes, outlines, plane, direction):
-        """Cut the solids against the section volume, project everything -
-        Draft's own two steps, in Draft's own order. Each outline is drawn as
-        its silhouette, which came out of the same projection, so it costs
-        neither a boolean nor a hidden-line pass."""
+    def _project(self, obj, shapes, outlines, plane, direction, depth):
+        """Cut the solids against the section volume, then project the cut
+        solids *and* the outline slabs in one compound - Draft's own two
+        steps, in Draft's own order.
+
+        The slabs ride in the same compound as the solids, which is what
+        gives them their occlusion: hidden-line removal works across the
+        compound, so a wall band hides a part behind it and a desk hides the
+        stool under it, exactly as it hides the part's own solid. Projecting
+        the slabs separately and appending their edges would draw them all,
+        hidden or not. It also means each slab is drawn as its own
+        silhouette, so no outer wire has to be picked out by hand.
+
+        Caveat, by construction: a slab is a 1 mm extrusion of the part's
+        footprint, so it carries no height - every slab sits in the
+        projection plane. Two qualifying parts whose footprints overlap
+        therefore occlude one another, and which of the two the hidden-line
+        removal keeps is not decided by their heights. Their solids would be
+        resolved by depth instead; the difference is confined to the region
+        where two footprints overlap, and one of the two parts is behind the
+        other there anyway."""
         import Arch
         import Part
         import TechDraw
@@ -227,10 +263,10 @@ class _SectionView:
         # value always wins. This view declares no Clip, and the convert
         # command refuses a view that sets it, so this is False: a clipping
         # plane does not clip here either, exactly as in Draft. Depth *is* the
-        # plane's - Draft's Shape2DView has no Depth of its own.
+        # plane's - Draft's Shape2DView has no Depth of its own - and it is
+        # resolved by the caller, so this cut and the substitution rule above
+        # read the same number.
         clip = bool(getattr(obj, "Clip", False))
-        depth = getattr(plane, "Depth", None)
-        depth = depth.Value if depth is not None else None
         _cutp, cutv, _iv = Arch.getCutVolume(cutplane, shapes, clip, depth)
 
         cuts = []
@@ -246,26 +282,14 @@ class _SectionView:
                     cuts.extend(self._sub_shapes(cut, obj.OnlySolids))
             else:
                 cuts.extend(self._sub_shapes(sh, obj.OnlySolids))
-        compound = Part.makeCompound(cuts)
+        # The slabs are not cut: an outline is the part's footprint, which is
+        # the shape the cut keeps. Read-only - each slab is the part's cached
+        # shape, handed out again by every later recompute.
+        compound = Part.makeCompound(cuts + list(outlines))
 
         # Draft's getProjected: the visible edge groups of the projection.
         groups = TechDraw.projectEx(compound, direction)
         edges = [e for g in groups[0:5] if not g.isNull() for e in g.Edges]
-        for outline in outlines:
-            # The silhouette: the face the slab was extruded from, which
-            # sits in the projection plane (z = 0) exactly where Draft's own
-            # projected edges sit. The slab's raw edges would draw the same
-            # picture three times over - top loop, bottom loop, and the 1mm
-            # verticals - and every one of them is an edge the redraw pays
-            # for. Read-only: `outline` is the part's cached shape, shared
-            # with every later recompute.
-            flat = [f for f in outline.Faces
-                    if abs(f.BoundBox.ZLength) < 1e-9]
-            if flat:
-                edges.extend(min(flat, key=lambda f: f.BoundBox.ZMin)
-                             .OuterWire.Edges)
-            else:
-                edges.extend(outline.Edges)
         return Part.makeCompound(edges)
 
 
