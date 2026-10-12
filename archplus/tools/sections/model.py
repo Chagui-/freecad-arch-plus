@@ -30,22 +30,25 @@ def rotation_is_about_z(axis, angle, tolerance=TOLERANCE):
     return abs(axis[0]) <= tolerance and abs(axis[1]) <= tolerance
 
 
-def cut_straddles(z_min, z_max, plane_z, tolerance=TOLERANCE):
-    """True when a section plane's cut passes through a part's height.
+def part_is_below_the_cut(z_max, plane_z, tolerance=TOLERANCE):
+    """True when the section plane leaves the part whole.
 
-    Then the solid is sliced and shows a section, while an outline (flat at
-    the part's base) would show the whole footprint - a different drawing.
+    The cut removes everything above the plane - that is what makes a plan a
+    plan - so a part reaching above it is drawn differently: a sliced one
+    shows its section, and one wholly above is removed from the drawing
+    altogether. Neither is its footprint, so neither may take an outline.
+    Only a part wholly below the plane is drawn as its plan silhouette.
     """
-    return (z_min - tolerance) < plane_z < (z_max + tolerance)
+    return z_max <= plane_z + tolerance
 
 
 def use_outline(z_range, plane_z, direction, axis, angle):
     """Whether a part's cached outline may stand in for its solid.
 
     All three conditions must hold: the view is a plan, the part is not
-    rotated off plan, and the cut does not pass through it. Anything else
-    draws the solid, which is what the view drew before this feature.
+    rotated off plan, and the part lies below the cut. Anything else draws
+    the solid, which is what the view drew before this feature.
     """
     return (is_plan_direction(direction)
             and rotation_is_about_z(axis, angle)
-            and not cut_straddles(z_range[0], z_range[1], plane_z))
+            and part_is_below_the_cut(z_range[1], plane_z))

@@ -76,8 +76,10 @@ def _walls_and_plane(doc):
 
 
 def _part_view(doc, plane):
-    """A section plane whose objects include a placed library part, and the
-    same view with outlines off, for comparison."""
+    """Add a placed library part to `plane`, and return it.
+
+    The caller builds the views it compares; this only sets up the part the
+    substitution is about."""
     from archplus.tools.partslib import object as pobj
 
     part = doc.addObject("Part::FeaturePython", "PlacedPart")
@@ -240,6 +242,9 @@ def run():
     doc.recompute()
     solid_view = sobj.makeSectionView(doc, base=plane)
     solid_view.PartOutlines = False
+    # Same flags as `view` apart from the one under test, so the difference
+    # between the two drawings is attributable to that one alone.
+    solid_view.FuseArch = view.FuseArch
     doc.recompute()
 
     # With the part out of the plane, outlines on and off must draw the walls
@@ -276,12 +281,23 @@ def run():
             abs(box.XMin - 500) < 1e-3 and abs(box.YMin - 500) < 1e-3
             and abs(box.XMax - 1100) < 1e-3 and abs(box.YMax - 900) < 1e-3)
 
-    # A part the cut passes through keeps its solid: same edge count either way.
+    # A part with its base exactly on the plane is above the cut, so the cut
+    # removes it from both drawings: this pins that no outline is added at the
+    # boundary (a dropped tolerance would add the part's four edges).
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1200),
                                        FreeCAD.Rotation())
     plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
     doc.recompute()
-    h.check("a part the cut passes through keeps its solid",
+    h.check("a part at the cut's own height adds no outline",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+
+    # A part wholly above the cut: the cut removes its solid, so the drawing
+    # has nothing of it. A footprint here would be a part the cut deleted -
+    # this is the check that fails if only a *straddling* part is refused.
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1500),
+                                       FreeCAD.Rotation())
+    doc.recompute()
+    h.check("a part above the cut adds no footprint",
             len(view.Shape.Edges) == len(solid_view.Shape.Edges))
 
     # A part tilted about X keeps its solid too.
@@ -339,6 +355,7 @@ def run():
     doc.recompute()
     nested_solid_view = sobj.makeSectionView(doc, base=plane)
     nested_solid_view.PartOutlines = False
+    nested_solid_view.FuseArch = view.FuseArch
     doc.recompute()
     h.check("the substituted drawing is the outline, not the solid",
             len(view.Shape.Edges) < len(nested_solid_view.Shape.Edges))
