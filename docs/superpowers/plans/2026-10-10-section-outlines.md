@@ -492,16 +492,26 @@ def test_an_off_axis_rotation_does_not():
     assert not model.rotation_is_about_z((0.0, 1.0, 0.0), 0.5)
 
 
-def test_the_cut_straddles_a_part_it_passes_through():
-    assert model.cut_straddles(0.0, 2400.0, 1400.0)
-    assert not model.cut_straddles(3000.0, 3900.0, 1400.0)
-    assert not model.cut_straddles(3000.0, 3900.0, 4200.0)
+def test_only_a_part_below_the_cut_is_whole():
+    # Through the part: the solid would be sliced.
+    assert not model.part_is_below_the_cut(2400.0, 1400.0)
+    # Wholly above: the cut removes it from the drawing entirely, so a
+    # footprint there would be a part the drawing does not have.
+    assert not model.part_is_below_the_cut(3900.0, 1400.0)
+    # Wholly below: untouched, and drawn as its plan silhouette.
+    assert model.part_is_below_the_cut(3900.0, 4200.0)
+    # Top exactly at the plane: the cut takes only what is above it.
+    assert model.part_is_below_the_cut(3900.0, 3900.0)
 
 
 def test_a_plan_cut_through_a_part_refuses_its_outline():
     # A floor-standing wardrobe under a 1400mm plan cut: the solid is sliced,
     # a flat outline at its base would not be.
     assert not model.use_outline((0.0, 2400.0), 1400.0,
+                                 (0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.0)
+    # A wall cabinet above the same cut: the cut removes its solid outright,
+    # so a footprint would be a part the drawing does not have.
+    assert not model.use_outline((1500.0, 2100.0), 1400.0,
                                  (0.0, 0.0, 1.0), (0.0, 0.0, 1.0), 0.0)
 
 
@@ -568,25 +578,28 @@ def rotation_is_about_z(axis, angle, tolerance=TOLERANCE):
     return abs(axis[0]) <= tolerance and abs(axis[1]) <= tolerance
 
 
-def cut_straddles(z_min, z_max, plane_z, tolerance=TOLERANCE):
-    """True when a section plane's cut passes through a part's height.
+def part_is_below_the_cut(z_max, plane_z, tolerance=TOLERANCE):
+    """True when the section plane leaves the part whole.
 
-    Then the solid is sliced and shows a section, while an outline (flat at
-    the part's base) would show the whole footprint - a different drawing.
+    The cut removes everything above the plane - that is what makes a plan a
+    plan - so a part reaching above it is drawn differently: a sliced one
+    shows its section, and one wholly above is removed from the drawing
+    altogether. Neither is its footprint, so neither may take an outline.
+    Only a part wholly below the plane is drawn as its plan silhouette.
     """
-    return (z_min - tolerance) < plane_z < (z_max + tolerance)
+    return z_max <= plane_z + tolerance
 
 
 def use_outline(z_range, plane_z, direction, axis, angle):
     """Whether a part's cached outline may stand in for its solid.
 
     All three conditions must hold: the view is a plan, the part is not
-    rotated off plan, and the cut does not pass through it. Anything else
-    draws the solid, which is what the view drew before this feature.
+    rotated off plan, and the part lies below the cut. Anything else draws
+    the solid, which is what the view drew before this feature.
     """
     return (is_plan_direction(direction)
             and rotation_is_about_z(axis, angle)
-            and not cut_straddles(z_range[0], z_range[1], plane_z))
+            and part_is_below_the_cut(z_range[1], plane_z))
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -1038,8 +1051,10 @@ then in scope for the part-only plane this block adds:
 
 ```python
 def _part_view(doc, plane):
-    """A section plane whose objects include a placed library part, and the
-    same view with outlines off, for comparison."""
+    """Add a placed library part to `plane`, and return it.
+
+    The caller builds the views it compares; this only sets up the part the
+    substitution is about."""
     from archplus.tools.partslib import object as pobj
 
     part = doc.addObject("Part::FeaturePython", "PlacedPart")
@@ -1060,6 +1075,9 @@ and in `run()`:
     doc.recompute()
     solid_view = sobj.makeSectionView(doc, base=plane)
     solid_view.PartOutlines = False
+    # Same flags as `view` apart from the one under test, so the difference
+    # between the two drawings is attributable to that one alone.
+    solid_view.FuseArch = view.FuseArch
     doc.recompute()
 
     # With the part out of the plane, outlines on and off must draw the walls
@@ -1096,12 +1114,23 @@ and in `run()`:
             abs(box.XMin - 500) < 1e-3 and abs(box.YMin - 500) < 1e-3
             and abs(box.XMax - 1100) < 1e-3 and abs(box.YMax - 900) < 1e-3)
 
-    # A part the cut passes through keeps its solid: same edge count either way.
+    # A part with its base exactly on the plane is above the cut, so the cut
+    # removes it from both drawings: this pins that no outline is added at the
+    # boundary (a dropped tolerance would add the part's four edges).
     part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1200),
                                        FreeCAD.Rotation())
     plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
     doc.recompute()
-    h.check("a part the cut passes through keeps its solid",
+    h.check("a part at the cut's own height adds no outline",
+            len(view.Shape.Edges) == len(solid_view.Shape.Edges))
+
+    # A part wholly above the cut: the cut removes its solid, so the drawing
+    # has nothing of it. A footprint here would be a part the cut deleted -
+    # this is the check that fails if only a *straddling* part is refused.
+    part.Placement = FreeCAD.Placement(FreeCAD.Vector(500, 500, 1500),
+                                       FreeCAD.Rotation())
+    doc.recompute()
+    h.check("a part above the cut adds no footprint",
             len(view.Shape.Edges) == len(solid_view.Shape.Edges))
 
     # A part tilted about X keeps its solid too.
@@ -1159,6 +1188,7 @@ and in `run()`:
     doc.recompute()
     nested_solid_view = sobj.makeSectionView(doc, base=plane)
     nested_solid_view.PartOutlines = False
+    nested_solid_view.FuseArch = view.FuseArch
     doc.recompute()
     h.check("the substituted drawing is the outline, not the solid",
             len(view.Shape.Edges) < len(nested_solid_view.Shape.Edges))
@@ -1189,7 +1219,9 @@ solid and the two drawings are the same size.
 - [ ] **Step 3: Implement the substitution**
 
 In `archplus/tools/sections/object.py`, replace `_build` and `_shapes` with
-the split version:
+the split version — and while you are in `_shapes`, change its
+`getattr(obj, "FuseArch", True)` fallback to `False`, which is what the
+declared default now is and what Draft's own fallback is:
 
 ```python
     def _build(self, obj):
