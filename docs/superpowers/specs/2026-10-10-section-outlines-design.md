@@ -39,6 +39,10 @@ is built from a fraction of the edges, and every stage that scales with edges
 - **Occlusion is resolved across the compound**, not per object: a box inside
   a box projects to 4 visible edges as a compound and 8 projected separately.
   An outline riding in the same compound keeps its occlusion against the walls.
+  The outlines pay for that with a caveat: a slab carries no height, so every
+  outline sits in the projection plane, and two qualifying parts whose
+  footprints overlap occlude one another — where their solids would be
+  resolved by depth.
 - **A part's shape is local, its placement is mirrored into the `TopoShape`**
   (`Shape.Placement` equals `o.Placement`), so anything substituted for it
   must carry the same placement or be baked global.
@@ -111,8 +115,10 @@ A new tool folder `archplus/tools/sections/` (`object.py`, `gui.py`,
   (`Arch.getCutVolume`) and projected exactly as Draft does.
 - **Substitution conditions** — the outline is used only when it cannot change
   the drawing: the view projects along +Z, the part's rotation is about Z, and
-  the cut plane does not pass through the part's height. Anything else, or a
-  part failing its self-check, projects its solid (today's drawing).
+  the part lies wholly below the section plane. A part the plane cuts through,
+  and one wholly above it that the cut removes altogether, both draw their
+  solid. Anything else, or a part failing its self-check, projects its solid
+  (today's drawing).
 - **No FreeCAD module is patched.** Everything is public API calls of the kind
   ArchPlus already makes: `Draft.getType`, `groups.get_group_contents`,
   `Arch.getCutVolume`, `Part`, `TechDraw.projectEx`, `TechDraw.findOuterWire`.
@@ -203,9 +209,10 @@ plane's* property, honoured as Draft honours it, not one a view can set.
 - **Acceptance** (`archplus/freecad_tests/`): our view's walls and openings
   geometry is identical to Draft's for the same plane; every part's drawn
   geometry lies within its outline; the outlines' edges are present.
-- **Fallbacks**: a part straddling the cut plane, a part rotated about X, a
-  non-plan projection direction, and a part whose outline fails the self-check
-  each project their solids.
+- **Fallbacks**: a part straddling the cut plane, a part wholly above it (the
+  cut removes it altogether), a part rotated about X, a non-plan projection
+  direction, and a part whose outline fails the self-check each project their
+  solids.
 - **Cache**: computed once per part and reused across views and after a move;
   dropped when a part's parameters change. Asserted as *work skipped*, not as
   wall-clock time.
