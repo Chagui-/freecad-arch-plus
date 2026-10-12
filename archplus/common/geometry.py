@@ -35,14 +35,22 @@ def add_frame(sketch, outer_p1, outer_p2, outer_p3, outer_p4,
 
 
 def plan_outline(shape, thickness=1.0):
-    """The plan outline of `shape` as a thin slab, or None.
+    """The plan outline of `shape` as a prism over its own height, or None.
 
     The outline is what a section view may draw instead of the part's solid:
     the **filled outer boundary** of the shape's plan drawing. It is built by
     projecting the shape with the same hidden-line call Draft's Shape2DView
     uses, taking TechDraw's own outer-wire extractor over the result, and
-    extruding that face a hair - a slab, not a bare wire, because OnlySolids
-    views and the section cut both drop non-solid geometry.
+    extruding that face - a solid, not a bare wire, because OnlySolids views
+    and the section cut both drop non-solid geometry.
+
+    The prism is extruded from the shape's own base over the shape's own
+    height, and is never thinner than `thickness`. That is what lets a
+    section view put it in the same compound as everything else: hidden-line
+    removal works in depth, so an outline that carried no height - a 1 mm
+    slab in the projection plane - would sit *under* whatever the part stands
+    on, and the floor slab or wall band above it would delete the part from
+    the drawing. An outline is an optimisation, never a wrong drawing.
 
     What it deliberately does not reproduce: loops nested inside the outer
     boundary - a smaller block on top of a bigger one, a table's top over its
@@ -57,9 +65,10 @@ def plan_outline(shape, thickness=1.0):
     waste bin with an overhanging lid). Callers then draw the solid, which
     is always right and merely slower.
 
-    A view drawing this value draws its silhouette - the face it was
-    extruded from, which sits in the projection plane (z = 0) where Draft's
-    own projected edges sit.
+    A view drawing this value draws its silhouette: the boundary comes from
+    the projected edges themselves, which lie in the projection plane where
+    Draft's own projected edges sit, and the prism's height only decides what
+    hides it.
     """
     import TechDraw
     from FreeCAD import Vector
@@ -87,7 +96,12 @@ def plan_outline(shape, thickness=1.0):
         return None
     if not _covers(face, drawn):
         return None
-    return face.extrude(Vector(0, 0, thickness))
+    # Moved onto the shape's own z only after the check above: `drawn` is
+    # flat, so a face already lifted to the shape's height could not be
+    # compared with it any more.
+    box = shape.BoundBox
+    return face.translate(Vector(0, 0, box.ZMin)).extrude(
+        Vector(0, 0, max(box.ZLength, thickness)))
 
 
 def _covers(face, drawn, tolerance=0.5):

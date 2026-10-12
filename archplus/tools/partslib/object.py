@@ -414,7 +414,8 @@ class _LibraryPart(ArchComponent.Component):
             return None
 
     def planOutline(self, obj):
-        """The part's cached plan outline (a thin slab), or None.
+        """The part's cached plan outline (a prism over the part's own
+        height), or None.
 
         What a section view draws instead of the solid. Computed on the first
         ask and kept until the part rebuilds, keyed by the shape it was built

@@ -233,25 +233,22 @@ class _SectionView:
 
     def _project(self, obj, shapes, outlines, plane, direction, depth):
         """Cut the solids against the section volume, then project the cut
-        solids *and* the outline slabs in one compound - Draft's own two
-        steps, in Draft's own order.
+        solids *and* the outlines in one compound - Draft's own two steps, in
+        Draft's own order.
 
-        The slabs ride in the same compound as the solids, which is what
+        The outlines ride in the same compound as the solids, which is what
         gives them their occlusion: hidden-line removal works across the
-        compound, so a wall band hides a part behind it and a desk hides the
-        stool under it, exactly as it hides the part's own solid. Projecting
-        the slabs separately and appending their edges would draw them all,
-        hidden or not. It also means each slab is drawn as its own
-        silhouette, so no outer wire has to be picked out by hand.
+        compound, in depth, so a wall band hides a part behind it and a floor
+        slab hides nothing it should not - exactly as it hides the part's own
+        solid. That holds for the outline only because it is a prism over the
+        part's own height at the part's own z: a flat slab in the projection
+        plane sits under whatever the part stands on, and the view would
+        delete the part instead of drawing it cheaply.
 
-        Caveat, by construction: a slab is a 1 mm extrusion of the part's
-        footprint, so it carries no height - every slab sits in the
-        projection plane. Two qualifying parts whose footprints overlap
-        therefore occlude one another, and which of the two the hidden-line
-        removal keeps is not decided by their heights. Their solids would be
-        resolved by depth instead; the difference is confined to the region
-        where two footprints overlap, and one of the two parts is behind the
-        other there anyway."""
+        Projecting the outlines separately and appending their edges would
+        instead draw all of them, hidden or not. Riding in the compound also
+        means each outline is drawn as its own silhouette, so no outer wire
+        has to be picked out by hand."""
         import Arch
         import Part
         import TechDraw
@@ -282,9 +279,9 @@ class _SectionView:
                     cuts.extend(self._sub_shapes(cut, obj.OnlySolids))
             else:
                 cuts.extend(self._sub_shapes(sh, obj.OnlySolids))
-        # The slabs are not cut: an outline is the part's footprint, which is
-        # the shape the cut keeps. Read-only - each slab is the part's cached
-        # shape, handed out again by every later recompute.
+        # The outlines are not cut: one is the part's footprint over its own
+        # height, which is what the cut keeps of that part. Read-only - it is
+        # the part's cached shape, handed out again by every later recompute.
         compound = Part.makeCompound(cuts + list(outlines))
 
         # Draft's getProjected: the visible edge groups of the projection.
