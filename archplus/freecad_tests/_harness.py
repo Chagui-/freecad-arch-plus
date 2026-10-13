@@ -77,6 +77,24 @@ def mark(label):
     _log_file("... " + label)
 
 
+def run_part(label, func, *args):
+    """Run one part of a module, recording a crash instead of letting it
+    abandon the parts after it.
+
+    run_all.py isolates whole MODULES, but a module can also be a long list
+    of independent parts that share one document (verify_walls, say); a
+    crash in one of those would otherwise silently drop every later part, so
+    the report merely looks short rather than wrong. Pass the part's own
+    arguments through after `func`, e.g. run_part("W1", _w1_creation, doc)."""
+    try:
+        func(*args)
+    except Exception:
+        _log_file("CRASH in %s:\n%s" % (label, traceback.format_exc()))
+        FreeCAD.Console.PrintError(
+            "CRASH in %s: %s\n" % (label, sys.exc_info()[1]))
+        _FAILURES.append(label + " crashed")
+
+
 def process_events(ms):
     """Run the Qt event loop for `ms` so debounce timers and recomputes fire."""
     loop = QtCore.QEventLoop()
