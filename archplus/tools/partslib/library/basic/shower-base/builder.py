@@ -2,20 +2,86 @@
 
 from archplus.tools.partslib import shapes as sh
 
+# The depth a square tray falls back to - the catalogue's own 900 tray -
+# and the share of the side the curved corner's radius takes. Three
+# quarters of a 900mm side is a 675mm arc, which leaves 225mm of straight
+# shoulder on each of the edges it joins: a quarter-round tray rather than
+# a clipped corner. The arc is one radius across both edges, so a curved
+# tray is square in plan and its depth follows its width.
+_DEFAULT_DEPTH = 900.0
+_CORNER_SHARE = 0.75
+
+
+def _round_corner(shape, length, width, height, radius):
+    """Cut the corner at (length, 0) of `shape` back to a `radius` arc.
+
+    `shape` is an extent of `length` x `width` standing on the origin, so
+    the corner being replaced is its front-right plan corner - which is the
+    outer corner of a tray, the one that stands free of the two walls of
+    the shower and diagonally opposite the waste. The arc is tangent to
+    both faces it joins, so the two meet it without a kink, and a kernel
+    that refuses the boolean leaves the corner square, which is the same
+    degradation every easing in shapes.py takes.
+
+    A cut, not a fillet: the radius a tray asks for here is three quarters
+    of its side, and a fillet that big turns the corner into a cylindrical
+    face the section pipeline pays for, where a boolean against primitives
+    is both cheaper and more robust. `radius` is clamped so a caller cannot
+    ask for an arc longer than either edge it lands on - and no further, so
+    that the recess's arc, asked for at the tray's radius less the rim,
+    stays concentric with the tray's own and the rim keeps one width round
+    the whole curve."""
+    import Part
+
+    radius = min(radius, length, width)
+    if radius <= 0:
+        return shape
+    # The cutter is a box over the corner quadrant, less the disc the corner
+    # is rounded to: what is left of the box is the sliver outside the arc.
+    # Both the box and the disc overhang the tray in z, and the box grows
+    # 1mm past the tray's two edges, so every plane the boolean meets is
+    # either the arc itself or clear of the tray - never a face of the tool
+    # lying in a face of the tray.
+    growth = 1.0
+    try:
+        corner = Part.makeBox(radius + growth, radius + growth, height + 2.0)
+        corner.translate(sh.vector(length - radius, -growth, -1.0))
+        disc = Part.makeCylinder(radius, height + 2.0,
+                                 sh.vector(length - radius, radius, -1.0))
+        return shape.cut(corner.cut(disc))
+    except Exception:
+        return shape
+
 
 def build(params, assets, ctx):
-    """A shallow shower tray: coved recess, upstand rim and a centre waste.
+    """A shallow shower tray: coved recess, upstand rim and a corner waste.
 
-    Params: Width, Depth, Height, RimThickness, RecessDepth (mm)."""
+    Params: Width, Depth, Height, RimThickness, RecessDepth (mm), Corner
+    ("square" or "curved"). Depth is derived: a curved corner is one arc
+    spanning both edges, so a curved tray is square and its depth follows
+    its width, where a square tray keeps the 900 the catalogue ships."""
     import Part
 
     width = float(params.get("Width", 900))
-    depth = float(params.get("Depth", 900))
+    corner = params.get("Corner") or "square"
+    depth = params.get("Depth")
+    if depth is None:
+        depth = width if corner == "curved" else _DEFAULT_DEPTH
+    depth = float(depth)
     height = float(params.get("Height", 100))
     rim = float(params.get("RimThickness", 40))
     recess_depth = float(params.get("RecessDepth", 40))
 
     tray = sh.rounded_box(width, depth, height, radius=30)
+    # The tray's plan profile first: one corner rounded off, or all four
+    # left as the rounded box gave them.
+    corner_radius = 0.0
+    if corner == "curved":
+        # The radius comes off the short side, which a curved tray has made
+        # equal on both: a pinned depth that breaks the square would take
+        # the arc off the shorter edge and leave the shoulders lopsided.
+        corner_radius = min(width, depth) * _CORNER_SHARE
+        tray = _round_corner(tray, width, depth, height, corner_radius)
     # Narrower foot, so the tray reads as sitting proud of the floor.
     tray = sh.toe_kick(tray, width, depth,
                         kick_height=min(20.0, height * 0.2),
@@ -31,6 +97,12 @@ def build(params, assets, ctx):
         # looks like, and what stops it reading as a box with a hole.
         recess = sh.rounded_box(inner_width, inner_depth, recess_height + 1,
                                 radius=min(60.0, inner_width * 0.08))
+        # The rim is the same width the whole way round, so the recess's
+        # corner is the tray's arc inset by the rim - concentric with it,
+        # not a second radius. Without this the arc would break through
+        # into the recess and leave the curved corner with no rim at all.
+        recess = _round_corner(recess, inner_width, inner_depth,
+                               recess_height + 1, corner_radius - rim)
         recess = sh.soften_top(recess, min(20.0, recess_height * 0.45), z=0)
         recess = sh.place(recess, rim, rim, height - recess_height)
         try:

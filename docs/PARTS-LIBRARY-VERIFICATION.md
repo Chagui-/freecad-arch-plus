@@ -14,7 +14,7 @@ Room, Bedroom, Living Room, Bathroom, Office). All 36 ship a committed
 `thumbnail.jpg` and a `builder.py`; none uses the model-file (assets) path.
 
 Everything scriptable runs inside FreeCAD via
-`archplus/freecad_tests/run_all.py` (65 checks) — from the repository root
+`archplus/freecad_tests/run_all.py` (375 checks) — from the repository root
 run `"C:\Program Files\FreeCAD 1.1\bin\freecad.exe" archplus/freecad_tests/run_all.py`,
 which prints PASS/FAIL lines and exits non-zero on failure. The items below
 are what remains for a human: visual judgments (dark-theme legibility, leaf
@@ -28,7 +28,7 @@ points (L7-L9).
 | Dining Room | Dining table (4/6/8-seat), Basic chair |
 | Bedroom | King bed (1800×2000), Single bed (1050×2000), Nightstand, Wardrobe, Chest of drawers, Side table, Mirror, Floor lamp, Curtain, Television |
 | Living Room | Sofa (2/3-seat), Armchair, Coffee table, Side table, TV unit, Television, Floor lamp, Curtain |
-| Bathroom | Toilet, Bathtub, Shower base, Vanity, Shower screen, Towel hook, Toilet roll holder, Mirror |
+| Bathroom | Toilet, Bathtub, Shower base (square/curved corner), Vanity, Shower screen, Towel hook, Toilet roll holder, Mirror |
 | Office | Desk, Bookcase |
 
 The highest-value checks are the ones the headless suite structurally
@@ -82,6 +82,13 @@ stated result, not merely run the action.
       per keystroke.
 - [ ] **P5.** Setting cabinet **Width** to `800` rebuilds the cabinet with two
       door leaves; count the leaves in the preview geometry.
+- [ ] **P10 (the tray's corner).** Select **Shower base** and switch
+      **Corner** to *Curved corner*: the tray squares up — **Depth** goes
+      derived and follows **Width** — and one corner is rounded off, the
+      outer one diagonally opposite the waste, to three quarters of the
+      side, with the rim following the arc at its usual 40mm. Type a
+      **Depth** so it pins, then switch back to *Square corner*: the typed
+      depth is discarded and the four chamfered corners come back.
 
 ### Display-unit checks
 
