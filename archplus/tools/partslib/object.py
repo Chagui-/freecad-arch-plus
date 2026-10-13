@@ -413,6 +413,43 @@ class _LibraryPart(ArchComponent.Component):
         except Exception:
             return None
 
+    def planOutline(self, obj):
+        """The part's cached plan outline (a prism over the part's own
+        height), or None.
+
+        What a section view draws instead of the solid. Computed on the first
+        ask and kept while the part is not changed, because the projection
+        costs 10-30ms and a view asks on every recompute. The key is taken
+        from obj.Shape, which carries the placement, so a move drops the cache
+        and the part is re-outlined at its new position: the outline is in
+        world coordinates, so a key that ignored the placement would hand a
+        moved part the outline it cached at its old one.
+
+        None means "no outline to be had" - no shape, or a projection whose
+        outer wire does not cover the part's own drawing (see
+        common.geometry.plan_outline). The caller then draws the solid, which
+        is always correct and merely slower, so a failure here must never
+        raise.
+        """
+        shape = getattr(obj, "Shape", None)
+        if shape is None or shape.isNull() or not shape.Faces:
+            return None
+        key = (shape.hashCode(), len(shape.Faces), round(shape.Volume, 3))
+        if getattr(self, "_outline_key", None) == key:
+            return self._outline
+        from archplus.common import geometry as common_geometry
+
+        outline = None
+        try:
+            outline = common_geometry.plan_outline(shape)
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: cannot outline %s (%s); drawing its solid\n"
+                % (obj.Label, exc))
+        self._outline = outline
+        self._outline_key = key
+        return outline
+
     def onDocumentRestored(self, obj):
         ArchComponent.Component.onDocumentRestored(self, obj)
         self._reseeding = False

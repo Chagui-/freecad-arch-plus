@@ -1,8 +1,8 @@
 # ArchPlus tools
 
-User guide for the enhanced **Stairs**, **Doors**, **Windows** and **Walls**
-tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md); for the
-road ahead see [ROADMAP.md](ROADMAP.md).
+User guide for the enhanced **Stairs**, **Doors**, **Windows**, **Walls** and
+**Section views** tools. For the Parts Library see [PARTS-LIBRARY.md](PARTS-LIBRARY.md);
+for the road ahead see [ROADMAP.md](ROADMAP.md).
 
 Stairs, doors and windows are each a modifiable copy of a native FreeCAD
 module — `ArchStairs` and `ArchWindow` respectively — so every native feature
@@ -262,6 +262,47 @@ existing segment to move the faces' runs into.
   from its baseline, which would otherwise be decided by rounding); a clicked
   face that matches no run is reported in the Report view and nothing is
   split for it.
+
+## Section views
+
+**Convert section view** (BIM workbench, ArchPlus menu) replaces a Draft
+`Shape2DView` with an ArchPlus one. The difference is what it draws for
+placed library parts: instead of projecting their solids, it draws each
+part's cached plan outline — the outer boundary of the part's own plan
+projection, computed once and reused until the part rebuilds or is moved. A
+furnished plan's drawings shrink by about a third and the section views
+rebuild in a fraction of the time, because the parts are most of what they
+project.
+
+The outline is the part's **filled footprint**: a boundary nested inside it
+(a smaller block on top of a bigger one, a hole through a part) is not drawn.
+Keeping those inner loops was measured to draw roughly three times the
+footprint (the king bed: 48 edges against 16), which gives back much of the
+saving.
+
+The outline is used only where the drawing cannot mean something else: the
+view must be a plan cut, the part must not be rotated off plan, and the part
+must lie wholly inside the band the cut keeps — below the section plane, and
+above the floor a non-zero Depth cuts at (the plane's z minus its Depth). A
+part the plane cuts through shows a section, one wholly above it the cut
+removes altogether, and one under that floor is cut away too. Otherwise that
+part is drawn as its solid, exactly as before. Turning **PartOutlines** off
+on the view draws every part as its solid.
+
+Converting a view **renumbers it**, so the TechDraw dimensions measuring that
+view need re-picking once — convert one view, compare it, then convert the
+rest. The converted view keeps the colour, line width, draw style and
+visibility the Draft view had, so it does not change appearance in the 3D
+view. A view using `HiddenLines`, `Tessellation`, `Clip`, `ExclusionPoints` or
+a projection mode other than `Solid` is refused rather than converted, because
+this view does not reproduce those; so is a view sitting on anything other
+than a Draft section plane. The section plane's own `Depth` is honoured, as it
+is in Draft.
+
+While modelling, two switches keep the drawings from chasing every change:
+set **KeepUpdated** to false on the TechDraw page, and hide the section
+views in the 3D view. Both are reversible, and the drawings catch up when
+you turn them back on.
 
 ## Regenerating the images
 

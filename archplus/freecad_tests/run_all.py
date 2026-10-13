@@ -32,6 +32,7 @@ from archplus.freecad_tests import verify_doors
 from archplus.freecad_tests import verify_sketch_visibility
 from archplus.freecad_tests import verify_walls
 from archplus.freecad_tests import verify_part_colours
+from archplus.freecad_tests import verify_sections
 
 # FreeCAD can process the command-line script more than once per session.
 # The first pass creates this marker; later passes skip the work (and exit),
@@ -74,6 +75,7 @@ def main():
     _run_one("verify_sketch_visibility", verify_sketch_visibility.run)
     _run_one("verify_walls", verify_walls.run)
     _run_one("verify_part_colours", verify_part_colours.run)
+    _run_one("verify_sections", verify_sections.run)
     h.report_exceptions()
 
     failed = h.failures()
