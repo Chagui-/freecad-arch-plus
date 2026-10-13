@@ -85,3 +85,37 @@ def test_stock_arch_wall_is_neither_role():
     obj.Proxy = types.SimpleNamespace(Type="Wall")
     assert not walls_object.is_segment(obj)
     assert not walls_object.is_root(obj)
+
+
+def test_restored_proxy_with_no_state_reads_its_role_from_the_object():
+    """FreeCAD restores a proxy with no attributes when the class defines
+    no dumps/loads pair, so a wall saved by this build comes back with an
+    empty __dict__ — neither Type nor Segment survives. Restoring must
+    repair the role from what the object itself carries (a segment owns a
+    Wall link; a root does not) instead of reading a missing Type."""
+    for has_wall_link, expected_segment in ((True, True), (False, False)):
+        obj = _Obj()
+        if has_wall_link:
+            obj.PropertiesList.append("Wall")
+        proxy = object.__new__(walls_object._Wall)
+        assert proxy.__dict__ == {}
+        proxy.onDocumentRestored(obj)
+        obj.Proxy = proxy
+        assert proxy.Type == "Wall"
+        assert proxy.Segment is expected_segment
+        assert walls_object.is_segment(obj) is expected_segment
+
+
+def test_dumps_and_loads_round_trip_the_role():
+    """FreeCAD persists a proxy's attributes only when the class defines
+    the dumps/loads pair — every other ArchPlus proxy has one. Without it
+    a saved wall comes back empty, which is how the role was lost."""
+    for root in (True, False):
+        obj = _Obj()
+        proxy = walls_object._Wall(obj, root=root)
+        state = proxy.dumps()
+        restored = object.__new__(walls_object._Wall)
+        restored.loads(state)
+        assert restored.Type == "Wall"
+        assert restored.Segment is (not root)
+        assert restored._is_segment_role() is (not root)

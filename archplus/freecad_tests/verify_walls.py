@@ -285,6 +285,40 @@ def _w7_reload(doc):
             wall2 is not None
             and _vp_name(wall2) == "_ViewProviderWall"
             and wall2.ViewObject.Proxy.claimChildren() == list(wall2.Group))
+
+
+def _w32_stateless_proxy_restore(doc):
+    """A wall whose proxy carries no state restores with an empty __dict__,
+    which is what an older build's save produced (and what the 1984
+    document shows: 17 walls, none migrated). Restoring must repair the
+    role from the object instead of reading a missing Type, or every wall
+    callback fails and the fallback migration never runs."""
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    wall.Proxy = object.__new__(walls_object._Wall)
+    seg.Proxy = object.__new__(walls_object._Wall)
+    path = os.path.join(tempfile.gettempdir(), "archplus_walls_stateless.FCStd")
+    if os.path.exists(path):
+        os.remove(path)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    doc2 = FreeCAD.openDocument(path)
+    doc2.recompute()
+    wall2 = doc2.getObject("Wall")
+    seg2 = wall2.Group[0] if wall2 is not None and wall2.Group else None
+    h.check("W32 a stateless proxy restores its role from the object",
+            wall2 is not None and seg2 is not None
+            and getattr(wall2.Proxy, "Type", None) == "Wall"
+            and getattr(wall2.Proxy, "Segment", None) is False
+            and getattr(seg2.Proxy, "Type", None) == "Wall"
+            and getattr(seg2.Proxy, "Segment", None) is True
+            and seg2.Wall is wall2)
+    h.check("W32 a stateless wall still builds after restore",
+            seg2 is not None
+            and getattr(seg2, "Shape", None) is not None
+            and not seg2.Shape.isNull() and seg2.Shape.Volume > 0)
     FreeCAD.closeDocument(doc2.Name)
 
 
@@ -1398,6 +1432,8 @@ def run():
     doc = h.fresh_doc()
     _w27_fallback_migration(doc)
     doc = h.fresh_doc()   # W27 saves and closes the document it was given
+    _w32_stateless_proxy_restore(doc)
+    doc = h.fresh_doc()   # W32 does too
     _w28_mixed_direction_chain(doc)
     _w29_branched_plan(doc)
     doc = h.fresh_doc()
