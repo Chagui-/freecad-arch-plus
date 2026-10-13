@@ -34,10 +34,13 @@ class _Wall:
         """Role discriminator tolerant of pre-retype proxies: a legacy
         segment instance carries Type 'WallSegment' and no Segment flag,
         and restore-time callbacks (onChanged/execute) can fire before
-        onDocumentRestored migrates it — read the role through here."""
+        onDocumentRestored migrates it — read the role through here. A
+        proxy restored with no state at all (saved by a build whose class
+        defined no dumps/loads pair) has neither attribute, and reading a
+        missing Type would raise out of every callback."""
         seg = getattr(self, "Segment", None)
         if seg is None:
-            return self.Type == TYPE_SEGMENT
+            return getattr(self, "Type", TYPE_WALL) == TYPE_SEGMENT
         return seg
 
     # An Arch wall reports Type "Wall" as well — its proxy class is even called
@@ -51,6 +54,17 @@ class _Wall:
         self.Segment = not root
         obj.Proxy = self
         self.setProperties(obj, root)
+
+    def dumps(self):
+        """FreeCAD persists a proxy's attributes only through this pair;
+        without it a saved wall restores with an empty __dict__ and loses
+        its role. The role is the only state this proxy carries."""
+        return (self.Type, self.Segment)
+
+    def loads(self, state):
+        if state is None:
+            return
+        self.Type, self.Segment = state
 
     def setProperties(self, obj, root):
         pl = obj.PropertiesList
@@ -138,9 +152,17 @@ class _Wall:
 
     def onDocumentRestored(self, obj):
         # Documents saved before the retype carry the role in Type
-        # ("Wall"/"WallSegment") and lack the Segment flag.
+        # ("Wall"/"WallSegment") and lack the Segment flag. A proxy saved
+        # by a build whose class defined no dumps/loads pair comes back
+        # with no attributes at all, so fall back to what the object
+        # itself carries: a segment owns a Wall link to its root, a root
+        # does not.
         if not hasattr(self, "Segment"):
-            self.Segment = (self.Type == TYPE_SEGMENT)
+            legacy = getattr(self, "Type", None)
+            if legacy is None:
+                legacy = (TYPE_SEGMENT if "Wall" in obj.PropertiesList
+                          else TYPE_WALL)
+            self.Segment = (legacy == TYPE_SEGMENT)
             self.Type = TYPE_WALL
             # Rebuild: restore-time callbacks may have run the root path
             # while the legacy proxy still carried the old role marker.
