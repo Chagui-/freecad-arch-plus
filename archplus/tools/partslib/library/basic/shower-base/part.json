@@ -22,10 +22,22 @@
       "default": 900},
     "Depth": {
       "type": "Length",
-      "default": 900},
+      "default": "auto"},
     "Height": {
       "type": "Length",
       "default": 100
+    },
+    "Corner": {
+      "type": "Choice",
+      "default": "square",
+      "label": "Corner",
+      "resets": [
+        "Depth"
+      ],
+      "options": {
+        "square": { "label": "Square corner" },
+        "curved": { "label": "Curved corner" }
+      }
     }
   },
   "placement": {

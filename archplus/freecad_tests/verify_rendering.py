@@ -160,4 +160,83 @@ def run():
             detail="rim=%s shoulder=%s corner=%s"
             % (solid(rim), solid(shoulder), solid(corner)))
 
+    # --- J5: the shower base's curved corner is a real arc, and the tray
+    # around it is still the tray the catalogue advertises.
+    #
+    # The corner is CUT here rather than filleted, and like every easing in
+    # shapes.py the cut degrades to a sharp square corner rather than
+    # aborting the build - so "curved" can quietly come back square, and
+    # the recess can quietly break through the arc and leave the corner
+    # with no rim. Both are read off the built shape: the plan section's
+    # arc, and material 20mm inside it against the open recess 60mm inside
+    # it, which is the same 40mm rim the straight edges get.
+    #
+    # The arc is one radius spanning both edges, so a curved tray is square
+    # in plan: Depth is derived, and follows Width. A square tray keeps the
+    # catalogue's own 900 depth whatever its width.
+    entry = partslib_object.resolveEntry("basic/shower-base")[0]
+    manifest = partslib_manifest.load_manifest(entry["path"])
+
+    def tray(overrides):
+        return partslib_geometry.build_shape(manifest, entry["dir"],
+                                             overrides)
+
+    def plan_arc(shape, z):
+        """The widest circular edge in the shape's plan at height `z`."""
+        radii = [edge.Curve.Radius
+                 for wire in shape.slice(FreeCAD.Vector(0, 0, 1), z)
+                 for edge in wire.Edges
+                 if edge.Curve.__class__.__name__ == "Circle"]
+        return max(radii) if radii else None
+
+    def in_tray(shape, point):
+        return shape.isInside(FreeCAD.Vector(*point), 1e-6, False)
+
+    def sized(width, corner):
+        return partslib_geometry.measure(
+            tray({"Width": width, "Corner": corner}))
+
+    curved_wider = sized(1000.0, "curved")
+    square_wider = sized(1000.0, "square")
+    h.check("J5 a curved tray is square, a square one keeps its depth",
+            abs(curved_wider["Width"] - 1000.0) < 1e-6
+            and abs(curved_wider["Depth"] - 1000.0) < 1e-6
+            and abs(square_wider["Depth"] - 900.0) < 1e-6,
+            detail="curved=%r square=%r" % (curved_wider, square_wider))
+
+    square = tray({"Corner": "square"})
+    curved = tray({"Corner": "curved"})
+    advertised = {"Width": 900.0, "Depth": 900.0, "Height": 100.0}
+    measured = partslib_geometry.measure(curved)
+    outer_corner = (890.0, 10.0, 80.0)
+    h.check("J5 only the curved tray gives its corner up, inside the size "
+            "the manifest advertises",
+            all(abs(measured[k] - value) < 1e-6
+                for k, value in advertised.items())
+            and in_tray(square, outer_corner)
+            and not in_tray(curved, outer_corner),
+            detail="measured=%r square=%s curved=%s"
+            % (measured, in_tray(square, outer_corner),
+               in_tray(curved, outer_corner)))
+
+    radius = advertised["Width"] * 0.75
+    h.check("J5 the corner's plan edge is an arc of three quarters of the side",
+            abs((plan_arc(curved, 50.0) or 0.0) - radius) < 1e-6
+            and (plan_arc(square, 50.0) or 0.0) < radius,
+            detail="curved=%r square=%r three-quarters=%.1f"
+            % (plan_arc(curved, 50.0), plan_arc(square, 50.0), radius))
+
+    # The arc's centre is the tangent point 675mm in from both faces, so a
+    # point 655mm from it is 20mm inside the tray's outline - rim - and one
+    # 615mm from it is 60mm in, inside the recess's own concentric arc.
+    rim_at = (advertised["Width"] - radius + (radius - 20.0) / 2 ** 0.5,
+              radius - (radius - 20.0) / 2 ** 0.5, 80.0)
+    recess_at = (advertised["Width"] - radius + (radius - 60.0) / 2 ** 0.5,
+                 radius - (radius - 60.0) / 2 ** 0.5, 80.0)
+    h.check("J5 the rim follows the arc, with the recess inside it",
+            in_tray(curved, rim_at) and not in_tray(curved, recess_at),
+            detail="rim=%s recess=%s at %r/%r"
+            % (in_tray(curved, rim_at), in_tray(curved, recess_at),
+               rim_at, recess_at))
+
     return h.failures()
