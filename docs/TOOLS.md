@@ -194,7 +194,8 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   *Fuse Arch* fuses walls and structures together, per material, and this
   add-on's walls carry no material to separate them by.
 - **A fused body on the root (`Fuse`)** — the segments stay the things that
-  build and that a 3D pick resolves to; ticking `Fuse` on the root also gives
+  build and that a 3D pick resolves to; ticking **Fuse segments** in the wall
+  panel's **Body & drawings** box (the root's `Fuse` property) also gives
   the *root* their finished geometry (openings already cut) as one fused
   solid. A section plane listing the **root** instead of its segments then
   draws one body per wall — seam-free at every junction inside that wall —

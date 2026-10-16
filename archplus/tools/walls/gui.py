@@ -28,6 +28,10 @@ WIDTH_DESC = "Thickness of the wall, perpendicular to its baseline."
 HEIGHT_DESC = "Vertical height, measured from the sketch plane."
 ALIGN_DESC = "Which side of the baseline the wall extends from."
 OFFSET_DESC = "Extra distance between the baseline and the wall (Left/Right only)."
+FUSE_DESC = ("The wall's segments then build one fused solid on the wall "
+             "itself: a section plane listing the wall draws it seam-free, "
+             "with the view's Fuse Arch off, so columns and slabs stay the "
+             "separate bodies they are.")
 
 
 def _desc(text):
@@ -104,6 +108,15 @@ class WallPlusTaskPanel:
         skV.addWidget(self.stats)
         outer.addWidget(skBox)
 
+        bodyBox = QtGui.QGroupBox("Body & drawings")
+        bodyV = QtGui.QVBoxLayout(bodyBox)
+        bodyForm = QtGui.QFormLayout()
+        self.fuse = QtGui.QCheckBox()
+        bodyForm.addRow("Fuse segments", self.fuse)
+        bodyV.addLayout(bodyForm)
+        bodyV.addWidget(_desc(FUSE_DESC))
+        outer.addWidget(bodyBox)
+
         metaBox = QtGui.QGroupBox("Metadata")
         metaForm = QtGui.QFormLayout(metaBox)
         self.tag = QtGui.QLineEdit()
@@ -120,6 +133,7 @@ class WallPlusTaskPanel:
             w.valueChanged.connect(self._schedule)
         self.align.currentIndexChanged.connect(self._schedule)
         self.tag.textChanged.connect(self._schedule)
+        self.fuse.toggled.connect(self._schedule)
         self.sketch.currentIndexChanged.connect(self._schedule)
         self.fallback.currentIndexChanged.connect(self._schedule)
 
@@ -145,6 +159,7 @@ class WallPlusTaskPanel:
             o.Align = vals["align"]
             o.Offset = "%s mm" % vals["offset"]
             o.Tag = vals["tag"]
+            o.Fuse = vals["fuse"]
             if vals["base"] is not None:
                 o.Base = vals["base"]
             FreeCAD.ActiveDocument.recompute()
@@ -159,6 +174,7 @@ class WallPlusTaskPanel:
             align=self.align.currentText(),
             offset=widgets.mm(self.offset),
             tag=self.tag.text(),
+            fuse=self.fuse.isChecked(),
             base=self.sketch.currentData(),
             fallback=self.fallback.currentData(),
         )
@@ -171,6 +187,7 @@ class WallPlusTaskPanel:
         self.align.setCurrentText(o.Align)
         widgets.set_mm(self.offset, o.Offset.Value)
         self.tag.setText(getattr(o, "Tag", ""))
+        self.fuse.setChecked(bool(getattr(o, "Fuse", False)))
         self._building = False
 
     def _updateCombos(self):

@@ -129,6 +129,19 @@ def _w4_panel(doc):
             and wall.Align == "Left"
             and abs(wall.Group[0].Shape.Volume
                     - _expected_volume(450, 2800, [4000])) < 1e-3)
+    h.check("W4 the panel offers Fuse, off for a wall that has none",
+            panel.fuse.isChecked() is False)
+    panel.fuse.setChecked(True)
+    panel._apply()
+    doc.recompute()
+    h.check("W4 ticking Fuse gives the panel's wall a body",
+            wall.Fuse is True and not wall.Shape.isNull()
+            and abs(wall.Shape.Volume - wall.Group[0].Shape.Volume) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, wall.Group[0].Shape.Volume))
+    panel._loadFromObject()
+    h.check("W4 a reloaded panel reads Fuse back",
+            panel.fuse.isChecked() is True)
     panel.reject()
 
 
