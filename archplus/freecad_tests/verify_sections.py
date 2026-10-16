@@ -84,7 +84,8 @@ def _walls_and_plane(doc):
     # section plane therefore has to reference the segments, which is what the
     # real documents do. Referencing the root alone leaves Draft's own view
     # raising IndexError on its empty material bucket, and this fixture would
-    # compare two empty drawings.
+    # compare two empty drawings. (A root carrying `Fuse` is the exception:
+    # it has a body of its own, and referencing it draws that.)
     plane.Objects = list(wall.Group)
     plane.Placement.Base = FreeCAD.Vector(0, 0, 1200)
     doc.recompute()

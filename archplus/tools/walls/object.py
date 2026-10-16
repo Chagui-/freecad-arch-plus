@@ -95,6 +95,15 @@ class _Wall:
             if "Tag" not in pl:
                 obj.addProperty("App::PropertyString", "Tag", "Wall",
                                 "Reference code shown in schedules")
+            if "Fuse" not in pl:
+                obj.addProperty("App::PropertyBool", "Fuse", "Wall",
+                                "Build the segments as one fused solid on the "
+                                "root, for whoever takes the wall as one "
+                                "object (a section plane listing the root, an "
+                                "export, a boolean)")
+                # False: a root carries no geometry unless it is asked to,
+                # so a wall's segments stay the only thing that draws.
+                obj.Fuse = False
         else:
             if "Wall" not in pl:
                 obj.addProperty("App::PropertyLinkHidden", "Wall", "Wall",
@@ -179,16 +188,18 @@ class _Wall:
             obj.Placement = FreeCAD.Placement()
 
     def execute(self, obj):
-        """Root: clear the placeholder shape and report claims. Segment:
-        build. The openings reach the segments through the segments' own
-        Subtractions links (kept in sync by the Hosts onChanged below), so
-        no touch cascade runs here — a root touch loop re-enters through
-        the group-touched chain and left everything 'still touched after
-        recompute', rebuilding every opening cut on every pass (the
-        multi-second UI freeze after closing a task panel)."""
+        """Root: clear the placeholder shape — or build the fused body, when
+        Fuse is on — and report claims. Segment: build. The openings reach
+        the segments through the segments' own Subtractions links (kept in
+        sync by the Hosts onChanged below), so no touch cascade runs here —
+        a root touch loop re-enters through the group-touched chain and left
+        everything 'still touched after recompute', rebuilding every opening
+        cut on every pass (the multi-second UI freeze after closing a task
+        panel)."""
         import Part
         if not self._is_segment_role():
-            obj.Shape = Part.Shape()
+            obj.Shape = (self._fusedBody(obj) if getattr(obj, "Fuse", False)
+                         else Part.Shape())
             self._reportClaims(obj)
             return
         self._buildSegment(obj)
@@ -238,6 +249,50 @@ class _Wall:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: opening '%s' intersects no segment and is not "
                     "applied\n" % win.Label)
+
+    def _fusedBody(self, obj):
+        """The root's body when Fuse is on: the segments' finished shapes —
+        built, mitred and cut, openings included — as one fused solid, for
+        whoever takes the wall as one object. Read, never rebuilt: the
+        segments own the build, and a root that rebuilt them would build
+        every run twice.
+
+        Nothing here may raise into the recompute, so a fuse OCC cannot make
+        (or one it makes unusable — FreeCAD refuses to store an invalid
+        shape, and raises out of `obj.Shape =`) falls back to the segments'
+        compound: it draws with a seam at every junction, but loses no
+        geometry. No segments, or none with a shape, is a null shape —
+        exactly as with the flag off."""
+        import Part
+        shapes = [seg.Shape for seg in all_segments(obj) if _usableShape(seg)]
+        if not shapes:
+            return Part.Shape()
+        if len(shapes) == 1:
+            # Hand out a copy: this is the segment's own shape, and the next
+            # ask hands it out again.
+            return shapes[0].copy()
+        try:
+            fused = shapes[0].multiFuse(shapes[1:])
+            try:
+                # Fusing same-height bands leaves the coplanar top and
+                # bottom faces split along the old overlap boundaries, which
+                # reads as seams at every junction; the merge is purely
+                # cosmetic, so a failure keeps the fused shape (the segment
+                # build's own precedent).
+                fused = fused.removeSplitter()
+            except Exception:
+                pass
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': fusing the segments failed (%s); drawing "
+                "them as a compound\n" % (obj.Label, exc))
+            return Part.makeCompound(shapes)
+        if fused.isNull() or not fused.isValid():
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': the fused body came out unusable; drawing "
+                "the segments as a compound\n" % obj.Label)
+            return Part.makeCompound(shapes)
+        return fused
 
     def _buildSegment(self, obj):
         import Part

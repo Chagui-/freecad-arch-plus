@@ -189,7 +189,24 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   type (the root/segment distinction lives in an internal flag), so the stock
   fuse paths (`FuseArch` on a Draft Shape2DView / *Section View*, `JoinArch`
   on a TechDraw View) group a wall's segments by material and fuse them into
-  one solid, exactly as they do for Arch walls.
+  one solid, exactly as they do for Arch walls. A wall that must fuse with
+  nothing but itself uses the root's `Fuse` flag instead (next bullet):
+  *Fuse Arch* fuses walls and structures together, per material, and this
+  add-on's walls carry no material to separate them by.
+- **A fused body on the root (`Fuse`)** — the segments stay the things that
+  build and that a 3D pick resolves to; ticking `Fuse` on the root also gives
+  the *root* their finished geometry (openings already cut) as one fused
+  solid. A section plane listing the **root** instead of its segments then
+  draws one body per wall — seam-free at every junction inside that wall —
+  with the view's *Fuse Arch* left off, so columns, slabs and every other
+  `Structure` are drawn as the separate bodies they are. List the root *or*
+  its segments in a plane, never both: both carries the same geometry twice.
+  The body is rebuilt from the segments on every recompute (one boolean per
+  wall: 150–230 ms measured on a 36 m³ two-segment wall), and it is what
+  FreeCAD's own fuse paths — *Part Fuse*, BIM's **Union**, exports, other
+  workbenches — read when they take the wall as one object, hidden or not:
+  a shape-less root answers `Part.getShape` with nothing whenever it is
+  hidden, because FreeCAD compounds only a group's *visible* children.
 - **Split / move segment** — the **Split / move segment…** entry lives in
   the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
   button (there is no tree or 3D context-menu entry), greyed out until a

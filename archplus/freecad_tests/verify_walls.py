@@ -1401,6 +1401,91 @@ def _w31_move_off_fallback(doc):
             % (ext.Shape.Volume, third.Shape.Volume, fallback.Shape.Volume))
 
 
+def _w33_fused_root(doc):
+    """The root's Fuse flag: off leaves the root shape-less (as before), on
+    gives it the segments' geometry as one fused body that follows every
+    edit below it — a width, a sibling segment, an opening — and keeps
+    answering Part.getShape while the wall is hidden, which is the read
+    Part's Union (BIM Fuse) makes. A hidden, shape-less root answers
+    nothing there: that is why the flag exists, not a bug in the fuse."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    fallback = wall.Group[0]
+    h.check("W33 Fuse is declared on the root only, off by default",
+            "Fuse" in wall.PropertiesList and wall.Fuse is False
+            and "Fuse" not in fallback.PropertiesList)
+    h.check("W33 with Fuse off the root carries no shape",
+            wall.Shape.isNull())
+
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W33 the body is the segments' own geometry, fused",
+            not wall.Shape.isNull() and wall.Shape.isValid()
+            and abs(wall.Shape.Volume - fallback.Shape.Volume) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, fallback.Shape.Volume))
+
+    wall.Width = "400 mm"
+    doc.recompute()
+    h.check("W33 the body follows a change made above it",
+            abs(wall.Shape.Volume - fallback.Shape.Volume) < 1e-3
+            and abs(wall.Shape.Volume
+                    - _expected_volume(400, 2800, [4000, 4000])) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, fallback.Shape.Volume))
+
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge1",))]
+    doc.recompute()
+    unhosted = fallback.Shape.Volume + ext.Shape.Volume
+    h.check("W33 a new sibling segment joins the body",
+            abs(wall.Shape.Volume - unhosted) < 1e-3,
+            "root=%.1f parts=%.1f" % (wall.Shape.Volume, unhosted))
+
+    from archplus.tools.windows import gui as wg
+    from archplus.tools.windows import object as wo
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000, 1000, wp, name="Win")
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+    cut = fallback.Shape.Volume + ext.Shape.Volume
+    h.check("W33 a hosted opening cuts the body too",
+            cut < unhosted - 1000 * 400 * 1000 * 0.25
+            and abs(wall.Shape.Volume - cut) < 1e-3,
+            "root=%.1f segments=%.1f unhosted=%.1f"
+            % (wall.Shape.Volume, cut, unhosted))
+
+    body = wall.Shape.Volume
+    wall.Visibility = False
+    read = Part.getShape(wall)
+    h.check("W33 a hidden fused root still answers Part.getShape",
+            not read.isNull() and abs(read.Volume - body) < 1e-3,
+            "read=%.1f body=%.1f" % (read.Volume, body))
+
+    wall.Fuse = False
+    doc.recompute()
+    h.check("W33 Fuse off drops the body again",
+            wall.Shape.isNull() and Part.getShape(wall).isNull())
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W33 the body rebuilds from hidden segments too",
+            not wall.Shape.isNull() and abs(wall.Shape.Volume - body) < 1e-3,
+            "root=%.1f body=%.1f" % (wall.Shape.Volume, body))
+    wall.Visibility = True
+    doc.recompute()
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1440,3 +1525,5 @@ def run():
     h.run_part("W30", _w30_move_onto_fallback, doc)
     doc = h.fresh_doc()
     h.run_part("W31", _w31_move_off_fallback, doc)
+    doc = h.fresh_doc()
+    h.run_part("W33", _w33_fused_root, doc)
