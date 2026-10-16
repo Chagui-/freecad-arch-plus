@@ -208,6 +208,19 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   workbenches — read when they take the wall as one object, hidden or not:
   a shape-less root answers `Part.getShape` with nothing whenever it is
   hidden, because FreeCAD compounds only a group's *visible* children.
+- **Sub-element names on walls (`element map`)** — each built run carries a
+  `Tag` (its lowest claimed sketch edge index), so FreeCAD's booleans name the
+  segment's faces, edges and vertices after the runs they came from
+  (`Face6;:M;CUT;:H65:8,F`) and keep that element map on the shape. A
+  reference *stored by mapped name* — what a 3D dimension, a boolean or
+  another workbench's feature keeps when it points at a wall face — therefore
+  resolves to the same face after a rebuild that keeps the runs' structure,
+  including a width or height change. Edit the claims themselves (add, split
+  or move a run) and the names no longer match: the reference then *fails*
+  with an invalid-name error instead of silently measuring whatever face now
+  carries that index. The tagging is free (2 ms on a two-segment wall) and
+  changes no geometry: same volume, faces, edges and every face area as an
+  untagged build.
 - **Split / move segment** — the **Split / move segment…** entry lives in
   the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
   button (there is no tree or 3D context-menu entry), greyed out until a

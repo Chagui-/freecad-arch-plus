@@ -317,25 +317,30 @@ class _Wall:
         # makeWall) the rendered position is exactly the built position;
         # level placements stay at zero for this file's absolute authoring.
         normal = sketch.Placement.Rotation.multVec(Vector(0, 0, 1))
-        edges = []
+        pairs = []
         for sub in subnames:
             try:
-                edges.append(sketch.Shape.getElement(sub))
+                pairs.append((sub, sketch.Shape.getElement(sub)))
             except Exception:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: sketch edge '%s' could not be read; skipped\n"
                     % sub)
-        if not edges:
+        if not pairs:
             obj.Shape = empty
             return
         # A claim set can branch (partitions joining a ring), and the
         # offset band needs one simple traversal to produce one face, so
         # split at every vertex where more than two endpoints meet; each
         # simple chain offsets cleanly and junction ends butt into the
-        # crossing band.
-        usable = [edge for edge in edges if edge.Length >= 1e-9]
-        chains = [[usable[i] for i in group]
-                  for group in model.chain_splits(_chainLinks(usable))]
+        # crossing band. The claimed names ride along with the edges: they
+        # are what tags each run for the element map (see _runTag).
+        named = [(name, edge) for name, edge in pairs
+                 if edge.Length >= 1e-9]
+        groups = model.chain_splits(_chainLinks([edge for _n, edge in named]))
+        chains = [[named[i][1] for i in group] for group in groups]
+        chain_names = [[named[i][0] for i in group] for group in groups]
+        tags = [_runTag(claimed, position)
+                for position, claimed in enumerate(chain_names)]
         root = obj.Wall
         owners = _edgeOwners(root) if root is not None else {}
         sk_edges = []
@@ -346,7 +351,7 @@ class _Wall:
                 except Exception:
                     continue
         solids = []
-        for chain in chains:
+        for chain, cnames, tag in zip(chains, chain_names, tags):
             miters = None
             if owners:
                 try:
@@ -366,6 +371,7 @@ class _Wall:
                         FreeCAD.Console.PrintWarning(
                             "ArchPlus: segment '%s': seam miter fell back "
                             "to a butt joint\n" % obj.Label)
+                        face.Tag = tag
                         solids.append(face.extrude(normal * height))
                         continue
                     except Exception:
@@ -373,13 +379,15 @@ class _Wall:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: segment '%s': mitered chain build failed (%s); "
                     "building its edges separately\n" % (obj.Label, exc))
-                for edge in chain:
+                for edge, name in zip(chain, cnames):
                     face = footprint(edge, cfg["Width"], cfg["Align"],
                                      cfg["Offset"], normal)
                     if face is None:
                         continue
+                    face.Tag = _edgeIndex(name) or tag
                     solids.append(face.extrude(normal * height))
                 continue
+            face.Tag = tag
             solids.append(face.extrude(normal * height))
         if not solids:
             obj.Shape = empty
@@ -439,6 +447,34 @@ def _claimNode(obj):
 def _sketchEdgeNames(sketch):
     return model.sort_edge_names(n for n in sketch.Shape.ElementMap.values()
                                  if n.startswith("Edge"))
+
+
+def _edgeIndex(name):
+    """The sketch edge's own index from its name ("Edge7" -> 7), or 0 when
+    the name carries none — a legacy lowercase claim, or anything else."""
+    if not name.startswith("Edge"):
+        return 0
+    try:
+        return int(name[4:])
+    except ValueError:
+        return 0
+
+
+def _runTag(names, position):
+    """A non-zero tag for one built run, from the sketch edges it builds.
+
+    FreeCAD names the sub-elements of a boolean after its operands' tags
+    (`Face6;:M;CUT;:H65:8,F`) and keeps that map on the shape — but only
+    when the operands carry a tag at all; untagged operands, which is what
+    every FreeCAD build before 1.0 produced and what an untagged Python
+    build still produces, come out of the boolean with an empty map, and
+    then a reference to a face is an index and nothing more. The lowest
+    claimed edge index is the run's identity (the same thing a claim
+    addresses a run by), and two runs never share one: a run that builds no
+    named edge falls back to its build position, offset well clear of any
+    real edge index so the two cannot collide inside one shape's map."""
+    indexes = [i for i in (_edgeIndex(n) for n in names) if i]
+    return min(indexes) if indexes else 1000000 + position
 
 
 def is_segment(obj):

@@ -1499,6 +1499,55 @@ def _w33_fused_root(doc):
     doc.recompute()
 
 
+def _w34_element_map(doc):
+    """Wall sub-elements carry element maps, so a reference stored by mapped
+    name resolves back to the same face after a rebuild that keeps the runs'
+    structure — what an index-only shape cannot do, and the reason a stored
+    dimension or boolean can survive a wall edit. The name comes from the
+    runs' own sketch edges (object._runTag), and the fused root body maps
+    through the segments' own tags."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    h.check("W34 the segment's shape carries an element map",
+            len(seg.Shape.ElementMap) > 0,
+            "%d entries" % len(seg.Shape.ElementMap))
+
+    index, face = sorted(((i + 1, f) for i, f in enumerate(seg.Shape.Faces)),
+                         key=lambda pair: -pair[1].CenterOfMass.z)[0]
+    stored = seg.Shape.getElementMappedName("Face%d" % index)
+    h.check("W34 the top face has a mapped name of its own",
+            bool(stored) and face.normalAt(0, 0).z > 0.99, repr(stored))
+
+    wall.Width = "400 mm"
+    doc.recompute()
+    try:
+        got = seg.Shape.getElement(stored)
+    except Exception as exc:
+        got = None
+        detail = "raised %r" % (exc,)
+    else:
+        detail = "area=%.0f centroid=%s" % (got.Area, got.CenterOfMass)
+    h.check("W34 the mapped name still means that face after a width change",
+            got is not None and got.ShapeType == "Face"
+            and got.normalAt(0, 0).z > 0.99
+            and abs(got.CenterOfMass.x - face.CenterOfMass.x) < 1e-6
+            and abs(got.CenterOfMass.y - face.CenterOfMass.y) < 1e-6
+            and abs(got.Area - 400 * 4000) < 1e-3,
+            detail)
+
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W34 the fused root body maps its elements too",
+            len(wall.Shape.ElementMap) > 0
+            and abs(wall.Shape.Volume - seg.Shape.Volume) < 1e-3,
+            "%d entries" % len(wall.Shape.ElementMap))
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1540,3 +1589,5 @@ def run():
     h.run_part("W31", _w31_move_off_fallback, doc)
     doc = h.fresh_doc()
     h.run_part("W33", _w33_fused_root, doc)
+    doc = h.fresh_doc()
+    h.run_part("W34", _w34_element_map, doc)
