@@ -1584,6 +1584,38 @@ def _w35_body_hidden_in_view(doc):
             wall.Shape.isNull() and seg.ViewObject.isVisible())
 
 
+def _w36_openings_claimed_once(doc):
+    """Every hosted opening is mirrored into each segment's Subtractions so
+    the dependency graph re-runs the segment when one of them moves. The tree
+    must still show an opening once — under the wall it is hosted on — and not
+    again under every segment."""
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.doors import gui as dgui
+    from archplus.tools.doors import object as dobj
+    spec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
+                height=2100.0, frameWidth=70.0, panelThk=45.0,
+                frameDepth=100.0, swingSide="Left", swingDir="Inward",
+                panelPos="Centered")
+    dsketch, parts = dgui._makeDoorGeometry(spec)
+    door = dobj.makeWindow(dsketch, 900.0, 2100.0, parts, name="TreeDoor")
+    dsketch.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    door.Hosts = [wall]
+    doc.recompute()
+    seg = wall.Group[0]
+    h.check("W36 the opening is mirrored into the segment's Subtractions",
+            door in list(getattr(seg, "Subtractions", None) or []))
+    h.check("W36 the tree claims the opening once, by the wall",
+            door in (wall.ViewObject.Proxy.claimChildren() or [])
+            and door not in (seg.ViewObject.Proxy.claimChildren() or []),
+            "wall=%s segment=%s"
+            % ([o.Name for o in (wall.ViewObject.Proxy.claimChildren() or [])],
+               [o.Name for o in (seg.ViewObject.Proxy.claimChildren() or [])]))
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1629,3 +1661,5 @@ def run():
     h.run_part("W34", _w34_element_map, doc)
     doc = h.fresh_doc()
     h.run_part("W35", _w35_body_hidden_in_view, doc)
+    doc = h.fresh_doc()
+    h.run_part("W36", _w36_openings_claimed_once, doc)

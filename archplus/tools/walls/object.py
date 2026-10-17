@@ -1288,12 +1288,25 @@ class _ViewProviderWall:
         toggle cascades to claimed children natively, and the wall root
         has no shape of its own, so without the claim the openings sit
         unattached and keep floating when the wall or its level is
-        hidden."""
+        hidden. A segment claims none of the mirrored openings — they belong
+        to the wall and appear once, there."""
         obj = getattr(self, "Object", None)
         if obj is None:
             return []
         children = list(getattr(obj, "Group", None) or [])
-        for opening in _hostedOpenings(obj):
+        hosted = _hostedOpenings(obj)
+        if is_segment(obj):
+            # A segment carries every hosted opening in its own Subtractions:
+            # that mirror is what re-runs the segment when one of them moves
+            # (syncSegmentSubtractions), not a second hosting. Claiming it
+            # would show the whole wall's doors and windows again under each
+            # segment, so a segment claims only the openings the wall does
+            # not.
+            root = wall_root(obj)
+            if root is not None:
+                outer = _hostedOpenings(root)
+                hosted = [o for o in hosted if o not in outer]
+        for opening in hosted:
             if opening not in children:
                 children.append(opening)
         return children

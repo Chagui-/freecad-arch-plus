@@ -172,7 +172,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   opening's `Hosts`, and an opening that spans two segments is cut from both.
   They are cut in a fixed order (the `Subtractions` list, then any
   `Hosts`-discovered ones by name), because each cut renumbers the built
-  shape's sub-elements.
+  shape's sub-elements. Each segment also carries every hosted opening in its
+  own `Subtractions`: that is the dependency mirror which re-runs the segment
+  when an opening moves, not a second hosting, so the tree shows each opening
+  once — under the wall it is hosted on.
 - **Build order follows the sketch, not the edge names** — a segment
   extrudes its claimed edges in the sketch's own geometry order (`Edge2`
   before `Edge10`, never the other way round from a plain string sort), and
