@@ -129,6 +129,19 @@ def _w4_panel(doc):
             and wall.Align == "Left"
             and abs(wall.Group[0].Shape.Volume
                     - _expected_volume(450, 2800, [4000])) < 1e-3)
+    h.check("W4 the panel offers Fuse, off for a wall that has none",
+            panel.fuse.isChecked() is False)
+    panel.fuse.setChecked(True)
+    panel._apply()
+    doc.recompute()
+    h.check("W4 ticking Fuse gives the panel's wall a body",
+            wall.Fuse is True and not wall.Shape.isNull()
+            and abs(wall.Shape.Volume - wall.Group[0].Shape.Volume) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, wall.Group[0].Shape.Volume))
+    panel._loadFromObject()
+    h.check("W4 a reloaded panel reads Fuse back",
+            panel.fuse.isChecked() is True)
     panel.reject()
 
 
@@ -1401,6 +1414,245 @@ def _w31_move_off_fallback(doc):
             % (ext.Shape.Volume, third.Shape.Volume, fallback.Shape.Volume))
 
 
+def _w33_fused_root(doc):
+    """The root's Fuse flag: off leaves the root shape-less (as before), on
+    gives it the segments' geometry as one fused body that follows every
+    edit below it — a width, a sibling segment, an opening — and keeps
+    answering Part.getShape while the wall is hidden, which is the read
+    Part's Union (BIM Fuse) makes. A hidden, shape-less root answers
+    nothing there: that is why the flag exists, not a bug in the fuse."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    fallback = wall.Group[0]
+    h.check("W33 Fuse is declared on the root only, off by default",
+            "Fuse" in wall.PropertiesList and wall.Fuse is False
+            and "Fuse" not in fallback.PropertiesList)
+    h.check("W33 with Fuse off the root carries no shape",
+            wall.Shape.isNull())
+
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W33 the body is the segments' own geometry, fused",
+            not wall.Shape.isNull() and wall.Shape.isValid()
+            and abs(wall.Shape.Volume - fallback.Shape.Volume) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, fallback.Shape.Volume))
+
+    wall.Width = "400 mm"
+    doc.recompute()
+    h.check("W33 the body follows a change made above it",
+            abs(wall.Shape.Volume - fallback.Shape.Volume) < 1e-3
+            and abs(wall.Shape.Volume
+                    - _expected_volume(400, 2800, [4000, 4000])) < 1e-3,
+            "root=%.1f segments=%.1f"
+            % (wall.Shape.Volume, fallback.Shape.Volume))
+
+    ext = walls_object.makeSegment(wall, name="exterior")
+    ext.Edges = [(sk, ("Edge1",))]
+    doc.recompute()
+    unhosted = fallback.Shape.Volume + ext.Shape.Volume
+    h.check("W33 a new sibling segment joins the body",
+            abs(wall.Shape.Volume - unhosted) < 1e-3,
+            "root=%.1f parts=%.1f" % (wall.Shape.Volume, unhosted))
+
+    from archplus.tools.windows import gui as wg
+    from archplus.tools.windows import object as wo
+    spec = dict(shape="Rectangular", operation="Fixed", width=1000,
+                height=1000, frameWidth=50, sashThk=45, frameDepth=100,
+                swingSide="Left", swingDir="Inward", panelPos="Front")
+    wsk, wp = wg._makeWindowGeometry(spec)
+    win = wo.makeWindow(wsk, 1000, 1000, wp, name="Win")
+    wsk.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    win.Hosts = [wall]
+    wall.Subtractions = [win]
+    doc.recompute()
+    cut = fallback.Shape.Volume + ext.Shape.Volume
+    h.check("W33 a hosted opening cuts the body too",
+            cut < unhosted - 1000 * 400 * 1000 * 0.25
+            and abs(wall.Shape.Volume - cut) < 1e-3,
+            "root=%.1f segments=%.1f unhosted=%.1f"
+            % (wall.Shape.Volume, cut, unhosted))
+
+    body = wall.Shape.Volume
+    wall.Visibility = False
+    read = Part.getShape(wall)
+    h.check("W33 a hidden fused root still answers Part.getShape",
+            not read.isNull() and abs(read.Volume - body) < 1e-3,
+            "read=%.1f body=%.1f" % (read.Volume, body))
+
+    wall.Fuse = False
+    doc.recompute()
+    h.check("W33 Fuse off drops the body again",
+            wall.Shape.isNull() and Part.getShape(wall).isNull())
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W33 the body rebuilds from hidden segments too",
+            not wall.Shape.isNull() and abs(wall.Shape.Volume - body) < 1e-3,
+            "root=%.1f body=%.1f" % (wall.Shape.Volume, body))
+    wall.Visibility = True
+    doc.recompute()
+
+
+def _w34_element_map(doc):
+    """Wall sub-elements carry element maps, so a reference stored by mapped
+    name resolves back to the same face after a rebuild that keeps the runs'
+    structure — what an index-only shape cannot do, and the reason a stored
+    dimension or boolean can survive a wall edit. The name comes from the
+    runs' own sketch edges (object._runTag), and the fused root body maps
+    through the segments' own tags."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    h.check("W34 the segment's shape carries an element map",
+            len(seg.Shape.ElementMap) > 0,
+            "%d entries" % len(seg.Shape.ElementMap))
+
+    index, face = sorted(((i + 1, f) for i, f in enumerate(seg.Shape.Faces)),
+                         key=lambda pair: -pair[1].CenterOfMass.z)[0]
+    stored = seg.Shape.getElementMappedName("Face%d" % index)
+    h.check("W34 the top face has a mapped name of its own",
+            bool(stored) and face.normalAt(0, 0).z > 0.99, repr(stored))
+
+    wall.Width = "400 mm"
+    doc.recompute()
+    try:
+        got = seg.Shape.getElement(stored)
+    except Exception as exc:
+        got = None
+        detail = "raised %r" % (exc,)
+    else:
+        detail = "area=%.0f centroid=%s" % (got.Area, got.CenterOfMass)
+    h.check("W34 the mapped name still means that face after a width change",
+            got is not None and got.ShapeType == "Face"
+            and got.normalAt(0, 0).z > 0.99
+            and abs(got.CenterOfMass.x - face.CenterOfMass.x) < 1e-6
+            and abs(got.CenterOfMass.y - face.CenterOfMass.y) < 1e-6
+            and abs(got.Area - 400 * 4000) < 1e-3,
+            detail)
+
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W34 the fused root body maps its elements too",
+            len(wall.Shape.ElementMap) > 0
+            and abs(wall.Shape.Volume - seg.Shape.Volume) < 1e-3,
+            "%d entries" % len(wall.Shape.ElementMap))
+
+
+def _w35_body_hidden_in_view(doc):
+    """A fused root's body is the segments' geometry, so drawn normally it
+    doubles every face of the wall in the 3D view — and the segments are the
+    ones that have to stay visible, because the face highlights and the
+    selection dims are drawn on their view objects. The root's view provider
+    draws the body as a transparent, edge-free surface instead, leaving what
+    the drawings and exports read untouched."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    wall.ViewObject.Transparency = 0
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W35 the fused body is kept out of the 3D view",
+            wall.ViewObject.Transparency == 100
+            and wall.ViewObject.DisplayMode == "Shaded"
+            and seg.ViewObject.isVisible()
+            and not wall.Shape.isNull(),
+            "transparency=%s mode=%s seg visible=%s"
+            % (wall.ViewObject.Transparency, wall.ViewObject.DisplayMode,
+               seg.ViewObject.isVisible()))
+    wall.ViewObject.Visibility = False
+    wall.ViewObject.Visibility = True
+    h.check("W35 showing the wall shows the segments, not the body",
+            seg.ViewObject.isVisible()
+            and wall.ViewObject.Transparency == 100)
+    wall.Fuse = False
+    doc.recompute()
+    h.check("W35 Fuse off leaves the segments as the wall's geometry",
+            wall.Shape.isNull() and seg.ViewObject.isVisible())
+
+
+def _w36_openings_claimed_once(doc):
+    """Every hosted opening is mirrored into each segment's Subtractions so
+    the dependency graph re-runs the segment when one of them moves. The tree
+    must still show an opening once — under the wall it is hosted on — and not
+    again under every segment."""
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    from archplus.tools.doors import gui as dgui
+    from archplus.tools.doors import object as dobj
+    spec = dict(operation="Single swing", panelStyle="Solid", width=900.0,
+                height=2100.0, frameWidth=70.0, panelThk=45.0,
+                frameDepth=100.0, swingSide="Left", swingDir="Inward",
+                panelPos="Centered")
+    dsketch, parts = dgui._makeDoorGeometry(spec)
+    door = dobj.makeWindow(dsketch, 900.0, 2100.0, parts, name="TreeDoor")
+    dsketch.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(1500, 0, 0),
+        FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+    door.Hosts = [wall]
+    doc.recompute()
+    seg = wall.Group[0]
+    h.check("W36 the opening is mirrored into the segment's Subtractions",
+            door in list(getattr(seg, "Subtractions", None) or []))
+    h.check("W36 the tree claims the opening once, by the wall",
+            door in (wall.ViewObject.Proxy.claimChildren() or [])
+            and door not in (seg.ViewObject.Proxy.claimChildren() or []),
+            "wall=%s segment=%s"
+            % ([o.Name for o in (wall.ViewObject.Proxy.claimChildren() or [])],
+               [o.Name for o in (seg.ViewObject.Proxy.claimChildren() or [])]))
+
+
+def _w37_stale_claim_repair(doc):
+    """A claim the sketch cannot resolve is ignored at build time *and*
+    warned about on every recompute, so a restored wall takes them out once —
+    without moving the geometry, since a dropped claim was building nothing.
+
+    The noisy segment is a plain sibling, not the fallback: a fallback's own
+    claims are dropped by `resolve_claims` (it builds everything unclaimed
+    instead), so it could not show what the repair does either way.
+    """
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    seg = walls_object.makeSegment(wall, name="noisy")
+    seg.Edges = [(sk, ("Edge1", "edge1", "Edge9", "9"))]
+    doc.recompute()
+    claims = [sub for _link, subs in (seg.Edges or []) for sub in subs]
+    h.check("W37 the stale claims sit in the list before the repair",
+            claims[0] == "Edge1"
+            and sum(1 for sub in claims if sub not in ("Edge1", "Edge2")) == 3,
+            repr(claims))
+    volume = seg.Shape.Volume
+    h.check("W37 the stale claims build nothing",
+            abs(volume - _expected_volume(300, 2800, [4000])) < 1e-3,
+            "volume %.0f" % volume)
+
+    seg.Proxy.onDocumentRestored(seg)          # what a document open runs
+    doc.recompute()
+    cleaned = [sub for _link, subs in (seg.Edges or []) for sub in subs]
+    h.check("W37 a restored wall keeps only the claims its sketch has",
+            cleaned == ["Edge1"], repr(cleaned))
+    h.check("W37 the repair leaves the geometry alone",
+            abs(seg.Shape.Volume - volume) < 1e-3,
+            "volume %.0f (was %.0f)" % (seg.Shape.Volume, volume))
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1440,3 +1692,13 @@ def run():
     h.run_part("W30", _w30_move_onto_fallback, doc)
     doc = h.fresh_doc()
     h.run_part("W31", _w31_move_off_fallback, doc)
+    doc = h.fresh_doc()
+    h.run_part("W33", _w33_fused_root, doc)
+    doc = h.fresh_doc()
+    h.run_part("W34", _w34_element_map, doc)
+    doc = h.fresh_doc()
+    h.run_part("W35", _w35_body_hidden_in_view, doc)
+    doc = h.fresh_doc()
+    h.run_part("W36", _w36_openings_claimed_once, doc)
+    doc = h.fresh_doc()
+    h.run_part("W37", _w37_stale_claim_repair, doc)

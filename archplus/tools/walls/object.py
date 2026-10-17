@@ -95,6 +95,15 @@ class _Wall:
             if "Tag" not in pl:
                 obj.addProperty("App::PropertyString", "Tag", "Wall",
                                 "Reference code shown in schedules")
+            if "Fuse" not in pl:
+                obj.addProperty("App::PropertyBool", "Fuse", "Wall",
+                                "Build the segments as one fused solid on the "
+                                "root, for whoever takes the wall as one "
+                                "object (a section plane listing the root, an "
+                                "export, a boolean)")
+                # False: a root carries no geometry unless it is asked to,
+                # so a wall's segments stay the only thing that draws.
+                obj.Fuse = False
         else:
             if "Wall" not in pl:
                 obj.addProperty("App::PropertyLinkHidden", "Wall", "Wall",
@@ -171,6 +180,8 @@ class _Wall:
         if self.Segment and "Rest" in obj.PropertiesList:
             obj.Fallback = obj.Rest
             obj.removeProperty("Rest")
+        if self.Segment:
+            self._repairClaims(obj)
         if not self.Segment and not obj.Placement.isIdentity():
             # Roots have no shape; a non-identity placement would displace
             # every claimed child's scene node (segments and hosted
@@ -178,17 +189,59 @@ class _Wall:
             # walls through the sketch placement instead.
             obj.Placement = FreeCAD.Placement()
 
+    def _repairClaims(self, obj):
+        """Take the claims this wall's sketch cannot resolve out of it, once.
+
+        Every unresolvable claim is ignored at build time *and* warned about
+        on every recompute, so a document carrying a handful of them warns
+        forever — and warnings that always fire stop being read. They are
+        legacy data: names from before the sketch-edge naming settled, loose
+        in the same list as the live ones (see `model.repair_claims` for
+        what counts as which), so they are dropped here, on restore, and
+        what went is reported.
+
+        Only claims that resolve to nothing are touched. A claim for an edge
+        the user deletes *now* still warns — that is news, not legacy — and
+        a claim that case-variants a live edge is folded to the sketch's
+        spelling rather than dropped, since the edge it names is not in
+        doubt."""
+        sketch = getattr(obj, "Base", None)
+        names = _sketchEdgeNames(sketch) if sketch is not None else []
+        if not names:
+            return
+        entries, dropped, folded = [], [], []
+        for link, subs in (getattr(obj, "Edges", None) or []):
+            kept, gone, renamed = model.repair_claims(names, subs)
+            entries.append((link, tuple(kept)))
+            dropped.extend(gone)
+            folded.extend(renamed)
+        if not dropped and not folded:
+            return
+        obj.Edges = entries
+        if dropped:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': dropped %d unresolvable edge claim(s) (%s)\n"
+                % (obj.Label, len(dropped),
+                   ", ".join(sorted(set(dropped)))))
+        if folded:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': %s\n"
+                % (obj.Label,
+                   ", ".join("%s -> %s" % pair for pair in folded)))
+
     def execute(self, obj):
-        """Root: clear the placeholder shape and report claims. Segment:
-        build. The openings reach the segments through the segments' own
-        Subtractions links (kept in sync by the Hosts onChanged below), so
-        no touch cascade runs here — a root touch loop re-enters through
-        the group-touched chain and left everything 'still touched after
-        recompute', rebuilding every opening cut on every pass (the
-        multi-second UI freeze after closing a task panel)."""
+        """Root: clear the placeholder shape — or build the fused body, when
+        Fuse is on — and report claims. Segment: build. The openings reach
+        the segments through the segments' own Subtractions links (kept in
+        sync by the Hosts onChanged below), so no touch cascade runs here —
+        a root touch loop re-enters through the group-touched chain and left
+        everything 'still touched after recompute', rebuilding every opening
+        cut on every pass (the multi-second UI freeze after closing a task
+        panel)."""
         import Part
         if not self._is_segment_role():
-            obj.Shape = Part.Shape()
+            obj.Shape = (self._fusedBody(obj) if getattr(obj, "Fuse", False)
+                         else Part.Shape())
             self._reportClaims(obj)
             return
         self._buildSegment(obj)
@@ -239,6 +292,50 @@ class _Wall:
                     "ArchPlus: opening '%s' intersects no segment and is not "
                     "applied\n" % win.Label)
 
+    def _fusedBody(self, obj):
+        """The root's body when Fuse is on: the segments' finished shapes —
+        built, mitred and cut, openings included — as one fused solid, for
+        whoever takes the wall as one object. Read, never rebuilt: the
+        segments own the build, and a root that rebuilt them would build
+        every run twice.
+
+        Nothing here may raise into the recompute, so a fuse OCC cannot make
+        (or one it makes unusable — FreeCAD refuses to store an invalid
+        shape, and raises out of `obj.Shape =`) falls back to the segments'
+        compound: it draws with a seam at every junction, but loses no
+        geometry. No segments, or none with a shape, is a null shape —
+        exactly as with the flag off."""
+        import Part
+        shapes = [seg.Shape for seg in all_segments(obj) if _usableShape(seg)]
+        if not shapes:
+            return Part.Shape()
+        if len(shapes) == 1:
+            # Hand out a copy: this is the segment's own shape, and the next
+            # ask hands it out again.
+            return shapes[0].copy()
+        try:
+            fused = shapes[0].multiFuse(shapes[1:])
+            try:
+                # Fusing same-height bands leaves the coplanar top and
+                # bottom faces split along the old overlap boundaries, which
+                # reads as seams at every junction; the merge is purely
+                # cosmetic, so a failure keeps the fused shape (the segment
+                # build's own precedent).
+                fused = fused.removeSplitter()
+            except Exception:
+                pass
+        except Exception as exc:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': fusing the segments failed (%s); drawing "
+                "them as a compound\n" % (obj.Label, exc))
+            return Part.makeCompound(shapes)
+        if fused.isNull() or not fused.isValid():
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': the fused body came out unusable; drawing "
+                "the segments as a compound\n" % obj.Label)
+            return Part.makeCompound(shapes)
+        return fused
+
     def _buildSegment(self, obj):
         import Part
         empty = Part.makeCompound([])
@@ -262,25 +359,30 @@ class _Wall:
         # makeWall) the rendered position is exactly the built position;
         # level placements stay at zero for this file's absolute authoring.
         normal = sketch.Placement.Rotation.multVec(Vector(0, 0, 1))
-        edges = []
+        pairs = []
         for sub in subnames:
             try:
-                edges.append(sketch.Shape.getElement(sub))
+                pairs.append((sub, sketch.Shape.getElement(sub)))
             except Exception:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: sketch edge '%s' could not be read; skipped\n"
                     % sub)
-        if not edges:
+        if not pairs:
             obj.Shape = empty
             return
         # A claim set can branch (partitions joining a ring), and the
         # offset band needs one simple traversal to produce one face, so
         # split at every vertex where more than two endpoints meet; each
         # simple chain offsets cleanly and junction ends butt into the
-        # crossing band.
-        usable = [edge for edge in edges if edge.Length >= 1e-9]
-        chains = [[usable[i] for i in group]
-                  for group in model.chain_splits(_chainLinks(usable))]
+        # crossing band. The claimed names ride along with the edges: they
+        # are what tags each run for the element map (see _runTag).
+        named = [(name, edge) for name, edge in pairs
+                 if edge.Length >= 1e-9]
+        groups = model.chain_splits(_chainLinks([edge for _n, edge in named]))
+        chains = [[named[i][1] for i in group] for group in groups]
+        chain_names = [[named[i][0] for i in group] for group in groups]
+        tags = [_runTag(claimed, position)
+                for position, claimed in enumerate(chain_names)]
         root = obj.Wall
         owners = _edgeOwners(root) if root is not None else {}
         sk_edges = []
@@ -291,7 +393,7 @@ class _Wall:
                 except Exception:
                     continue
         solids = []
-        for chain in chains:
+        for chain, cnames, tag in zip(chains, chain_names, tags):
             miters = None
             if owners:
                 try:
@@ -311,6 +413,7 @@ class _Wall:
                         FreeCAD.Console.PrintWarning(
                             "ArchPlus: segment '%s': seam miter fell back "
                             "to a butt joint\n" % obj.Label)
+                        face.Tag = tag
                         solids.append(face.extrude(normal * height))
                         continue
                     except Exception:
@@ -318,13 +421,15 @@ class _Wall:
                 FreeCAD.Console.PrintWarning(
                     "ArchPlus: segment '%s': mitered chain build failed (%s); "
                     "building its edges separately\n" % (obj.Label, exc))
-                for edge in chain:
+                for edge, name in zip(chain, cnames):
                     face = footprint(edge, cfg["Width"], cfg["Align"],
                                      cfg["Offset"], normal)
                     if face is None:
                         continue
+                    face.Tag = _edgeIndex(name) or tag
                     solids.append(face.extrude(normal * height))
                 continue
+            face.Tag = tag
             solids.append(face.extrude(normal * height))
         if not solids:
             obj.Shape = empty
@@ -384,6 +489,34 @@ def _claimNode(obj):
 def _sketchEdgeNames(sketch):
     return model.sort_edge_names(n for n in sketch.Shape.ElementMap.values()
                                  if n.startswith("Edge"))
+
+
+def _edgeIndex(name):
+    """The sketch edge's own index from its name ("Edge7" -> 7), or 0 when
+    the name carries none — a legacy lowercase claim, or anything else."""
+    if not name.startswith("Edge"):
+        return 0
+    try:
+        return int(name[4:])
+    except ValueError:
+        return 0
+
+
+def _runTag(names, position):
+    """A non-zero tag for one built run, from the sketch edges it builds.
+
+    FreeCAD names the sub-elements of a boolean after its operands' tags
+    (`Face6;:M;CUT;:H65:8,F`) and keeps that map on the shape — but only
+    when the operands carry a tag at all; untagged operands, which is what
+    every FreeCAD build before 1.0 produced and what an untagged Python
+    build still produces, come out of the boolean with an empty map, and
+    then a reference to a face is an index and nothing more. The lowest
+    claimed edge index is the run's identity (the same thing a claim
+    addresses a run by), and two runs never share one: a run that builds no
+    named edge falls back to its build position, offset well clear of any
+    real edge index so the two cannot collide inside one shape's map."""
+    indexes = [i for i in (_edgeIndex(n) for n in names) if i]
+    return min(indexes) if indexes else 1000000 + position
 
 
 def is_segment(obj):
@@ -1179,6 +1312,7 @@ class _ViewProviderWall:
 
     def attach(self, vobj):
         self.Object = vobj.Object
+        self._syncBodyDisplay(vobj)
 
     def dumps(self):
         return None
@@ -1196,12 +1330,25 @@ class _ViewProviderWall:
         toggle cascades to claimed children natively, and the wall root
         has no shape of its own, so without the claim the openings sit
         unattached and keep floating when the wall or its level is
-        hidden."""
+        hidden. A segment claims none of the mirrored openings — they belong
+        to the wall and appear once, there."""
         obj = getattr(self, "Object", None)
         if obj is None:
             return []
         children = list(getattr(obj, "Group", None) or [])
-        for opening in _hostedOpenings(obj):
+        hosted = _hostedOpenings(obj)
+        if is_segment(obj):
+            # A segment carries every hosted opening in its own Subtractions:
+            # that mirror is what re-runs the segment when one of them moves
+            # (syncSegmentSubtractions), not a second hosting. Claiming it
+            # would show the whole wall's doors and windows again under each
+            # segment, so a segment claims only the openings the wall does
+            # not.
+            root = wall_root(obj)
+            if root is not None:
+                outer = _hostedOpenings(root)
+                hosted = [o for o in hosted if o not in outer]
+        for opening in hosted:
             if opening not in children:
                 children.append(opening)
         return children
@@ -1227,6 +1374,30 @@ class _ViewProviderWall:
             for opening in _hostedOpenings(obj):
                 if opening.ViewObject is not None:
                     opening.ViewObject.Visibility = vobj.Visibility
+            self._syncBodyDisplay(vobj)
+
+    def _syncBodyDisplay(self, vobj):
+        """Keep a fused root's body out of the 3D view while the flag is on.
+
+        With `Fuse` on, the root's shape *is* the segments' geometry, so
+        drawn normally it doubles every face of the wall in the viewport —
+        and the segments are the ones that have to stay visible: the face
+        highlights and the selection dims are drawn on *their* view objects,
+        so hiding them would cost the user the feedback they work with. The
+        body is drawn as a fully transparent shaded surface instead: Shaded
+        because that is the only display mode that draws no edges (LineWidth
+        cannot go below 1, so the edges cannot be hidden that way), and
+        transparent for the faces. It is still there — picks resolve through
+        it to the owning segment, and drawings and exports read `Shape` as
+        before — and setting the root's Transparency back to 0 by hand shows
+        it until the flag is toggled again."""
+        obj = getattr(self, "Object", None) or getattr(vobj, "Object", None)
+        if obj is None or not is_root(obj) or not getattr(obj, "Fuse", False):
+            return
+        if getattr(vobj, "DisplayMode", "Shaded") != "Shaded":
+            vobj.DisplayMode = "Shaded"
+        if getattr(vobj, "Transparency", 100) < 100:
+            vobj.Transparency = 100
 
     def onDelete(self, vobj, subelements):
         """GUI deletes cascade: FreeCAD's own delete never removes
@@ -1243,7 +1414,14 @@ class _ViewProviderWall:
     def updateData(self, obj, prop):
         """Refresh the highlight overlay when the shape is rebuilt under a
         live face or edge selection; the overlay keeps its old tessellation
-        otherwise. The length dim overlay redraws the same way."""
+        otherwise. The length dim overlay redraws the same way. The Fuse flag
+        is not a shape change, so it takes the body out of the 3D view's way
+        instead."""
+        if prop == "Fuse":
+            vobj = getattr(obj, "ViewObject", None)
+            if vobj is not None:
+                self._syncBodyDisplay(vobj)
+            return
         if prop != "Shape":
             return
         try:

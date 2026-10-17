@@ -367,3 +367,47 @@ def test_chain_runs_rejects_unorderable_links():
 def test_chain_runs_rejects_empty_links():
     with pytest.raises(ValueError):
         model.chain_runs([])
+
+
+# --- repair_claims ---------------------------------------------------------
+
+def test_repair_keeps_the_claims_the_sketch_has():
+    kept, dropped, folded = model.repair_claims(
+        ["Edge1", "Edge2", "Edge3"], ["Edge3", "Edge1"])
+    assert kept == ["Edge3", "Edge1"]
+    assert dropped == [] and folded == []
+
+
+def test_repair_drops_a_claim_the_sketch_no_longer_has():
+    # It built nothing already: the recompute ignored it and warned.
+    kept, dropped, folded = model.repair_claims(["Edge1"], ["Edge1", "edge99"])
+    assert kept == ["Edge1"]
+    assert dropped == ["edge99"] and folded == []
+
+
+def test_repair_folds_a_case_variant_to_the_sketchs_spelling():
+    kept, dropped, folded = model.repair_claims(["Edge17"], ["edge17"])
+    assert kept == ["Edge17"]
+    assert dropped == [] and folded == [("edge17", "Edge17")]
+
+
+def test_repair_drops_the_duplicate_of_a_folded_claim():
+    # The 1984 document's own case: both spellings in one list.
+    kept, dropped, folded = model.repair_claims(
+        ["Edge17"], ["Edge17", "edge17"])
+    assert kept == ["Edge17"]
+    assert dropped == ["edge17"] and folded == []
+
+
+def test_repair_drops_a_mangled_numeric_claim():
+    kept, dropped, folded = model.repair_claims(["Edge17", "Edge19"], ["17", "19"])
+    assert kept == []
+    assert dropped == ["17", "19"] and folded == []
+
+
+def test_repair_keeps_the_order_of_the_live_claims():
+    # Order is the build order (object._buildSegment builds the claims in the
+    # sketch's own order), so a repair must not reshuffle what it keeps.
+    kept, dropped, folded = model.repair_claims(
+        ["Edge1", "Edge2", "Edge3"], ["Edge2", "junk", "Edge1", "Edge3"])
+    assert kept == ["Edge2", "Edge1", "Edge3"]

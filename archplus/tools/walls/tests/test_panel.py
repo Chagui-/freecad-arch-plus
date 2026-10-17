@@ -51,6 +51,7 @@ def _panel(cls, obj):
     p.width = FakeNum(); p.height = FakeNum()
     p.align = FakeCombo(["Center", "Left", "Right"])
     p.offset = FakeNum(); p.tag = _FakeLine()
+    p.fuse = FakeCheck()
     p.sketch = _FakeDataCombo(); p.fallback = _FakeDataCombo()
     return p
 
@@ -60,8 +61,8 @@ def _root_obj(**over):
     values.update(over)
     ns = types.SimpleNamespace()
     for k, v in values.items():
-        if k == "Align":
-            ns.Align = v
+        if k in ("Align", "Fuse"):
+            setattr(ns, k, v)
         else:
             setattr(ns, k, quantity(v))
     return ns
@@ -72,10 +73,12 @@ def test_root_collect_reads_all_fields():
     p.align.setCurrentText("Right")
     p.offset.setValue(50.0)
     p.width.setValue(400.0)
+    p.fuse.setChecked(True)
     got = p._collect()
     assert got["width"] == 400.0
     assert got["align"] == "Right"
     assert got["offset"] == 50.0
+    assert got["fuse"] is True
 
 
 def test_root_load_pushes_object_values_onto_widgets():
@@ -83,6 +86,13 @@ def test_root_load_pushes_object_values_onto_widgets():
     p._loadFromObject()
     assert p.width.value() == 400.0
     assert p.align.currentText() == "Left"
+    assert p.fuse.isChecked() is False
+
+
+def test_root_load_checks_fuse_for_a_fusing_wall():
+    p = _panel(wg.WallPlusTaskPanel, _root_obj(Fuse=True))
+    p._loadFromObject()
+    assert p.fuse.isChecked() is True
 
 
 def _seg_obj(**over):

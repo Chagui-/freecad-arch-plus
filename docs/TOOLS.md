@@ -172,7 +172,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   opening's `Hosts`, and an opening that spans two segments is cut from both.
   They are cut in a fixed order (the `Subtractions` list, then any
   `Hosts`-discovered ones by name), because each cut renumbers the built
-  shape's sub-elements.
+  shape's sub-elements. Each segment also carries every hosted opening in its
+  own `Subtractions`: that is the dependency mirror which re-runs the segment
+  when an opening moves, not a second hosting, so the tree shows each opening
+  once — under the wall it is hosted on.
 - **Build order follows the sketch, not the edge names** — a segment
   extrudes its claimed edges in the sketch's own geometry order (`Edge2`
   before `Edge10`, never the other way round from a plain string sort), and
@@ -189,7 +192,42 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   type (the root/segment distinction lives in an internal flag), so the stock
   fuse paths (`FuseArch` on a Draft Shape2DView / *Section View*, `JoinArch`
   on a TechDraw View) group a wall's segments by material and fuse them into
-  one solid, exactly as they do for Arch walls.
+  one solid, exactly as they do for Arch walls. A wall that must fuse with
+  nothing but itself uses the root's `Fuse` flag instead (next bullet):
+  *Fuse Arch* fuses walls and structures together, per material, and this
+  add-on's walls carry no material to separate them by.
+- **A fused body on the root (`Fuse`)** — the segments stay the things that
+  build and that a 3D pick resolves to; ticking **Fuse segments** in the wall
+  panel's **Body & drawings** box (the root's `Fuse` property) also gives
+  the *root* their finished geometry (openings already cut) as one fused
+  solid. A section plane listing the **root** instead of its segments then
+  draws one body per wall — seam-free at every junction inside that wall —
+  with the view's *Fuse Arch* left off, so columns, slabs and every other
+  `Structure` are drawn as the separate bodies they are. List the root *or*
+  its segments in a plane, never both: both carries the same geometry twice.
+  The 3D view keeps the segments: while the flag is on the root is drawn as a
+  fully transparent, edge-free surface, so the wall shows once and the faces
+  you pick, highlight and dimension stay the ones on the segments (the body is
+  still there — set the root's Transparency back to 0 to look at it).
+  The body is rebuilt from the segments on every recompute (one boolean per
+  wall: 150–230 ms measured on a 36 m³ two-segment wall), and it is what
+  FreeCAD's own fuse paths — *Part Fuse*, BIM's **Union**, exports, other
+  workbenches — read when they take the wall as one object, hidden or not:
+  a shape-less root answers `Part.getShape` with nothing whenever it is
+  hidden, because FreeCAD compounds only a group's *visible* children.
+- **Sub-element names on walls (`element map`)** — each built run carries a
+  `Tag` (its lowest claimed sketch edge index), so FreeCAD's booleans name the
+  segment's faces, edges and vertices after the runs they came from
+  (`Face6;:M;CUT;:H65:8,F`) and keep that element map on the shape. A
+  reference *stored by mapped name* — what a 3D dimension, a boolean or
+  another workbench's feature keeps when it points at a wall face — therefore
+  resolves to the same face after a rebuild that keeps the runs' structure,
+  including a width or height change. Edit the claims themselves (add, split
+  or move a run) and the names no longer match: the reference then *fails*
+  with an invalid-name error instead of silently measuring whatever face now
+  carries that index. The tagging is free (2 ms on a two-segment wall) and
+  changes no geometry: same volume, faces, edges and every face area as an
+  untagged build.
 - **Split / move segment** — the **Split / move segment…** entry lives in
   the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
   button (there is no tree or 3D context-menu entry), greyed out until a
