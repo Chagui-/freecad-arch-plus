@@ -202,6 +202,10 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   with the view's *Fuse Arch* left off, so columns, slabs and every other
   `Structure` are drawn as the separate bodies they are. List the root *or*
   its segments in a plane, never both: both carries the same geometry twice.
+  The 3D view keeps the segments: while the flag is on the root is drawn as a
+  fully transparent, edge-free surface, so the wall shows once and the faces
+  you pick, highlight and dimension stay the ones on the segments (the body is
+  still there — set the root's Transparency back to 0 to look at it).
   The body is rebuilt from the segments on every recompute (one boolean per
   wall: 150–230 ms measured on a 36 m³ two-segment wall), and it is what
   FreeCAD's own fuse paths — *Part Fuse*, BIM's **Union**, exports, other

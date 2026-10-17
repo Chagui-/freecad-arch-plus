@@ -1548,6 +1548,42 @@ def _w34_element_map(doc):
             "%d entries" % len(wall.Shape.ElementMap))
 
 
+def _w35_body_hidden_in_view(doc):
+    """A fused root's body is the segments' geometry, so drawn normally it
+    doubles every face of the wall in the 3D view — and the segments are the
+    ones that have to stay visible, because the face highlights and the
+    selection dims are drawn on their view objects. The root's view provider
+    draws the body as a transparent, edge-free surface instead, leaving what
+    the drawings and exports read untouched."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    doc.recompute()
+    seg = wall.Group[0]
+    wall.ViewObject.Transparency = 0
+    wall.Fuse = True
+    doc.recompute()
+    h.check("W35 the fused body is kept out of the 3D view",
+            wall.ViewObject.Transparency == 100
+            and wall.ViewObject.DisplayMode == "Shaded"
+            and seg.ViewObject.isVisible()
+            and not wall.Shape.isNull(),
+            "transparency=%s mode=%s seg visible=%s"
+            % (wall.ViewObject.Transparency, wall.ViewObject.DisplayMode,
+               seg.ViewObject.isVisible()))
+    wall.ViewObject.Visibility = False
+    wall.ViewObject.Visibility = True
+    h.check("W35 showing the wall shows the segments, not the body",
+            seg.ViewObject.isVisible()
+            and wall.ViewObject.Transparency == 100)
+    wall.Fuse = False
+    doc.recompute()
+    h.check("W35 Fuse off leaves the segments as the wall's geometry",
+            wall.Shape.isNull() and seg.ViewObject.isVisible())
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1591,3 +1627,5 @@ def run():
     h.run_part("W33", _w33_fused_root, doc)
     doc = h.fresh_doc()
     h.run_part("W34", _w34_element_map, doc)
+    doc = h.fresh_doc()
+    h.run_part("W35", _w35_body_hidden_in_view, doc)

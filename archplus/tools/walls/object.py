@@ -1270,6 +1270,7 @@ class _ViewProviderWall:
 
     def attach(self, vobj):
         self.Object = vobj.Object
+        self._syncBodyDisplay(vobj)
 
     def dumps(self):
         return None
@@ -1318,6 +1319,30 @@ class _ViewProviderWall:
             for opening in _hostedOpenings(obj):
                 if opening.ViewObject is not None:
                     opening.ViewObject.Visibility = vobj.Visibility
+            self._syncBodyDisplay(vobj)
+
+    def _syncBodyDisplay(self, vobj):
+        """Keep a fused root's body out of the 3D view while the flag is on.
+
+        With `Fuse` on, the root's shape *is* the segments' geometry, so
+        drawn normally it doubles every face of the wall in the viewport —
+        and the segments are the ones that have to stay visible: the face
+        highlights and the selection dims are drawn on *their* view objects,
+        so hiding them would cost the user the feedback they work with. The
+        body is drawn as a fully transparent shaded surface instead: Shaded
+        because that is the only display mode that draws no edges (LineWidth
+        cannot go below 1, so the edges cannot be hidden that way), and
+        transparent for the faces. It is still there — picks resolve through
+        it to the owning segment, and drawings and exports read `Shape` as
+        before — and setting the root's Transparency back to 0 by hand shows
+        it until the flag is toggled again."""
+        obj = getattr(self, "Object", None) or getattr(vobj, "Object", None)
+        if obj is None or not is_root(obj) or not getattr(obj, "Fuse", False):
+            return
+        if getattr(vobj, "DisplayMode", "Shaded") != "Shaded":
+            vobj.DisplayMode = "Shaded"
+        if getattr(vobj, "Transparency", 100) < 100:
+            vobj.Transparency = 100
 
     def onDelete(self, vobj, subelements):
         """GUI deletes cascade: FreeCAD's own delete never removes
@@ -1334,7 +1359,14 @@ class _ViewProviderWall:
     def updateData(self, obj, prop):
         """Refresh the highlight overlay when the shape is rebuilt under a
         live face or edge selection; the overlay keeps its old tessellation
-        otherwise. The length dim overlay redraws the same way."""
+        otherwise. The length dim overlay redraws the same way. The Fuse flag
+        is not a shape change, so it takes the body out of the 3D view's way
+        instead."""
+        if prop == "Fuse":
+            vobj = getattr(obj, "ViewObject", None)
+            if vobj is not None:
+                self._syncBodyDisplay(vobj)
+            return
         if prop != "Shape":
             return
         try:
