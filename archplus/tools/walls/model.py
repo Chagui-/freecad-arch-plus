@@ -156,6 +156,44 @@ def resolve_claims(nodes, sketch_edge_names):
     return built, warnings
 
 
+def repair_claims(sketch_edge_names, subs):
+    """The edge subnames of `subs` the sketch can actually resolve.
+
+    A claim the sketch cannot resolve builds nothing: `resolve_claims`
+    ignores it and warns on every recompute. Documents written before the
+    sketch-edge naming settled carry numbers of them — a lowercase
+    'edge17' beside the 'Edge17' that means the same edge, or the bare '17'
+    a mangled name split off — and a wall that warns on every rebuild is a
+    wall whose warnings stop being read.
+
+    A name that is a case-variant of a sketch edge is folded to the
+    sketch's own spelling (the edge it names is not in doubt: there is one
+    such edge), so the same edge claimed twice, once in each spelling, ends
+    up claimed once. Anything else the sketch does not have is dropped —
+    it was already building nothing, so the geometry only loses the warning.
+
+    Returns (kept, dropped, folded), all in the given order: the names to
+    write back, the ones that resolve to nothing, and the (from, to) pairs
+    whose spelling changed and which were kept.
+    """
+    names = set(sketch_edge_names)
+    by_case = {}
+    for name in names:
+        by_case.setdefault(name.lower(), name)
+    kept, dropped, folded = [], [], []
+    for sub in subs:
+        canonical = sub if sub in names else by_case.get(sub.lower())
+        if canonical is None:
+            dropped.append(sub)
+        elif canonical in kept:
+            dropped.append(sub)
+        else:
+            if sub != canonical:
+                folded.append((sub, canonical))
+            kept.append(canonical)
+    return kept, dropped, folded
+
+
 def match_edge(polylines, point, tol=None):
     """Nearest edge index to `point`, within tol, or None.
 

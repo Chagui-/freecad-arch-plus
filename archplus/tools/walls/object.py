@@ -180,12 +180,54 @@ class _Wall:
         if self.Segment and "Rest" in obj.PropertiesList:
             obj.Fallback = obj.Rest
             obj.removeProperty("Rest")
+        if self.Segment:
+            self._repairClaims(obj)
         if not self.Segment and not obj.Placement.isIdentity():
             # Roots have no shape; a non-identity placement would displace
             # every claimed child's scene node (segments and hosted
             # openings) by that offset — a phantom extra storey. Position
             # walls through the sketch placement instead.
             obj.Placement = FreeCAD.Placement()
+
+    def _repairClaims(self, obj):
+        """Take the claims this wall's sketch cannot resolve out of it, once.
+
+        Every unresolvable claim is ignored at build time *and* warned about
+        on every recompute, so a document carrying a handful of them warns
+        forever — and warnings that always fire stop being read. They are
+        legacy data: names from before the sketch-edge naming settled, loose
+        in the same list as the live ones (see `model.repair_claims` for
+        what counts as which), so they are dropped here, on restore, and
+        what went is reported.
+
+        Only claims that resolve to nothing are touched. A claim for an edge
+        the user deletes *now* still warns — that is news, not legacy — and
+        a claim that case-variants a live edge is folded to the sketch's
+        spelling rather than dropped, since the edge it names is not in
+        doubt."""
+        sketch = getattr(obj, "Base", None)
+        names = _sketchEdgeNames(sketch) if sketch is not None else []
+        if not names:
+            return
+        entries, dropped, folded = [], [], []
+        for link, subs in (getattr(obj, "Edges", None) or []):
+            kept, gone, renamed = model.repair_claims(names, subs)
+            entries.append((link, tuple(kept)))
+            dropped.extend(gone)
+            folded.extend(renamed)
+        if not dropped and not folded:
+            return
+        obj.Edges = entries
+        if dropped:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': dropped %d unresolvable edge claim(s) (%s)\n"
+                % (obj.Label, len(dropped),
+                   ", ".join(sorted(set(dropped)))))
+        if folded:
+            FreeCAD.Console.PrintWarning(
+                "ArchPlus: '%s': %s\n"
+                % (obj.Label,
+                   ", ".join("%s -> %s" % pair for pair in folded)))
 
     def execute(self, obj):
         """Root: clear the placeholder shape — or build the fused body, when

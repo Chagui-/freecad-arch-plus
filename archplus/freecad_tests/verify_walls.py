@@ -1616,6 +1616,43 @@ def _w36_openings_claimed_once(doc):
                [o.Name for o in (seg.ViewObject.Proxy.claimChildren() or [])]))
 
 
+def _w37_stale_claim_repair(doc):
+    """A claim the sketch cannot resolve is ignored at build time *and*
+    warned about on every recompute, so a restored wall takes them out once —
+    without moving the geometry, since a dropped claim was building nothing.
+
+    The noisy segment is a plain sibling, not the fallback: a fallback's own
+    claims are dropped by `resolve_claims` (it builds everything unclaimed
+    instead), so it could not show what the repair does either way.
+    """
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    seg = walls_object.makeSegment(wall, name="noisy")
+    seg.Edges = [(sk, ("Edge1", "edge1", "Edge9", "9"))]
+    doc.recompute()
+    claims = [sub for _link, subs in (seg.Edges or []) for sub in subs]
+    h.check("W37 the stale claims sit in the list before the repair",
+            claims[0] == "Edge1"
+            and sum(1 for sub in claims if sub not in ("Edge1", "Edge2")) == 3,
+            repr(claims))
+    volume = seg.Shape.Volume
+    h.check("W37 the stale claims build nothing",
+            abs(volume - _expected_volume(300, 2800, [4000])) < 1e-3,
+            "volume %.0f" % volume)
+
+    seg.Proxy.onDocumentRestored(seg)          # what a document open runs
+    doc.recompute()
+    cleaned = [sub for _link, subs in (seg.Edges or []) for sub in subs]
+    h.check("W37 a restored wall keeps only the claims its sketch has",
+            cleaned == ["Edge1"], repr(cleaned))
+    h.check("W37 the repair leaves the geometry alone",
+            abs(seg.Shape.Volume - volume) < 1e-3,
+            "volume %.0f (was %.0f)" % (seg.Shape.Volume, volume))
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1663,3 +1700,5 @@ def run():
     h.run_part("W35", _w35_body_hidden_in_view, doc)
     doc = h.fresh_doc()
     h.run_part("W36", _w36_openings_claimed_once, doc)
+    doc = h.fresh_doc()
+    h.run_part("W37", _w37_stale_claim_repair, doc)
