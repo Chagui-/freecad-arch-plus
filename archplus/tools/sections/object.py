@@ -15,9 +15,13 @@
 # visible edge groups), which is what makes "the walls draw identically" a
 # testable claim rather than a hope.
 
+import os
+
 import FreeCAD
 
 PROP_GROUP = "Section"
+ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
+                    "SectionView.svg")
 
 
 def _cut_depth(plane):
@@ -82,6 +86,12 @@ class _SectionView:
             obj.addProperty("App::PropertyBool", "AutoUpdate", PROP_GROUP,
                             "Recompute this view when its inputs change")
             obj.AutoUpdate = True
+
+    def onDocumentRestored(self, obj):
+        """Documents saved by a build that gave the view no view provider come
+        back invisible (see _ViewProviderSectionView): put one on, so a view
+        converted before this existed draws again."""
+        _attachViewProvider(obj)
 
     def execute(self, obj):
         """Rebuild the view's shape; never raise into the recompute.
@@ -313,6 +323,46 @@ class _SectionView:
         return Part.makeCompound(edges)
 
 
+class _ViewProviderSectionView:
+    """View provider for the section view; defined here (not in gui.py) so a
+    converted view carries it, headless imports included.
+
+    Without one the object has no representation at all: a bare
+    Part::FeaturePython ViewObject declares no DisplayMode and puts nothing in
+    the scene graph, so converting a view removed the only one that drew -
+    the fearsomely plain symptom being a plan that vanishes from the 3D view
+    while its shape, the drawings reading it and the export are all fine.
+    Draft's own provider is what drew the Draft view; this is as much of that
+    as this view needs, because its shape is a compound of projected edges and
+    Part's representation draws those in Flat Lines exactly as Draft's did."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        self.Object = vobj.Object
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+    def getIcon(self):
+        return ICON
+
+
+def _attachViewProvider(obj):
+    """Put the view provider on `obj` once, in a GUI session."""
+    if not FreeCAD.GuiUp:
+        return
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None or getattr(vobj, "Proxy", None) is not None:
+        return
+    _ViewProviderSectionView(vobj)
+
+
 def makeSectionView(doc=None, base=None, name="SectionView"):
     """Create an ArchPlus section view, optionally on a section plane."""
     import Part
@@ -320,6 +370,7 @@ def makeSectionView(doc=None, base=None, name="SectionView"):
     doc = doc or FreeCAD.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", name)
     _SectionView(obj)
+    _attachViewProvider(obj)
     if base is not None:
         obj.Base = base
     obj.Shape = Part.makeCompound([])

@@ -44,20 +44,29 @@ def _visible_edges(shape, direction=None):
     return set(out)
 
 
+def _vp_name(obj):
+    """The class name of `obj`'s view provider, or None."""
+    return getattr(getattr(getattr(obj, "ViewObject", None), "Proxy", None),
+                   "__class__", None).__name__
+
+
 def _appearance(view):
     """The view's display properties, captured before it is removed.
 
-    The converted view is a bare Part::FeaturePython with no view provider of
-    its own, so a conversion has to carry these across or the drawing changes
-    colour and line style in the 3D view. Captured, not compared afterwards:
-    a removed view's handle is dead. A headless run has no ViewObject at all,
-    which is why this is allowed to be empty."""
+    A conversion has to carry these across or the drawing changes colour, line
+    style and display mode in the 3D view. A view with no provider of its own
+    reports None for what it cannot display, and None is not an appearance to
+    compare against - the conversion leaves that property at its default.
+    Captured, not compared afterwards: a removed view's handle is dead. A
+    headless run has no ViewObject at all, which is why this is allowed to be
+    empty."""
     vobj = getattr(view, "ViewObject", None)
     if vobj is None:
         return {}
     return {name: getattr(vobj, name)
-            for name in ("LineColor", "LineWidth", "DrawStyle", "ShapeColor")
-            if hasattr(vobj, name)}
+            for name in ("LineColor", "LineWidth", "DrawStyle", "ShapeColor",
+                         "DisplayMode")
+            if getattr(vobj, name, None) is not None}
 
 
 def _walls_and_plane(doc):
@@ -666,6 +675,18 @@ def run():
             bool(appearance) and converted is not None
             and all(getattr(converted.ViewObject, name) == value
                     for name, value in appearance.items()))
+    # A view provider is what puts the shape into the scene graph. Without one
+    # the ViewObject declares no DisplayMode at all and the converted view is
+    # invisible in the 3D view - and the view it replaced was drawn by Draft's
+    # own provider, so a conversion that does not hand one over removes the
+    # only thing that drew.
+    h.check("the converted view carries a view provider",
+            converted is not None
+            and _vp_name(converted) == "_ViewProviderSectionView")
+    h.check("the converted view has a display mode to draw with",
+            converted is not None
+            and getattr(converted.ViewObject, "DisplayMode", None)
+            in ("Flat Lines", "Wireframe", "Points"))
 
     # A reader whose Source is a single App::PropertyLink, as BIM's TD View
     # command builds from a Draft view (TechDraw::DrawViewDraft). Reading such

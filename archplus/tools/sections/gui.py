@@ -135,26 +135,36 @@ def _copy_settings(view, new):
 
 # The Draft view's 3D appearance, which its own view provider holds.
 DISPLAY_PROPERTIES = ("LineColor", "LineWidth", "DrawStyle", "ShapeColor",
-                      "Visibility")
+                      "DisplayMode", "Visibility")
 
 
 def _copy_view_properties(view, new):
     """Copy the Draft view's 3D appearance onto the converted view.
 
-    The converted view is a bare `Part::FeaturePython` with no view provider
-    of its own, so without this its line colour and width, draw style, shape
-    colour and visibility revert to Part's defaults where the Draft view had
-    its own - the drawing would be right and look different. Read before the
-    old view is removed, because its ViewObject dies with it; None in a
-    headless run, and a property the old view does not have is left alone.
+    The converted view draws with our own view provider, whose defaults are
+    Part's and not Draft's: without this its line colour and width, draw
+    style, shape colour, display mode and visibility would revert where the
+    Draft view had its own - the drawing would be right and look different.
+    Read before the old view is removed, because its ViewObject dies with it;
+    None in a headless run, and a property the old view does not have is left
+    alone.
     """
     old = getattr(view, "ViewObject", None)
     fresh = getattr(new, "ViewObject", None)
     if old is None or fresh is None:
         return
     for name in DISPLAY_PROPERTIES:
-        if hasattr(old, name) and hasattr(fresh, name):
-            setattr(fresh, name, getattr(old, name))
+        if not (hasattr(old, name) and hasattr(fresh, name)):
+            continue
+        value = getattr(old, name)
+        # A Draft view built by script - or one whose view provider an older
+        # build never gave it - reports None for what it cannot display, and
+        # None is not a value the target's enumeration accepts: copying it
+        # would abort the whole conversion instead of leaving that one
+        # property at its default.
+        if value is None:
+            continue
+        setattr(fresh, name, value)
 
 
 def _repoint_sources(doc, old, new):
