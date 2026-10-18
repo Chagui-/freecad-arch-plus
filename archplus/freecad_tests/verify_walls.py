@@ -1653,6 +1653,86 @@ def _w37_stale_claim_repair(doc):
             "volume %.0f (was %.0f)" % (seg.Shape.Volume, volume))
 
 
+def _drawing_fingerprint(view):
+    """The drawing's own geometry — what a stale view would not have.
+
+    Read from the shape rather than by counting execute() calls: FreeCAD binds
+    a feature proxy's callbacks when the proxy is set, so a spy on the view's
+    execute never fires (verified — a forced recompute of the view leaves the
+    counter empty) and an assertion built on one passes whatever happened."""
+    return (len(view.Shape.Edges),
+            tuple(sorted((round(e.CenterOfGravity.x, 1),
+                          round(e.CenterOfGravity.y, 1))
+                         for e in view.Shape.Edges)))
+
+
+def _w38_live_edit_skips_drawings(doc):
+    """A live panel edit rebuilds the wall — fused body included — and leaves
+    the drawings to accept().
+
+    Both panels' live path used whole-document recomputes, so every spinner
+    step re-ran every dependent of the wall: on a real plan the section views
+    that project the floors, and the TechDraw views, dimensions and pages
+    downstream of them — measured on atahualpa_1984_alt-2 at 26.5 s of
+    recompute plus 20.3 s of repaint, against 1.0 s for the wall itself. The
+    contract is the opening panels' one: while the panel is open the wall
+    follows, and the drawing catches up in accept()'s document recompute."""
+    import Arch
+    import Draft
+    import FreeCADGui
+    from archplus.tools.walls import gui as walls_gui
+    from archplus.common import widgets
+
+    sk = _line_sketch(doc, [((0, 0), (4000, 0), False)])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    wall.Fuse = True
+    doc.recompute()
+    seg = wall.Group[0]
+    # The plane lists the wall, whose fused body is what a plan draws for it:
+    # that listing is what makes the drawing a dependent of the edit.
+    plane = Arch.makeSectionPlane([wall])
+    view = Draft.make_shape2dview(plane)
+    doc.recompute()
+    h.check("W38 the plan draws the wall the panel is about to edit",
+            len(view.Shape.Edges) > 0, "%d edges" % len(view.Shape.Edges))
+    body_before = wall.Shape.Volume
+    volume_before = seg.Shape.Volume
+    drawing_before = _drawing_fingerprint(view)
+
+    panel = walls_gui.WallSegmentTaskPanel(seg)
+    FreeCADGui.Control.showDialog(panel)
+    h.process_events(300)
+
+    panel.overrideW.setChecked(True)
+    widgets.set_mm(panel.width, 400.0)               # a spinner click
+    h.process_events(900)                            # past the debounce
+    seg_after = seg.Shape.Volume
+    body_after = wall.Shape.Volume
+    drawing_during = _drawing_fingerprint(view)
+
+    panel.accept()
+    h.process_events(400)
+    drawing_after = _drawing_fingerprint(view)
+
+    want = _expected_volume(400, 2800, [4000])
+    h.check("W38 a live panel edit rebuilds the segment",
+            abs(seg_after - want) < 1e-3,
+            "volume %.0f -> %.0f (want %.0f)" % (volume_before, seg_after, want))
+    h.check("W38 the fused body follows the live edit",
+            abs(body_after - seg_after) < 1e-3
+            and abs(body_after - body_before) > 1.0,
+            "root %.0f (was %.0f), segments %.0f"
+            % (body_after, body_before, seg_after))
+    h.check("W38 a live panel edit leaves the drawing alone",
+            drawing_during == drawing_before,
+            detail="the drawing moved during the edit")
+    h.check("W38 accepting the panel catches the drawing up",
+            panel.obj is None and drawing_after != drawing_before,
+            detail="panel obj=%r, drawing %s -> %s"
+                   % (getattr(panel, "obj", None),
+                      drawing_before[0], drawing_after[0]))
+
+
 def run():
     doc = h.fresh_doc()
     h.run_part("W1", _w1_creation, doc)
@@ -1702,3 +1782,5 @@ def run():
     h.run_part("W36", _w36_openings_claimed_once, doc)
     doc = h.fresh_doc()
     h.run_part("W37", _w37_stale_claim_repair, doc)
+    doc = h.fresh_doc()
+    h.run_part("W38", _w38_live_edit_skips_drawings, doc)

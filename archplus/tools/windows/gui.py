@@ -56,6 +56,7 @@ def _shapeIsRound(spec):
 # the object is edited.
 from archplus.common.spec import SPEC_PROP, storeSpec, readSpec  # noqa: F401
 from archplus.common import widgets
+from archplus.common.recompute import recompute_only
 
 
 def _operationNeedsSash(op):
@@ -467,19 +468,6 @@ def makeWindow(width=1200.0, height=1200.0, operation="Fixed",
     return obj
 
 
-def _recompute_only(objects):
-    """Recompute just `objects`, falling back to the whole document.
-
-    FreeCAD 1.1's Document.recompute(objs) is what makes a live edit cheap;
-    older builds only take the document-wide form, and a failed call must
-    still leave the model built rather than silently stale."""
-    doc = FreeCAD.ActiveDocument
-    try:
-        return doc.recompute(objects)
-    except TypeError:
-        return doc.recompute()
-
-
 def _refreshLive(obj):
     """Recompute only what a live edit changes: the opening, and the wall cuts
     it makes.
@@ -511,7 +499,7 @@ def _refreshLive(obj):
         for seg in walls_object.all_segments(h):
             seg.touch()
             targets.append(seg)
-    _recompute_only(targets)
+    recompute_only(targets)
 
 
 def _opening_sweep(obj, old_pl, new_pl):
@@ -1058,7 +1046,7 @@ class WindowsPlusTaskPanel:
             # sketch.  Without this, the wall host can get a null subvolume
             # and report "Wall: null shape" — especially when switching to
             # Fixed, where the sketch drops from 4 wires to 2.
-            _recompute_only([sketch])
+            recompute_only([sketch])
 
             # Swap the base sketch in one step (no Base=None first — that
             # creates an intermediate null-shape state that can propagate to
