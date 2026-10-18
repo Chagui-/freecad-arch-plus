@@ -15,6 +15,7 @@ from FreeCAD import Vector
 from PySide import QtCore, QtGui
 
 from archplus.common import widgets
+from archplus.common.recompute import recompute_only
 from archplus.tools.walls import object as walls_object
 from archplus.tools.walls import model
 from archplus.tools.walls import dims
@@ -47,6 +48,27 @@ def _sketches_in_doc(doc):
         if o.isDerivedFrom("Sketcher::SketchObject"):
             out.append(o)
     return out
+
+
+def _refreshLive(obj):
+    """Recompute only what a live edit changes: the wall, root and segments.
+
+    The panels' live path used whole-document recomputes, so every spinner
+    step re-ran every dependent of the wall — on a real plan the section views
+    that project the floors, and the TechDraw views, dimensions and pages
+    downstream of them. Measured on atahualpa_1984_alt-2, one segment width
+    step cost 26.5 s of recompute plus 20.3 s of repaint, against 1.0 s for
+    the wall itself. The drawings only need the finished state, which
+    accept()'s document recompute provides.
+
+    The edit is what marks these objects: the panels write the wall's own
+    properties, the proxy's onChanged rebuilds every segment of the wall from
+    that, and a fusing root follows its segments because they are its
+    dependencies."""
+    if obj is None:
+        return
+    root = walls_object.wall_root(obj) or obj
+    recompute_only([root] + walls_object.all_segments(root))
 
 
 class WallPlusTaskPanel:
@@ -162,7 +184,7 @@ class WallPlusTaskPanel:
             o.Fuse = vals["fuse"]
             if vals["base"] is not None:
                 o.Base = vals["base"]
-            FreeCAD.ActiveDocument.recompute()
+            _refreshLive(o)
             self._updateStats()
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
@@ -261,6 +283,8 @@ class WallPlusTaskPanel:
                     o.Fallback = False
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
+            # The document-wide recompute the live path deliberately skipped:
+            # the drawings and anything else downstream catch up here, once.
             FreeCAD.ActiveDocument.recompute()
         self.obj = None
         FreeCADGui.Control.closeDialog()
@@ -596,6 +620,10 @@ class WallSegmentTaskPanel:
         else:
             self.obj.Width = 0
             self._loadFromObject()
+            # Dropping the override is a live edit too: no widget change
+            # follows this property write, so without the refresh the wall
+            # would keep the overridden width until some later recompute.
+            _refreshLive(self.obj)
 
     def _onOverrideH(self, checked):
         if self._building:
@@ -608,6 +636,9 @@ class WallSegmentTaskPanel:
         else:
             self.obj.Height = 0
             self._loadFromObject()
+            # As above: the write is the whole edit, so the refresh is what
+            # makes it visible.
+            _refreshLive(self.obj)
 
     def _apply(self):
         try:
@@ -616,7 +647,7 @@ class WallSegmentTaskPanel:
             o.Width = "%s mm" % vals["width"]
             o.Height = "%s mm" % vals["height"]
             o.Align = vals["align"]
-            FreeCAD.ActiveDocument.recompute()
+            _refreshLive(o)
         except Exception as exc:
             FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
@@ -667,6 +698,8 @@ class WallSegmentTaskPanel:
         self._apply()
         if FreeCAD.ActiveDocument is not None:
             FreeCAD.ActiveDocument.commitTransaction()
+            # The document-wide recompute the live path deliberately skipped:
+            # the drawings and anything else downstream catch up here, once.
             FreeCAD.ActiveDocument.recompute()
         self.obj = None
         FreeCADGui.Control.closeDialog()
@@ -887,6 +920,10 @@ class WallSplitCommand:
                 walls_object.splitSegment(obj, subs)
             else:
                 walls_object.moveSegmentEdges(obj, choice, subs)
+        # Document-wide on purpose, unlike the panels' live path: this command
+        # commits straight away, so there is no accept() step afterwards to
+        # catch the drawings up, and a plan left drawing the old wall would be
+        # worse than the wait.
         doc.recompute()
         doc.commitTransaction()
 

@@ -7,6 +7,8 @@
 import os
 import types
 
+import FreeCAD
+
 from archplus.tools.walls import gui as wg
 from conftest import FakeCombo, FakeNum, FakeCheck, quantity
 
@@ -133,3 +135,71 @@ def test_segment_load_checks_override_for_nonzero_width():
     assert p.overrideH.isChecked() is False
     assert p.width.value() == 200.0
     assert p.align.currentText() == "Inherit"
+
+
+class _FakeWallObject:
+    """Enough of a wall object for wall_root() / all_segments(): the role
+    lives in the proxy, the tree in Group, the root link in Wall."""
+
+    def __init__(self, name, segment=False):
+        self.Name = name
+        self.Proxy = types.SimpleNamespace(Type="Wall", Segment=segment)
+        self.Group = []
+        self.Wall = None
+
+
+class _RecordingDoc:
+    """A document that records what a live path asked it to recompute."""
+
+    def __init__(self):
+        self.calls = []
+
+    def recompute(self, objects=None):
+        self.calls.append(objects)
+
+
+def _wall_tree():
+    root = _FakeWallObject("Wall")
+    outer = _FakeWallObject("SegA", segment=True)
+    nested = _FakeWallObject("SegB", segment=True)
+    sibling = _FakeWallObject("SegC", segment=True)
+    outer.Group = [nested]
+    root.Group = [outer, sibling]
+    for seg in (outer, nested, sibling):
+        seg.Wall = root
+    return root, outer, nested, sibling
+
+
+def test_a_live_panel_edit_recomputes_the_wall_and_nothing_else(monkeypatch):
+    """The wall's own objects and nothing else: everything downstream of them
+    — the section views, the TechDraw pages — is what made one spinner step
+    cost ~45s on a real plan, and it only needs the finished wall, which
+    accept()'s document recompute builds."""
+    doc = _RecordingDoc()
+    monkeypatch.setattr(FreeCAD, "ActiveDocument", doc)
+    root, outer, nested, sibling = _wall_tree()
+
+    wg._refreshLive(outer)
+
+    assert doc.calls == [[root, outer, nested, sibling]]
+
+
+def test_a_root_edit_targets_the_whole_wall(monkeypatch):
+    doc = _RecordingDoc()
+    monkeypatch.setattr(FreeCAD, "ActiveDocument", doc)
+    root, outer, nested, sibling = _wall_tree()
+
+    wg._refreshLive(root)
+
+    assert doc.calls == [[root, outer, nested, sibling]]
+
+
+def test_no_object_recomputes_nothing(monkeypatch):
+    """accept() and reject() call _apply() on a panel whose object may already
+    be cleared: that must not recompute anything at all."""
+    doc = _RecordingDoc()
+    monkeypatch.setattr(FreeCAD, "ActiveDocument", doc)
+
+    wg._refreshLive(None)
+
+    assert doc.calls == []

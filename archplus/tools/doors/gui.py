@@ -33,6 +33,7 @@ _ICON_DIR = os.path.join(_DIR, "resources", "icons")
 # when the object is edited.
 from archplus.common.spec import SPEC_PROP, storeSpec, readSpec  # noqa: F401
 from archplus.common import widgets
+from archplus.common.recompute import recompute_only
 
 # ---------------------------------------------------------------------------
 # Door type → preset mapping
@@ -449,19 +450,6 @@ def makeDoor(width=900.0, height=2100.0, operation="Single swing",
     return obj
 
 
-def _recompute_only(objects):
-    """Recompute just `objects`, falling back to the whole document.
-
-    FreeCAD 1.1's Document.recompute(objs) is what makes a live edit cheap;
-    older builds only take the document-wide form, and a failed call must
-    still leave the model built rather than silently stale."""
-    doc = FreeCAD.ActiveDocument
-    try:
-        return doc.recompute(objects)
-    except TypeError:
-        return doc.recompute()
-
-
 def _refreshLive(obj):
     """Recompute only what a live edit changes: the opening, and the wall cuts
     it makes.
@@ -488,7 +476,7 @@ def _refreshLive(obj):
         for seg in walls_object.all_segments(h):
             seg.touch()
             targets.append(seg)
-    _recompute_only(targets)
+    recompute_only(targets)
 
 
 def _opening_sweep(obj, old_pl, new_pl):
