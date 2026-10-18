@@ -206,8 +206,8 @@ class ConvertSectionViewCommand:
         return {"Pixmap": os.path.join(os.path.dirname(__file__),
                                        "resources", "icons", "SectionView.svg"),
                 "MenuText": "Convert section view",
-                "ToolTip": "Draw library parts as their plan outline in the "
-                           "selected Draft section view"}
+                "ToolTip": "Draw library parts as their cached plan drawing "
+                           "in the selected Draft section view"}
 
     def IsActive(self):
         return bool(_selected_views())
