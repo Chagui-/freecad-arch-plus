@@ -2,7 +2,7 @@
 #
 # Section view rules - plain data only.
 #
-# Whether a part's cached plan outline may stand in for its solid is a
+# Whether a part's cached plan drawing may stand in for its solid is a
 # question about numbers: which way the view projects, how the part is
 # rotated, and where the cut plane sits against the part's height. Kept free
 # of FreeCAD imports so each rule is testable headlessly, and so a wrong
@@ -22,7 +22,7 @@ def is_plan_direction(direction, tolerance=TOLERANCE):
 def rotation_is_about_z(axis, angle, tolerance=TOLERANCE):
     """True when a placement's rotation leaves the plan projection alone.
 
-    A part rotated about Z still projects to the same outline from above; one
+    A part rotated about Z still projects to the same drawing from above; one
     tilted about X or Y does not, and must be drawn as its solid.
     """
     if abs(angle) <= tolerance:
@@ -36,8 +36,9 @@ def part_is_below_the_cut(z_max, plane_z, tolerance=TOLERANCE):
     The cut removes everything above the plane - that is what makes a plan a
     plan - so a part reaching above it is drawn differently: a sliced one
     shows its section, and one wholly above is removed from the drawing
-    altogether. Neither is its footprint, so neither may take an outline.
-    Only a part wholly below the plane is drawn as its plan silhouette.
+    altogether. Neither is what a cached plan drawing is of, so neither may
+    take one. Only a part wholly below the plane is drawn as its plan
+    projection.
     """
     return z_max <= plane_z + tolerance
 
@@ -49,14 +50,14 @@ def part_above_the_depth_floor(z_min, plane_z, depth, tolerance=TOLERANCE):
     getCutVolume fuses the volume above the plane with everything below
     `plane_z - depth`, so the cut keeps only the band between the two. A part
     under that floor is removed from the drawing entirely, and one straddling
-    it is sliced - neither is drawn as its footprint, so neither may take an
-    outline. A Depth of zero (the default) sets no floor.
+    it is sliced - neither may take its cached plan drawing. A Depth of zero
+    (the default) sets no floor.
     """
     return depth <= tolerance or z_min >= plane_z - depth - tolerance
 
 
-def use_outline(z_range, plane_z, direction, axis, angle, depth=0.0):
-    """Whether a part's cached outline may stand in for its solid.
+def use_drawing(z_range, plane_z, direction, axis, angle, depth=0.0):
+    """Whether a part's cached plan drawing may stand in for its solid.
 
     All four conditions must hold: the view is a plan, the part is not
     rotated off plan, the part lies below the cut, and - when the plane has a

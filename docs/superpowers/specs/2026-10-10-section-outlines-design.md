@@ -236,3 +236,49 @@ plane's* property, honoured as Draft honours it, not one a view can set.
   end to end.
 - Existing suites: headless pytest, and the `archplus/freecad_tests` modules
   that touch placed parts, walls and doors.
+
+## Addendum (2026-10-18): the substitute is the drawing, not the outline
+
+The outline above shipped and was rejected on sight: in a plan cut, furniture
+read as bounding boxes. From above a bed, a wardrobe or a sofa *is* a
+rectangle, so the filled outer boundary drops exactly what makes the drawing
+read as a room - the mattress and pillows, the door seams, the seat.
+
+The substitute is now the part's cached **plan drawing**:
+
+- the same visible projection the outline used, laid flat at the part's own
+  top, minus the edges the boundary prism already draws;
+- plus the boundary extruded as a prism from the part's base to one millimetre
+  below its top, so the hidden-line pass still treats the substitute as the
+  part: what hides the part hides it (a chair under a table, substituted or
+  not) and what the part hides stays hidden.
+
+Measured over the 36 library part types (edges a view then draws): **985** for
+the solids, **887** for the drawings, **448** for the footprints that shipped.
+So fidelity is nearly free in edge count - the earlier "inner loops are three
+times the footprint" figure was the king bed alone, not the rule (loops in
+aggregate: 885 of 985) - and the saving that remains is the parts' `cut` and
+their place in the per-view hidden-line pass, not the drawing's size.
+
+Correctness is asserted as *line coverage* in both directions
+(`verify_sections._draws_the_same_lines`), not edge identity: the boundary
+prism's wire splits a long boundary edge into pieces, so 14 of 41 measured
+fixtures draw the same lines with some edges split. Nothing is ever missing
+(0 missing of 1001 drawn edges) and no line is added (all 59 extra edges lie
+on a line the solid already draws).
+
+The footprint's other costs went with it: a part whose drawing has two
+separate outlines (the waste bin) no longer falls back to its solid - both
+outlines are drawn - and a hairline footprint no longer refuses its drawing.
+What it still saves is the view's own execute, and the saving scales with how
+much of the view is furniture. Measured on a crafted room (4 walls, a slab, a
+1400 plane), the view rebuilds in **0.14 s** against **0.25 s** with 10 library
+parts (45%) and in **0.68 s** against **4.50 s** with all 37 part types (85%),
+on drawings of 781 against 766 edges. The redraw half is unchanged by
+construction: it tracks the drawing's edge count, and the drawing now has the
+solids' edges - that half is governed by configuration (`DrawPage.KeepUpdated`,
+the views' 3D visibility, `AutoUpdate`), not by what the parts are substituted
+with.
+
+The cache is unchanged: keyed on the part's placed shape (hash, face count,
+rounded volume), so a rebuild or a move re-draws it.

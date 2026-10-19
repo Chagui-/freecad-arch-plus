@@ -2,12 +2,12 @@
 #
 # Section-view checks. Run inside a FreeCAD GUI session.
 #
-# A section view draws library parts as their cached plan outline instead of
-# their solid. The outline is an optimisation, never a wrong drawing: it is
-# the shape's filled outer boundary, used when the solid's own drawing stays
-# inside it, and this module is where that claim is tested - on a real part, a
-# part the cut passes through, a part rotated off-plan, and against Draft's
-# own view, which must keep drawing the walls identically.
+# A section view draws library parts as their cached plan drawing instead of
+# their solid: the part's own visible projection, plus the boundary prism that
+# keeps the hidden-line pass treating the substitute as the part. It draws
+# what the solid draws, and this module is where that claim is tested - on a
+# real part, a part the cut passes through, a part rotated off-plan, and
+# against Draft's own view, which must keep drawing the walls identically.
 
 import FreeCAD
 import Part
@@ -27,8 +27,8 @@ def _a_part():
     return obj
 
 
-def _visible_edges(shape, direction=None):
-    """The edges Draft's getProjected keeps, as comparable tuples."""
+def _drawn(shape, direction=None):
+    """The edges Draft's getProjected keeps, as (key, edge) pairs."""
     import TechDraw
 
     direction = direction or FreeCAD.Vector(0, 0, 1)
@@ -39,25 +39,77 @@ def _visible_edges(shape, direction=None):
             continue
         for edge in group.Edges:
             a, b = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
-            out.append(tuple(sorted(((round(a.x, 3), round(a.y, 3), round(a.z, 3)),
-                                     (round(b.x, 3), round(b.y, 3), round(b.z, 3))))))
-    return set(out)
+            out.append((tuple(sorted(((round(a.x, 3), round(a.y, 3), round(a.z, 3)),
+                                      (round(b.x, 3), round(b.y, 3), round(b.z, 3))))),
+                        edge))
+    return out
+
+
+def _visible_edges(shape, direction=None):
+    """The edges Draft's getProjected keeps, as comparable tuples."""
+    return {key for key, _edge in _drawn(shape, direction)}
+
+
+def _on_any(edge, others, tolerance=0.05):
+    """True when `edge` lies on one of `others`.
+
+    Bounding-box filtered first: a drawing comparison is O(edges^2) and
+    distToShape on every pair of a whole view's edges would crawl."""
+    box = edge.BoundBox
+    for other in others:
+        other_box = other.BoundBox
+        if (box.XMax + tolerance < other_box.XMin
+                or other_box.XMax + tolerance < box.XMin
+                or box.YMax + tolerance < other_box.YMin
+                or other_box.YMax + tolerance < box.YMin):
+            continue
+        try:
+            if edge.distToShape(other)[0] <= tolerance:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _draws_the_same_lines(a, b, tolerance=0.05):
+    """True when shapes a and b draw the same lines.
+
+    Coverage, not identity: an edge can arrive split into pieces - the
+    boundary a cached drawing carries as a prism comes back as the wire's
+    pieces where the projected drawing had one long edge - so every edge of
+    one drawing must lie on some edge of the other, and vice versa. Nothing
+    may be missing and no line may be added.
+    """
+    drawn_a, drawn_b = _drawn(a), _drawn(b)
+    edges_a = [edge for _key, edge in drawn_a]
+    edges_b = [edge for _key, edge in drawn_b]
+    return (all(_on_any(edge, edges_b, tolerance) for edge in edges_a)
+            and all(_on_any(edge, edges_a, tolerance) for edge in edges_b))
+
+
+def _vp_name(obj):
+    """The class name of `obj`'s view provider, or None."""
+    return getattr(getattr(getattr(obj, "ViewObject", None), "Proxy", None),
+                   "__class__", None).__name__
 
 
 def _appearance(view):
     """The view's display properties, captured before it is removed.
 
-    The converted view is a bare Part::FeaturePython with no view provider of
-    its own, so a conversion has to carry these across or the drawing changes
-    colour and line style in the 3D view. Captured, not compared afterwards:
-    a removed view's handle is dead. A headless run has no ViewObject at all,
-    which is why this is allowed to be empty."""
+    A conversion has to carry these across or the drawing changes colour, line
+    style and display mode in the 3D view. A view with no provider of its own
+    reports None for what it cannot display, and None is not an appearance to
+    compare against - the conversion leaves that property at its default.
+    Captured, not compared afterwards: a removed view's handle is dead. A
+    headless run has no ViewObject at all, which is why this is allowed to be
+    empty."""
     vobj = getattr(view, "ViewObject", None)
     if vobj is None:
         return {}
     return {name: getattr(vobj, name)
-            for name in ("LineColor", "LineWidth", "DrawStyle", "ShapeColor")
-            if hasattr(vobj, name)}
+            for name in ("LineColor", "LineWidth", "DrawStyle", "ShapeColor",
+                         "DisplayMode")
+            if getattr(vobj, name, None) is not None}
 
 
 def _walls_and_plane(doc):
@@ -173,77 +225,88 @@ def run():
     doc = h.fresh_doc("ArchPlusSections")
     part = _a_part()
 
-    outline = common_geometry.plan_outline(part.Shape)
-    h.check("a box gets an outline", outline is not None)
-    # A prism over the part's own height, at the part's own z - that is what
-    # makes the view's hidden-line pass treat the outline as the part, so a
-    # floor slab or a wall band occludes it exactly as it occludes the solid.
-    # A 1 mm slab would be hidden by whatever the part stands on.
-    h.check("the outline is as tall as the part",
-            outline is not None
-            and abs(outline.BoundBox.ZLength
-                    - part.Shape.BoundBox.ZLength) < 1e-6
-            and outline.Volume > 0)
+    drawing = common_geometry.plan_drawing(part.Shape)
+    h.check("a box gets a plan drawing", drawing is not None)
+    # The feature's correctness invariant, and the whole point of the change:
+    # what the substitution draws is what the solid draws - the part's own
+    # visible projection, not an approximation of it. Nothing is dropped, so a
+    # bed draws its mattress and pillows instead of a rectangle. Edges may be
+    # split differently (the boundary the prism carries comes back as the
+    # wire's pieces where the drawing had one long edge), so this compares
+    # lines, not edge identity.
+    h.check("the drawing draws the same lines as the solid",
+            _draws_the_same_lines(drawing, part.Shape),
+            detail="drawing %d edges, solid %d edges"
+                   % (len(_visible_edges(drawing)),
+                      len(_visible_edges(part.Shape))))
+    # The boundary comes as a prism over the part's own height, at the part's
+    # own z, stopping one millimetre short of the top so it cannot swallow the
+    # flat detail: that volume is what makes the view's hidden-line pass treat
+    # the substitute as the part, so a floor slab or a wall band occludes it
+    # exactly as it occludes the solid, and a chair under a table stays hidden
+    # whether or not either is substituted.
+    h.check("the drawing spans the part's own z",
+            abs(drawing.BoundBox.ZMin - part.Shape.BoundBox.ZMin) < 1e-6
+            and part.Shape.BoundBox.ZMax - drawing.BoundBox.ZMax <= 1.0 + 1e-6
+            and drawing.Volume > 0)
     raised = part.Shape.copy()
     raised.translate(FreeCAD.Vector(0, 0, 500))
-    raised_outline = common_geometry.plan_outline(raised)
-    h.check("the outline sits at the part's own z",
-            raised_outline is not None
-            and abs(raised_outline.BoundBox.ZMin
-                    - raised.BoundBox.ZMin) < 1e-6
-            and abs(raised_outline.BoundBox.ZLength
-                    - raised.BoundBox.ZLength) < 1e-6)
-    # Counted on the *drawing*, not the raw shapes: the prism's own edges are
-    # three times its silhouette's (top loop, bottom loop, the verticals), so
-    # a raw count would say nothing about what a view has to draw.
-    h.check("the outline draws no more edges than the solid",
-            len(_visible_edges(outline)) <= len(_visible_edges(part.Shape)))
+    raised_drawing = common_geometry.plan_drawing(raised)
+    h.check("the drawing sits at the part's own z",
+            raised_drawing is not None
+            and abs(raised_drawing.BoundBox.ZMin - raised.BoundBox.ZMin) < 1e-6
+            and raised.BoundBox.ZMax - raised_drawing.BoundBox.ZMax
+            <= 1.0 + 1e-6)
 
-    # The outline is the filled outer boundary: a loop nested inside it (a
-    # smaller block on top of a bigger one) is dropped on purpose, not
-    # refused. Reproducing it was measured bigger than the solid's own
-    # drawing, which is the thing this feature exists to shrink.
+    # A loop nested inside the outer boundary (a smaller block on top of a
+    # bigger one) is a feature of the part, so it is drawn. Dropping it is
+    # what made furniture read as boxes, and this is the fixture that fails
+    # when the drawing collapses to its boundary again.
     nested = Part.makeCompound([Part.makeBox(600, 400, 300),
                                 Part.makeBox(300, 200, 300,
                                              FreeCAD.Vector(150, 100, 300))])
-    nested_outline = common_geometry.plan_outline(nested)
-    h.check("a nested loop is dropped, not refused",
-            nested_outline is not None
-            and len(_visible_edges(nested_outline)) == 4)
+    nested_drawing = common_geometry.plan_drawing(nested)
+    h.check("a nested loop is drawn, not dropped",
+            nested_drawing is not None
+            and _draws_the_same_lines(nested_drawing, nested))
 
-    # A projection too small to be a usable outline is refused.
-    h.check("a hairline projection gets no outline",
-            common_geometry.plan_outline(Part.makeBox(0.5, 0.5, 10)) is None)
-
-    # A shape with two separate outlines: the outer wire is one of them, so
-    # the other reaches outside the outline and it must be refused.
+    # A shape with two separate outlines (the waste-bin case) draws both: what
+    # the boundary prism does not cover still comes through as flat edges. It
+    # is no longer a part the substitution has to refuse.
     two = Part.makeCompound([Part.makeBox(400, 400, 300),
                              Part.makeBox(400, 400, 300,
                                           FreeCAD.Vector(2000, 0, 0))])
-    h.check("a two-outline shape gets no outline",
-            common_geometry.plan_outline(two) is None)
+    h.check("a two-outline shape draws both",
+            _draws_the_same_lines(common_geometry.plan_drawing(two), two))
+
+    # A projection too small to be worth anything is no longer refused: the
+    # drawing is the part's own, whatever its size.
+    hairline = Part.makeBox(0.5, 0.5, 10)
+    h.check("a hairline footprint still draws its own drawing",
+            _draws_the_same_lines(common_geometry.plan_drawing(hairline),
+                                  hairline))
 
     # An empty shape is refused rather than raising.
-    h.check("an empty shape gets no outline",
-            common_geometry.plan_outline(Part.Shape()) is None)
+    h.check("an empty shape gets no drawing",
+            common_geometry.plan_drawing(Part.Shape()) is None)
 
     from archplus.tools.partslib import object as pobj
 
     proxy = part.Proxy
-    first = proxy.planOutline(part)
-    h.check("a placed part answers with an outline", first is not None)
-    h.check("the outline is cached, not rebuilt",
-            proxy.planOutline(part) is first)
-    before = proxy._outline_key
+    first = proxy.planDrawing(part)
+    h.check("a placed part answers with a drawing", first is not None)
+    h.check("the drawing is cached, not rebuilt",
+            proxy.planDrawing(part) is first)
+    before = proxy._drawing_key
     part.Shape = Part.makeBox(900, 400, 700)
-    h.check("a rebuild drops the cache", proxy.planOutline(part) is not first)
-    h.check("the new outline is cached too",
-            proxy.planOutline(part) is proxy.planOutline(part))
-    h.check("the key followed the rebuild", proxy._outline_key != before)
+    h.check("a rebuild drops the cache", proxy.planDrawing(part) is not first)
+    h.check("the new drawing is cached too",
+            proxy.planDrawing(part) is proxy.planDrawing(part))
+    h.check("the key followed the rebuild", proxy._drawing_key != before)
 
     empty = pobj._LibraryPart.__new__(pobj._LibraryPart)
     h.check("a part with no shape answers None",
-            empty.planOutline(Part.Shape()) is None)
+            empty.planDrawing(Part.Shape()) is None)
 
     wall, plane = _walls_and_plane(doc)
 
@@ -433,37 +496,38 @@ def run():
     plane.Placement.Rotation = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 30)
     doc.recompute()
     h.check("an elevation keeps the solid",
-            elevation.Proxy.planOutline(elevation) is not None
+            elevation.Proxy.planDrawing(elevation) is not None
             and len(view.Shape.Edges) > 0
             and len(view.Shape.Edges) == len(solid_view.Shape.Edges))
     plane.Objects = [o for o in plane.Objects if o is not elevation]
     plane.Placement.Rotation = FreeCAD.Rotation()
     doc.recompute()
 
-    # A part whose own drawing has two separate outlines gets no outline (the
-    # waste-bin case), so the view falls back to its solid.
+    # A part whose own drawing has two separate outlines (the waste-bin case)
+    # draws both of them: what the boundary prism does not cover still comes
+    # through as flat edges, so nothing has to be refused.
     bin_part = doc.addObject("Part::FeaturePython", "TwoOutlinePart")
     pobj._LibraryPart(bin_part)
     bin_part.Shape = Part.makeCompound([Part.makeBox(400, 400, 300),
                                         Part.makeBox(400, 400, 300,
                                                      FreeCAD.Vector(2000, 0, 0))])
-    # Clear of the wall band: the check is that the fallback draws this part's
-    # solid, and a part buried in the wall has its edges hidden, so they would
-    # not be in the drawing at all.
+    # Clear of the wall band: the check is about this part's own drawing, and
+    # a part buried in the wall has its edges hidden, so they would not be in
+    # the drawing at all.
     bin_part.Placement = FreeCAD.Placement(FreeCAD.Vector(3000, 2000, 0),
                                            FreeCAD.Rotation())
     plane.Objects = list(plane.Objects or []) + [bin_part]
     doc.recompute()
-    h.check("a part with no trustworthy outline keeps its solid",
-            bin_part.Proxy.planOutline(bin_part) is None
-            and bin_part.Proxy._outline_key is not None  # the None is cached
-            and _visible_edges(bin_part.Shape) <= _visible_edges(view.Shape))
+    h.check("a part with two separate outlines draws both of them",
+            bin_part.Proxy.planDrawing(bin_part) is not None
+            and _draws_the_same_lines(bin_part.Proxy.planDrawing(bin_part),
+                                      bin_part.Shape))
 
-    # The substitution is only visible on a part whose outline differs from its
-    # own drawing: a block on a bigger block draws 8 edges as a solid and 4 as
-    # an outline (its outer boundary). This is the check that fails when the
-    # substitution does not happen at all - a plain box draws the same
-    # rectangle either way.
+    # The substitution is only visible on a part whose drawing differs from its
+    # outer boundary: a block drawn on a bigger block contributes its nested
+    # loop. This is the acceptance check - the substituted view must draw what
+    # the view that draws solids draws, edge for edge - and the fixture that
+    # fails when a substituted part collapses back to its footprint.
     nested_part = doc.addObject("Part::FeaturePython", "NestedPart")
     pobj._LibraryPart(nested_part)
     nested_part.Shape = Part.makeCompound([Part.makeBox(600, 400, 300),
@@ -477,33 +541,22 @@ def run():
     nested_solid_view.PartOutlines = False
     nested_solid_view.FuseArch = view.FuseArch
     doc.recompute()
-    h.check("the substituted drawing is the outline, not the solid",
-            len(view.Shape.Edges) < len(nested_solid_view.Shape.Edges))
-    h.check("and what it drops is the nested loop",
-            len(_visible_edges(nested_part.Shape) - _visible_edges(view.Shape))
-            == 4)
-
-    # The two acceptance claims about a substituted drawing, both on the one
-    # part here whose outline is not its own drawing. On the plain box they
-    # were vacuous - the outline is the box, so both views draw the same
-    # rectangle whatever the substitution does - and they passed for a view
-    # that had stopped substituting parts altogether. The bound in the first
-    # is now a real one: the outline could grow the drawing, and this is the
-    # fixture that would show it.
-    h.check("outlines on: the drawing did not grow",
-            len(view.Shape.Edges) <= len(nested_solid_view.Shape.Edges))
-    h.check("outlines on: the part's outline is what got drawn",
-            _visible_edges(nested_part.Proxy.planOutline(nested_part))
+    h.check("the substituted drawing is the solid's own drawing",
+            _draws_the_same_lines(view.Shape, nested_solid_view.Shape),
+            detail="substituted %d edges, solid %d edges"
+                   % (len(view.Shape.Edges), len(nested_solid_view.Shape.Edges)))
+    h.check("and the nested loop is drawn, not dropped",
+            _visible_edges(nested_part.Proxy.planDrawing(nested_part))
             <= _visible_edges(view.Shape))
 
-    # A part the wall hides must stay hidden when its outline is what is
-    # drawn. The outline rides in the same compound as the wall, so
+    # A part the wall hides must stay hidden when its drawing is what is
+    # drawn. The drawing rides in the same compound as the wall - the boundary
+    # as a prism over the part's own height, the detail flat at its top - so
     # hidden-line removal drops it exactly as it drops the solid: adding the
     # part must change neither drawing. This is the check that fails when the
-    # slabs are projected separately and their edges appended, which draws
+    # substitute is projected separately and its edges appended, which draws
     # the part through the wall - the substituted view would gain the part's
-    # outline edges while the solid view, whose part really is hidden, does
-    # not.
+    # edges while the solid view, whose part really is hidden, does not.
     hidden = doc.addObject("Part::FeaturePython", "WalledIn")
     pobj._LibraryPart(hidden)
     hidden.Shape = Part.makeBox(600, 200, 700)
@@ -515,7 +568,7 @@ def run():
     plane.Objects = list(plane.Objects or []) + [hidden]
     doc.recompute()
     h.check("a part the wall hides draws nothing in either view",
-            hidden.Proxy.planOutline(hidden) is not None
+            hidden.Proxy.planDrawing(hidden) is not None
             and _visible_edges(view.Shape) == showing
             and _visible_edges(solid_view.Shape) == solid_showing,
             detail="outlines: %d -> %d edges, solid: %d -> %d"
@@ -524,11 +577,11 @@ def run():
 
     # A plane with a Depth cuts a band, not everything below it: the cut
     # removes what is under `plane_z - depth` too, so a part down there is in
-    # neither drawing and must not take an outline. With Depth set every part
-    # of this plane is under the floor, so the substituted view draws no
-    # footprint at all and the two drawings agree - compared as drawings, not
-    # as edge counts, because a footprint kept here and a footprint dropped
-    # there would cancel out in a count.
+    # neither drawing and must not take its cached drawing. With Depth set
+    # every part of this plane is under the floor, so the substituted view
+    # draws nothing for them and the two drawings agree - compared as
+    # drawings, not as edge counts, because a drawing kept here and one
+    # dropped there would cancel out in a count.
     deeper = doc.addObject("Part::FeaturePython", "UnderTheFloor")
     pobj._LibraryPart(deeper)
     deeper.Shape = Part.makeBox(600, 400, 150)
@@ -537,12 +590,12 @@ def run():
     plane.Objects = list(plane.Objects or []) + [deeper]
     plane.Depth = 1000      # the 1200 plane now keeps only 200..1200
     doc.recompute()
-    h.check("a part under the depth band adds no outline",
-            deeper.Proxy.planOutline(deeper) is not None
+    h.check("a part under the depth band adds no drawing",
+            deeper.Proxy.planDrawing(deeper) is not None
             and _visible_edges(view.Shape) == _visible_edges(solid_view.Shape),
-            detail="outlines drew %d edges, solids %d; the part's outline is %s"
+            detail="outlines drew %d edges, solids %d; the part's drawing is %s"
                    % (len(view.Shape.Edges), len(solid_view.Shape.Edges),
-                      deeper.Proxy.planOutline(deeper) is not None))
+                      deeper.Proxy.planDrawing(deeper) is not None))
     plane.Depth = 0
     doc.recompute()
 
@@ -583,22 +636,23 @@ def run():
         setattr(deep_reference, name, getattr(deep_view, name))
     doc.recompute()
     h.check("the substituted part still sizes the cut",
-            deep_part.Proxy.planOutline(deep_part) is not None
+            deep_part.Proxy.planDrawing(deep_part) is not None
             and len(deep_view.Shape.Edges) > 0
-            and _visible_edges(deep_view.Shape)
-            == _visible_edges(deep_reference.Shape),
-            detail="outlines drew %d edges, Draft drew %d; the part's outline "
-                   "is %s"
+            and _draws_the_same_lines(deep_view.Shape,
+                                      deep_reference.Shape),
+            detail="substituted drew %d edges, Draft drew %d; the part's "
+                   "drawing is %s"
                    % (len(deep_view.Shape.Edges),
                       len(deep_reference.Shape.Edges),
-                      deep_part.Proxy.planOutline(deep_part) is not None))
+                      deep_part.Proxy.planDrawing(deep_part) is not None))
 
     # The shape of plane the real document has: a floor slab listed with the
     # furniture standing on it. The slab is drawn - it is under the cut - and
-    # it has to occlude the outline exactly as it occludes the solid. A flat
-    # outline in the projection plane would instead sit *under* the slab and
+    # it has to occlude the drawing exactly as it occludes the solid. A
+    # boundary that carried no height would instead sit *under* the slab and
     # vanish, which is how a view loses its furniture: this is the check that
-    # fails unless the outline carries the part's own height.
+    # fails unless the drawing carries the part's boundary over the part's own
+    # height.
     slab = doc.addObject("Part::Box", "FloorSlab")
     slab.Length, slab.Width, slab.Height = 6000.0, 6000.0, 300.0
     slab.Placement = FreeCAD.Placement(FreeCAD.Vector(-1000, -1000, 0),
@@ -618,12 +672,12 @@ def run():
     slab_solid_view = sobj.makeSectionView(doc, base=slab_plane)
     slab_solid_view.PartOutlines = False
     doc.recompute()
-    h.check("a floor slab under a part does not hide its outline",
-            _visible_edges(on_slab.Proxy.planOutline(on_slab))
+    h.check("a floor slab under a part does not hide its drawing",
+            _visible_edges(on_slab.Proxy.planDrawing(on_slab))
             <= _visible_edges(slab_view.Shape)
-            and _visible_edges(slab_view.Shape)
-            == _visible_edges(slab_solid_view.Shape),
-            detail="outlines drew %d edges, solids %d"
+            and _draws_the_same_lines(slab_view.Shape,
+                                      slab_solid_view.Shape),
+            detail="substituted drew %d edges, solids %d"
                    % (len(slab_view.Shape.Edges),
                       len(slab_solid_view.Shape.Edges)))
 
@@ -666,6 +720,18 @@ def run():
             bool(appearance) and converted is not None
             and all(getattr(converted.ViewObject, name) == value
                     for name, value in appearance.items()))
+    # A view provider is what puts the shape into the scene graph. Without one
+    # the ViewObject declares no DisplayMode at all and the converted view is
+    # invisible in the 3D view - and the view it replaced was drawn by Draft's
+    # own provider, so a conversion that does not hand one over removes the
+    # only thing that drew.
+    h.check("the converted view carries a view provider",
+            converted is not None
+            and _vp_name(converted) == "_ViewProviderSectionView")
+    h.check("the converted view has a display mode to draw with",
+            converted is not None
+            and getattr(converted.ViewObject, "DisplayMode", None)
+            in ("Flat Lines", "Wireframe", "Points"))
 
     # A reader whose Source is a single App::PropertyLink, as BIM's TD View
     # command builds from a Draft view (TechDraw::DrawViewDraft). Reading such

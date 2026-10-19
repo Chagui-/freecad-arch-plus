@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # ArchPlus section views: a plan cut that draws library parts as their cached
-# plan outline instead of their solid.
+# plan drawing instead of their solid.
 #
-# Why our own object rather than Draft's Shape2DView: the outline has to be
+# Why our own object rather than Draft's Shape2DView: the drawing has to be
 # substituted where the shapes are gathered, and Draft offers no seam there
 # (its only per-object call is _get_shapes(shape), which never sees the
 # object). Patching Draft was ruled out - this add-on calls FreeCAD's APIs, it
@@ -15,9 +15,13 @@
 # visible edge groups), which is what makes "the walls draw identically" a
 # testable claim rather than a hope.
 
+import os
+
 import FreeCAD
 
 PROP_GROUP = "Section"
+ICON = os.path.join(os.path.dirname(__file__), "resources", "icons",
+                    "SectionView.svg")
 
 
 def _cut_depth(plane):
@@ -27,7 +31,7 @@ def _cut_depth(plane):
     `Arch.getCutVolume`, which turns a non-zero Depth into a *band*: the
     volume above the plane fused with everything below `plane_z - depth`, so
     the cut keeps only what lies between the two. One resolution, both users:
-    the rule that decides whether a part may take an outline, and the cut
+    the rule that decides whether a part may take a drawing, and the cut
     itself. Two readings of the same property could disagree.
     """
     depth = getattr(plane, "Depth", None)
@@ -76,12 +80,18 @@ class _SectionView:
                             "Names of objects left out of the projection")
         if "PartOutlines" not in pl:
             obj.addProperty("App::PropertyBool", "PartOutlines", PROP_GROUP,
-                            "Draw library parts as their cached plan outline")
+                            "Draw library parts as their cached plan drawing")
             obj.PartOutlines = True
         if "AutoUpdate" not in pl:
             obj.addProperty("App::PropertyBool", "AutoUpdate", PROP_GROUP,
                             "Recompute this view when its inputs change")
             obj.AutoUpdate = True
+
+    def onDocumentRestored(self, obj):
+        """Documents saved by a build that gave the view no view provider come
+        back invisible (see _ViewProviderSectionView): put one on, so a view
+        converted before this existed draws again."""
+        _attachViewProvider(obj)
 
     def execute(self, obj):
         """Rebuild the view's shape; never raise into the recompute.
@@ -109,35 +119,36 @@ class _SectionView:
             return Part.makeCompound([])
         direction = plane.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
         # Resolved once, here, and handed to both the substitution rule and
-        # the cut: what a plane's Depth cuts away must not take an outline
+        # the cut: what a plane's Depth cuts away must not take a drawing
         # either, and two readings of the same property could disagree.
         depth = _cut_depth(plane)
         objs = self._objects(obj, plane)
-        outlines = []
+        drawings = []
         solids = []
         # The substituted objects too: they are not drawn as solids, but the
         # cut volume is sized from every gathered shape, and Draft sizes it
         # from these as well (see _project).
         spare = []
         for o in objs:
-            outline = self._outline_for(obj, o, plane, direction, depth)
-            if outline is not None:
-                outlines.append(outline)
+            drawing = self._drawing_for(obj, o, plane, direction, depth)
+            if drawing is not None:
+                drawings.append(drawing)
                 spare.append(o)
             else:
                 solids.append(o)
         shapes = self._shapes(obj, solids)
-        return self._project(obj, shapes, outlines, plane, direction, depth,
+        return self._project(obj, shapes, drawings, plane, direction, depth,
                              spare=spare)
 
-    def _outline_for(self, obj, candidate, plane, direction, depth):
-        """The placed outline for a library part, or None to draw its solid.
+    def _drawing_for(self, obj, candidate, plane, direction, depth):
+        """The placed cached drawing for a library part, or None to draw its
+        solid.
 
         Every condition here is one the design doc pins: the flag is on, the
-        part has an outline, the view is a plan, the part is not rotated off
+        part has a drawing, the view is a plan, the part is not rotated off
         plan, and the part lies wholly below the plane - above the floor the
         plane's Depth cuts at, when it has one. Any of them failing means the
-        solid is drawn - correct, just slower.
+        solid is drawn, which is the same drawing at more cost.
         """
         if not getattr(obj, "PartOutlines", True):
             return None
@@ -152,23 +163,23 @@ class _SectionView:
 
         placement = candidate.Placement
         box = shape.BoundBox
-        if not model.use_outline(
+        if not model.use_drawing(
                 (box.ZMin, box.ZMax), plane.Placement.Base.z, direction,
                 tuple(placement.Rotation.Axis), placement.Rotation.Angle,
                 depth):
             return None
-        # A library part from an older add-on build has no planOutline: draw
+        # A library part from an older add-on build has no planDrawing: draw
         # its solid rather than raising into the recompute.
-        plan_outline = getattr(getattr(candidate, "Proxy", None),
-                               "planOutline", None)
-        if plan_outline is None:
+        plan_drawing = getattr(getattr(candidate, "Proxy", None),
+                               "planDrawing", None)
+        if plan_drawing is None:
             return None
         # Already in world coordinates: a Part::Feature's Shape carries the
-        # object's own placement, so plan_outline projected the *placed* part
+        # object's own placement, so plan_drawing projected the *placed* part
         # and the result must not be placed a second time - that would draw
         # the part at twice its offset. It is also the cache's own object:
         # never mutate it, the next ask hands out the same shape.
-        return plan_outline(candidate)
+        return plan_drawing(candidate)
 
     def _objects(self, obj, plane):
         """The plane's objects, expanded and filtered the way Draft does."""
@@ -237,27 +248,23 @@ class _SectionView:
             return shape.SubShapes
         return [shape.copy()]
 
-    def _project(self, obj, shapes, outlines, plane, direction, depth,
+    def _project(self, obj, shapes, drawings, plane, direction, depth,
                  spare=()):
         """Cut the solids against the section volume, then project the cut
-        solids *and* the outlines in one compound - Draft's own two steps, in
-        Draft's own order.
+        solids *and* the cached drawings in one compound - Draft's own two
+        steps, in Draft's own order.
 
-        `spare` is the objects that took an outline instead of a solid: their
+        `spare` is the objects that took a drawing instead of a solid: their
         shapes are handed to the cut volume below and read for nothing else.
-        The outlines ride in the same compound as the solids, which is what
+        The drawings ride in the same compound as the solids, which is what
         gives them their occlusion: hidden-line removal works across the
         compound, in depth, so a wall band hides a part behind it and a floor
         slab hides nothing it should not - exactly as it hides the part's own
-        solid. That holds for the outline only because it is a prism over the
-        part's own height at the part's own z: a flat slab in the projection
-        plane sits under whatever the part stands on, and the view would
-        delete the part instead of drawing it cheaply.
-
-        Projecting the outlines separately and appending their edges would
-        instead draw all of them, hidden or not. Riding in the compound also
-        means each outline is drawn as its own silhouette, so no outer wire
-        has to be picked out by hand."""
+        solid. Each drawing carries the part's boundary as a prism over the
+        part's own height for that reason (see common.geometry.plan_drawing),
+        so what hides the part hides its drawing too, and what the part hides
+        stays hidden.
+        """
         import Arch
         import Part
         import TechDraw
@@ -276,7 +283,7 @@ class _SectionView:
         # Draft sizes the cut volume - and so decides at all whether the
         # plane cuts anything (bb.isCutPlane, a straddle test on the gathered
         # shapes' enlarged bound box) - from every gathered shape. A part
-        # that took an outline is not in `shapes`, and the substitution rule
+        # that took a drawing is not in `shapes`, and the substitution rule
         # only takes parts at or below the plane, so omitting it can only
         # drop the bound box's positive side: with a Depth set, the plane
         # would come out uncut and the view would draw the material Draft's
@@ -302,15 +309,55 @@ class _SectionView:
                     cuts.extend(self._sub_shapes(cut, obj.OnlySolids))
             else:
                 cuts.extend(self._sub_shapes(sh, obj.OnlySolids))
-        # The outlines are not cut: one is the part's footprint over its own
-        # height, which is what the cut keeps of that part. Read-only - it is
-        # the part's cached shape, handed out again by every later recompute.
-        compound = Part.makeCompound(cuts + list(outlines))
+        # The drawings are not cut: a drawing is of the part the cut leaves
+        # whole (see _drawing_for). Read-only - it is the part's cached shape,
+        # handed out again by every later recompute.
+        compound = Part.makeCompound(cuts + list(drawings))
 
         # Draft's getProjected: the visible edge groups of the projection.
         groups = TechDraw.projectEx(compound, direction)
         edges = [e for g in groups[0:5] if not g.isNull() for e in g.Edges]
         return Part.makeCompound(edges)
+
+
+class _ViewProviderSectionView:
+    """View provider for the section view; defined here (not in gui.py) so a
+    converted view carries it, headless imports included.
+
+    Without one the object has no representation at all: a bare
+    Part::FeaturePython ViewObject declares no DisplayMode and puts nothing in
+    the scene graph, so converting a view removed the only one that drew -
+    the fearsomely plain symptom being a plan that vanishes from the 3D view
+    while its shape, the drawings reading it and the export are all fine.
+    Draft's own provider is what drew the Draft view; this is as much of that
+    as this view needs, because its shape is a compound of projected edges and
+    Part's representation draws those in Flat Lines exactly as Draft's did."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+        self.Object = vobj.Object
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+    def getIcon(self):
+        return ICON
+
+
+def _attachViewProvider(obj):
+    """Put the view provider on `obj` once, in a GUI session."""
+    if not FreeCAD.GuiUp:
+        return
+    vobj = getattr(obj, "ViewObject", None)
+    if vobj is None or getattr(vobj, "Proxy", None) is not None:
+        return
+    _ViewProviderSectionView(vobj)
 
 
 def makeSectionView(doc=None, base=None, name="SectionView"):
@@ -320,6 +367,7 @@ def makeSectionView(doc=None, base=None, name="SectionView"):
     doc = doc or FreeCAD.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", name)
     _SectionView(obj)
+    _attachViewProvider(obj)
     if base is not None:
         obj.Base = base
     obj.Shape = Part.makeCompound([])
