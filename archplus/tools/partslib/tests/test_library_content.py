@@ -324,6 +324,92 @@ def test_hob_knobs_scale_with_the_hob_width():
     assert builder._knob_radius(750.0) == 14.0
 
 
+def _sink_builder():
+    import importlib
+    return importlib.import_module(
+        "archplus.tools.partslib.library.basic.sink.builder")
+
+
+def test_the_sink_offers_a_left_or_right_drainer():
+    index = _scan()
+    data = partslib_manifest.load_manifest(_entry(index, "sink")["path"])
+    specs = partslib_manifest.param_specs(data)
+    spec = specs["Drainer"]
+    assert spec["type"] == "Choice"
+    assert list(partslib_manifest.choice_options(spec)) == [
+        "none", "left", "right"]
+    assert partslib_manifest.reset_targets(spec) == ["Width"]
+    assert specs["BowlLength"]["type"] == "Length"
+    assert specs["BowlLength"]["default"] == 600
+    assert specs["Width"]["default"] == "auto"
+
+
+def test_a_drainer_adds_its_default_length_to_an_auto_width():
+    # The bowl section keeps the catalogue width it has with no drainer;
+    # only the overall width grows by the tray's default.
+    builder = _sink_builder()
+    assert builder._overall_width(600, "none") == 600
+    assert builder._overall_width(600, "left") == 900
+    assert builder._overall_width(1000, "right") == 1300
+
+
+def test_a_left_drainer_is_the_remainder_before_the_bowls():
+    builder = _sink_builder()
+    assert builder._split(1, 900, 600, "left") == (300, 600, 0, 300)
+
+
+def test_a_right_drainer_is_the_remainder_after_the_bowls():
+    builder = _sink_builder()
+    assert builder._split(1, 900, 600, "right") == (0, 600, 600, 300)
+
+
+def test_without_a_drainer_the_bowls_take_the_full_width():
+    # BowlLength cannot leave a deck with no drainer to explain it.
+    builder = _sink_builder()
+    assert builder._split(1, 900, 600, "none") == (0, 900, 0, 0)
+
+
+def test_a_bowl_length_that_would_starve_the_bowls_is_clamped():
+    builder = _sink_builder()
+    bowl_x, bowl_length, tray_x, tray_length = builder._split(
+        2, 900, 100, "left")
+    assert bowl_length == builder._MIN_BOWL_SECTION[2]
+    assert bowl_x == tray_length
+    assert tray_x == 0
+    assert tray_length == 900 - bowl_length
+
+
+def test_the_shipped_sink_keeps_its_bowl_footprint():
+    builder = _sink_builder()
+    assert builder._bowl_prisms(1, 600, 500) == [
+        (30.0, 30.0, 540.0, 380.0)]
+    assert builder._bowl_prisms(2, 1000, 500) == [
+        (30.0, 30.0, 440.0, 380.0),
+        (530.0, 30.0, 440.0, 380.0)]
+
+
+def test_the_drainer_recess_opens_into_its_bowl():
+    builder = _sink_builder()
+    prisms = builder._bowl_prisms(1, 600, 500, 300)
+    left = builder._tray_boxes(900, 500, 230, prisms, "left")
+    assert left[0][0] == builder._TRAY_EDGE_INSET
+    # The bowl prism starts at 330; its cavity face is 10mm further in.
+    assert left[0][0] + left[0][3] == 341
+    assert len(left) == 1 + builder._TRAY_GROOVE_COUNT
+
+    prisms = builder._bowl_prisms(1, 600, 500, 0)
+    right = builder._tray_boxes(900, 500, 230, prisms, "right")
+    # The bowl prism ends at 570; its cavity face is 10mm further in.
+    assert right[0][0] == 559
+    assert right[0][0] + right[0][3] == 880
+
+
+def test_a_sink_without_a_drainer_has_no_tray_boxes():
+    builder = _sink_builder()
+    prisms = builder._bowl_prisms(1, 600, 500)
+    assert builder._tray_boxes(600, 500, 230, prisms, "none") == []
+
+
 def test_cabinet_door_counts_are_not_parameters():
     # They used to be declared "auto", which meant the property editor
     # showed 0 forever: no shape can report how many doors it has, so the
