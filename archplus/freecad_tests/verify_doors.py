@@ -3,11 +3,13 @@
 # Door hardware, the window in a leaf, and the door's part colours. Run inside
 # a FreeCAD GUI session; everything here is measured from the real kernel.
 #
-# A door leaf carries a knob (a solid of revolution, see object.makeKnobShape)
-# and the frame, the leaf and the knob are drawn in three greys that have to
-# read apart from each other. The knob is the part that has to travel with its
-# leaf while the frame stands still, so it is measured against the leaf it
-# hangs on rather than by its own coordinates.
+# A door leaf carries hardware: a knob (a solid of revolution, see
+# object.makeKnobShape) on a swing door, or a vertical pull handle (see
+# object.makeHandleShape) on a sliding one. The frame, the leaf and the
+# hardware are drawn in greys that have to read apart from each other.
+# Hardware is the part that has to travel with its leaf while the frame
+# stands still, so it is measured against the leaf it hangs on rather than by
+# its own coordinates.
 
 from archplus.freecad_tests import _harness as h
 
@@ -18,7 +20,8 @@ from archplus.tools.doors import object as do
 
 SPEC = dict(operation="Single swing", panelStyle="Solid", width=900.0,
             height=2100.0, frameWidth=70.0, panelThk=45.0, frameDepth=100.0,
-            swingSide="Left", swingDir="Inward", panelPos="Centered",
+            swingSide="Left", swingDir="Inward", slideDir="Left",
+            panelPos="Centered",
             knobHeight=1050.0, windowWidth=400.0, windowHeight=900.0,
             windowSill=900.0)
 
@@ -123,6 +126,83 @@ def _knob_checks(label, spec, leaf_name):
             % (closed_gap, open_gap, moved))
 
 
+def _handle_checks(label, spec, leaf_name):
+    obj, parts = _door(spec, name=label.replace(" ", "") + "Door")
+    spec = dict(SPEC, **spec)
+    solids = _solids(obj, parts, label)
+    handle, leaf = solids["Handle"], solids[leaf_name]
+    hb, lb = handle.BoundBox, leaf.BoundBox
+    centre = handle.CenterOfMass
+
+    h.check("%s: the handle sits on the leaf, clear of its edges" % label,
+            lb.XMin < hb.XMin and hb.XMax < lb.XMax
+            and lb.YMin < hb.YMin and hb.YMax < lb.YMax,
+            detail="handle %s on leaf %s" % (hb, lb))
+    h.check("%s: the handle is a vertical pull bar" % label,
+            abs(hb.YLength - dg.HANDLE_BAR_LENGTH) < 1.0
+            and hb.XLength < 2.0 * dg.KNOB_RADIUS,
+            detail="bar %s" % hb)
+    h.check("%s: the handle is at the height it was asked for" % label,
+            abs(centre.y - spec["knobHeight"]) < 1.0,
+            detail="centre y=%.1f, asked for %.1f" % (centre.y, spec["knobHeight"]))
+    # ... on the leaf's free edge, opposite the direction the leaf travels.
+    direction = spec.get("slideDir", "Left")
+    want = (spec["width"] - spec["frameWidth"] - dg.HANDLE_FROM_EDGE
+            if direction == "Left"
+            else spec["frameWidth"] + dg.HANDLE_FROM_EDGE)
+    h.check("%s: the handle is on the free edge, opposite travel" % label,
+            abs(centre.x - want) < 1.0,
+            detail="slide %s: centre x=%.1f, expected %.1f"
+            % (direction, centre.x, want))
+    # It grips the leaf from both sides, like the knob it replaces.
+    front = hb.ZMax - lb.ZMax
+    back = lb.ZMin - hb.ZMin
+    h.check("%s: the handle stands off both faces of the leaf" % label,
+            front > dg.KNOB_RADIUS and back > dg.KNOB_RADIUS
+            and abs(front - back) < 1.0,
+            detail="out the front %.1f, out the back %.1f" % (front, back))
+
+    # Opening the door must carry the handle with the leaf. Measured as the
+    # distance between the two centres, which a rigid motion preserves and a
+    # handle left behind does not.
+    closed_handle, closed_leaf, volume = (handle.CenterOfMass, leaf.CenterOfMass,
+                                          handle.Volume)
+    obj.Opening = 100
+    doc = obj.Document
+    doc.recompute()
+    solids = _solids(obj, parts, label + " open")
+    handle, leaf = solids["Handle"], solids[leaf_name]
+    closed_gap = (closed_handle - closed_leaf).Length
+    open_gap = (handle.CenterOfMass - leaf.CenterOfMass).Length
+    moved = (handle.CenterOfMass - closed_handle).Length
+    h.check("%s: the handle slides with its leaf" % label,
+            abs(closed_gap - open_gap) < 0.01 and moved > spec["panelThk"]
+            and abs(handle.Volume - volume) < 1.0,
+            detail="handle-to-leaf %.3f closed, %.3f open; handle moved %.1f mm"
+            % (closed_gap, open_gap, moved))
+
+
+def _panel_checks():
+    spec = dict(SPEC, operation="Sliding (single)", slideDir="Right")
+    obj, parts = _door(spec, name="PanelDoor")
+    dg.storeSpec(obj, spec)
+    panel = dg.DoorsPlusTaskPanel(obj=obj)
+    h.check("sliding door panel offers its direction",
+            not panel._slideBox.isHidden()
+            and panel.slideDir.currentText() == "Right",
+            detail="hidden=%r direction=%r"
+            % (panel._slideBox.isHidden(), panel.slideDir.currentText()))
+
+    # Only a single leaf has a travel direction to choose; a double sliding
+    # door always parts outward.
+    panel.operation.setCurrentText("Sliding (double)")
+    panel._syncRows()
+    h.check("double sliding panel hides the single-leaf direction",
+            panel._slideBox.isHidden(),
+            detail="hidden=%r" % panel._slideBox.isHidden())
+    panel.reject()
+
+
 def _color_checks():
     obj, parts = _door(name="ColorDoor")
     frame, _ = _color_of(obj, parts, "OuterFrame")
@@ -137,6 +217,15 @@ def _color_checks():
             and _luminance(leaf) > _luminance(knob) + 0.2,
             detail="luminance frame %.3f leaf %.3f knob %.3f"
             % (_luminance(frame), _luminance(leaf), _luminance(knob)))
+
+    # A sliding leaf's pull handle is the same hardware, so it takes the same
+    # near-black as the knob rather than the leaf's grey.
+    sliding, sparts = _door({"operation": "Sliding (single)"},
+                            name="SlidingColorDoor")
+    handle, _ = _color_of(sliding, sparts, "Handle")
+    h.check("the sliding door's handle is shaded like the knob",
+            handle == knob,
+            detail="handle %s knob %s" % (handle, knob))
 
     # A glazed leaf is the leaf as well: it must not take the frame's grey, or
     # a door with a window in it reads as one flat colour.
@@ -180,16 +269,23 @@ def _window_checks():
             detail="volume %.1f, transparency %.2f" % (glass.Volume, transparency))
 
     bare, bparts = _door({"operation": "Opening only"}, name="BareDoor")
-    h.check("an opening with no leaf has nothing to hang a knob on",
-            "Knob" not in _names(bparts),
+    h.check("an opening with no leaf has no hardware to hang",
+            "Knob" not in _names(bparts) and "Handle" not in _names(bparts),
             detail="parts %r" % _names(bparts))
 
 
 def run():
     h.fresh_doc()
     _knob_checks("single swing", {}, "Door")
-    _knob_checks("sliding door", {"operation": "Sliding (single)"}, "Door")
     _knob_checks("glazed leaf", {"panelStyle": "Glass (window)"}, "InnerFrame")
+    _handle_checks("sliding left",
+                   {"operation": "Sliding (single)", "slideDir": "Left"}, "Door")
+    _handle_checks("sliding right",
+                   {"operation": "Sliding (single)", "slideDir": "Right"}, "Door")
+    _handle_checks("glazed sliding leaf",
+                   {"operation": "Sliding (single)", "panelStyle": "Glass (window)"},
+                   "InnerFrame")
+    _panel_checks()
     _color_checks()
     _window_checks()
     return h.failures()

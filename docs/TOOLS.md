@@ -52,14 +52,19 @@ Double-click a stairs object to edit it.
   a glazed window in it. The window's width, height and sill height are set in
   the panel's **Window** group, which appears with that style; it is centred
   across the leaf and clamped to leave the leaf's frame around it.
-- **Knobs** — every leaf gets one, on its free edge (opposite the hinge) at the
-  height set in the panel's **Hardware** group. The knob swings — or slides —
-  with its leaf, and grips it from both faces. A door with no leaf (Opening
-  only) has none.
-- **Frame, leaf and knob colours** — the three are shaded apart by default: a
-  light grey frame, a mid-grey leaf, and a near-black knob. Setting a Material
-  on the door still wins (Arch's material colouring).
+- **Knobs and handles** — a swing leaf gets a round knob, a sliding leaf a
+  vertical pull handle; both sit on the free edge (opposite the hinge, or
+  opposite the leaf's travel) at the height set in the panel's **Hardware**
+  group. The handle grips the leaf from both faces and stays on the solid
+  stile of a glazed leaf. Hardware travels with its leaf. A door with no leaf
+  (Opening only) has none.
+- **Frame, leaf and hardware colours** — the three are shaded apart by
+  default: a light grey frame, a mid-grey leaf, and near-black hardware.
+  Setting a Material on the door still wins (Arch's material colouring).
 - **Swing controls** — hinge side and opening direction for hinged doors.
+- **Sliding direction** — a single sliding leaf travels Left or Right; the
+  handle goes on the opposite, free edge. Double sliding leaves always part
+  outward to their jambs, with both handles at the meeting edges.
 - **Opening animation** — a 0–100 % slider: swing leaves rotate about the
   hinge, sliding leaves slide aside.
 - **Panel position** — place the leaf Centered (default), flush Front, or flush

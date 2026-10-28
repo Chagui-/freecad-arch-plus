@@ -10,7 +10,8 @@
 # Door types supported: Single swing, Double swing, Single sliding,
 #   Double sliding, Opening only.
 # Panel styles: Solid, Glass (full), Glass (window) — a solid leaf with a
-#   glazed window in it. Every leaf gets a knob (see object.makeKnobShape).
+#   glazed window in it. Swing leaves get a knob, sliding leaves a vertical
+#   pull handle (see object.makeKnobShape / object.makeHandleShape).
 
 import math
 import os
@@ -54,6 +55,7 @@ PANEL_STYLES = [
 
 SWING_SIDES = ["Left", "Right"]
 SWING_DIRS = ["Inward", "Outward"]
+SLIDE_DIRS = ["Left", "Right"]
 PANEL_POSITIONS = ["Centered", "Front", "Back"]  # leaf position in frame depth
 
 # Knob and window-lite defaults. The knob's radius is its base plate's:
@@ -61,7 +63,13 @@ PANEL_POSITIONS = ["Centered", "Front", "Back"]  # leaf position in frame depth
 # sketch - not these numbers - is what the solid is built from.
 KNOB_RADIUS = 32.0            # base plate radius
 KNOB_FROM_EDGE = 75.0         # knob centre, measured in from the free edge
-KNOB_HEIGHT_DEFAULT = 1050.0  # standard handle height above the floor
+KNOB_HEIGHT_DEFAULT = 1050.0  # standard hardware height above the floor
+# A sliding leaf gets a vertical pull handle instead of a knob. Its sketch
+# circle is still the position/size carrier, so object.makeHandleShape sizes
+# the bar from KNOB_RADIUS; these two numbers mirror that builder and keep the
+# circle (and the bar) clear of the leaf's edges.
+HANDLE_FROM_EDGE = 45.0       # handle centre, in from the free edge
+HANDLE_BAR_LENGTH = KNOB_RADIUS * 10.0
 WINDOW_WIDTH_DEFAULT = 400.0
 WINDOW_HEIGHT_DEFAULT = 900.0
 WINDOW_SILL_DEFAULT = 900.0   # solid panel below the window
@@ -86,19 +94,14 @@ def _operationIsSliding(op):
 
 
 def _openingModeFor(op, leafIndex):
-    """Return the opening Mode integer for a leaf.
+    """Return the opening Mode integer for a swing leaf.
 
     leafIndex: 0 = left leaf, 1 = right leaf (for double doors).
 
-    Swing doors use Arc modes (hinged); sliding doors use Sliding mode.
-    The direction (Inward/Outward) is handled by toggling between Mode 1/2
-    (Arc 90 / Arc 90 inv) or Mode 9/10 (Sliding / Sliding inv).
+    Sliding leaves do not use this: their travel is chosen explicitly (see
+    _slideDirectionFor and _makeDoorGeometry), so Mode 9/10 is not derived
+    from a swing toggle that the sliding panel never showed.
     """
-    if _operationIsSliding(op):
-        return 9        # Both leaves use the same base mode; the inward/outward
-                        # toggle and the geometry of each leaf's hinge edge cause
-                        # them to slide in opposite (outward) world directions.
-    # Swing
     if leafIndex == 0:
         return 1        # Arc 90
     return 2            # Arc 90 inv
@@ -108,6 +111,19 @@ def _openingModeInv(op, leafIndex):
     """The inverted version of the opening mode (for inward/outward toggle)."""
     pairs = {1: 2, 2: 1, 9: 10, 10: 9}
     return pairs.get(_openingModeFor(op, leafIndex), 1)
+
+
+def _slideDirectionFor(spec):
+    """The travel direction of a single sliding leaf: "Left" or "Right".
+
+    New specs carry `slideDir`. Legacy specs predate it, and their direction
+    came from `swingDir` (Inward slid left, Outward slid right); derive it
+    from there so an existing door does not change direction when edited.
+    """
+    direction = spec.get("slideDir")
+    if direction in SLIDE_DIRS:
+        return direction
+    return "Right" if spec.get("swingDir") == "Outward" else "Left"
 
 
 # ---------------------------------------------------------------------------
@@ -124,13 +140,14 @@ def _makeDoorGeometry(spec):
         frameWidth : float (mm, jamb width h1)
         panelThk   : float (mm, door leaf thickness)
         frameDepth : float (mm, frame extrusion depth into wall)
-        swingSide  : str  ("Left" / "Right")
+        swingSide  : str  ("Left" / "Right") for swing doors
+        swingDir   : str  ("Inward" / "Outward") for swing doors
+        slideDir   : str  ("Left" / "Right") for a single sliding door
 
-    Always uses Mode1 (Arc 90) for the opening direction.  The user
-    can invert the opening later via the right-click context menu
-    ("Invert Opening Direction"), which toggles Mode1↔Mode2.
-    This avoids the unreliable "inward"/"outward" distinction that
-    depends on wall face orientation.
+    Swing leaves use Arc modes; the hinge side and inward/outward toggle pick
+    which way they open. A single sliding leaf uses Mode 10 and puts its hinge
+    on the trailing edge, so the chosen `slideDir` is the direction it travels.
+    Double sliding leaves both use Mode 10 and part outward to their jambs.
 
     Returns (sketch, windowParts).
     """
@@ -234,7 +251,7 @@ def _makeDoorGeometry(spec):
     window = style == "Glass (window)"
 
     # Hardware and window-lite settings (see DoorsPlusTaskPanel).
-    knob_h = spec.get("knobHeight", KNOB_HEIGHT_DEFAULT)
+    hardware_h = spec.get("knobHeight", KNOB_HEIGHT_DEFAULT)
     lite_w = spec.get("windowWidth", WINDOW_WIDTH_DEFAULT)
     lite_h = spec.get("windowHeight", WINDOW_HEIGHT_DEFAULT)
     lite_sill = spec.get("windowSill", WINDOW_SILL_DEFAULT)
@@ -242,7 +259,7 @@ def _makeDoorGeometry(spec):
     # Edge index helpers.  After the outer frame (2 rectangles via _addFrame),
     # the sketch has 8 edges (0–7).  Wire0 = edges 0-3, Wire1 = edges 4-7.
     # Every rectangle after that adds 4 more, so a leaf's hinge edge is known
-    # purely from the order its geometry is added — which is why the knob
+    # purely from the order its geometry is added — which is why the hardware
     # circles below are drawn only after every leaf rectangle.
     # Global edge indices (1-based, as used in WindowParts strings):
     _W1_LEFT   = 8           # Wire1 left   = global edge  7 → Edge8
@@ -299,32 +316,41 @@ def _makeDoorGeometry(spec):
             return wire, None
         return wire, _rectWire(*_liteRect(x0, y0, x1, y1))
 
-    def _knob(box, anchored_left, name):
-        """Draw the circle that places a leaf's knob and return its part.
+    def _hardware(box, anchored_left, name, part_type):
+        """Draw the circle that places a leaf's hardware and return its part.
 
-        The knob sits near the leaf's free edge — the one a hand reaches for,
-        opposite the edge the leaf is anchored on — and the circle carries
-        both its position and its size: object.makeKnobShape revolves the knob
-        around it.  The circle is drawn last of all leaf geometry so the hinge
-        edges above keep their indices."""
+        A swing leaf gets a knob, a sliding leaf a vertical pull handle; both
+        sit near the leaf's free edge — the one a hand reaches for, opposite
+        the edge the leaf is anchored on. The circle carries both position and
+        size: object.makeKnobShape revolves the knob around it, and
+        object.makeHandleShape scales the bar from it. The circle is drawn last
+        of all leaf geometry so the hinge edges above keep their indices."""
         x0, y0, x1, y1 = box
-        reach = max(KNOB_FROM_EDGE, KNOB_RADIUS * 1.5)
+        if part_type == "Handle":
+            reach = HANDLE_FROM_EDGE
+            # The bar is centred on the circle, so keep its whole length on
+            # the leaf rather than only the circle's radius.
+            margin = HANDLE_BAR_LENGTH / 2.0
+        else:
+            reach = max(KNOB_FROM_EDGE, KNOB_RADIUS * 1.5)
+            margin = KNOB_RADIUS
         x = x1 - reach if anchored_left else x0 + reach
         x = min(max(x, x0 + KNOB_RADIUS + 1.0), x1 - KNOB_RADIUS - 1.0)
-        y = min(max(knob_h, KNOB_RADIUS + 1.0), y1 - KNOB_RADIUS - 1.0)
+        y = min(max(hardware_h, margin + 1.0), y1 - margin - 1.0)
         wire = _takeWire()
         i = s.addGeometry(
             Part.Circle(FreeCAD.Vector(x, y, 0), FreeCAD.Vector(0, 0, 1), KNOB_RADIUS))
         s.addConstraint(Sketcher.Constraint("Radius", i, KNOB_RADIUS))
         s.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, i, 3, x))
         s.addConstraint(Sketcher.Constraint("DistanceY", -1, 1, i, 3, y))
-        return [name, "Knob", wire, "%.4f" % pt, leaf_off]
+        return [name, part_type, wire, "%.4f" % pt, leaf_off]
 
     # --- Leaves -----------------------------------------------------------
     # One entry per leaf. A leaf's box is its share of the door's inner
     # opening; the geometry is drawn first and the parts appended after, so
-    # every knob circle follows every leaf rectangle (see _knob).
+    # every hardware circle follows every leaf rectangle (see _hardware).
     leaves = []
+    hardware = "Handle" if sliding else "Knob"
 
     if leaf_count == 1:
         box = (jw, 0.0, w - jw, h - jw)
@@ -332,32 +358,43 @@ def _makeDoorGeometry(spec):
             leaf_wire, lite = "Wire1", None   # the opening itself is the leaf
         else:
             leaf_wire, lite = _addLeaf(box)
-        # A sliding leaf always travels away from its left edge, whichever
-        # side a swing door would have been hinged on.
-        anchored_left = sliding or ss == "Left"
+        if sliding:
+            # The hinge is the trailing edge: the leaf travels toward
+            # `slideDir`, so its free edge (and handle) is opposite it.
+            anchored_left = _slideDirectionFor(spec) == "Left"
+            mode = 10
+        else:
+            anchored_left = ss == "Left"
+            mode = _swingMode()
         leaves.append(dict(
             box=box, wire=leaf_wire, lite=lite, anchored_left=anchored_left,
-            hinge=_W1_LEFT if anchored_left else _W1_RIGHT, mode=_swingMode(),
-            panel="Door", frame="InnerFrame", glass="InnerGlass", knob="Knob"))
+            hinge=_W1_LEFT if anchored_left else _W1_RIGHT, mode=mode,
+            panel="Door", frame="InnerFrame", glass="InnerGlass",
+            hardware_name=hardware, hardware=hardware))
 
     elif leaf_count == 2:
         # Double door: two leaves meeting in the middle, each hinged at its
         # own jamb — so the left leaf's hinge edge is its left edge and the
-        # right leaf's its right edge.
+        # right leaf's its right edge. Sliding leaves both travel outward to
+        # their jambs (Mode 10 from opposite hinges), leaving the middle open.
         half = w / 2.0
+        left_hw = "Left" + hardware
+        right_hw = "Right" + hardware
         for box, hinge, anchored_left, names in (
                 ((jw, 0.0, half, h - jw), _L1_LEFT, True,
-                 ("LeftDoor", "LeftFrame", "LeftGlass", "LeftKnob")),
+                 ("LeftDoor", "LeftFrame", "LeftGlass", left_hw)),
                 ((half, 0.0, w - jw, h - jw), _L2_RIGHT, False,
-                 ("RightDoor", "RightFrame", "RightGlass", "RightKnob"))):
+                 ("RightDoor", "RightFrame", "RightGlass", right_hw))):
             leaf_wire, lite = _addLeaf(box)
             leaves.append(dict(
                 box=box, wire=leaf_wire, lite=lite, anchored_left=anchored_left,
-                hinge=hinge, mode=_swingMode(len(leaves)),
-                panel=names[0], frame=names[1], glass=names[2], knob=names[3]))
+                hinge=hinge, mode=10 if sliding else _swingMode(len(leaves)),
+                panel=names[0], frame=names[1], glass=names[2],
+                hardware_name=names[3], hardware=hardware))
 
     for leaf in leaves:
-        leaf["part"] = _knob(leaf["box"], leaf["anchored_left"], leaf["knob"])
+        leaf["part"] = _hardware(leaf["box"], leaf["anchored_left"],
+                                 leaf["hardware_name"], leaf["hardware"])
 
     for leaf in leaves:
         if leaf["lite"] is None:
@@ -376,7 +413,7 @@ def _makeDoorGeometry(spec):
             # the frame's transform (native FreeCAD convention, see
             # object.py buildShapes), so it swings/slides exactly with the
             # leaf. It must stay the entry right after its frame — and the
-            # knob, which inherits the same transform, after that.
+            # hardware, which inherits the same transform, after that.
             wp.append([leaf["glass"], "Glass panel", leaf["lite"],
                        "%.4f" % (pt / gla), glass_off])
         wp.append(leaf["part"])
@@ -408,7 +445,8 @@ def applyDoorSettings(obj, spec):
 
 def makeDoor(width=900.0, height=2100.0, operation="Single swing",
              panelStyle="Solid", frameWidth=70.0, panelThk=45.0,
-             frameDepth=100.0, swingSide="Left", swingDir="Inward"):
+             frameDepth=100.0, swingSide="Left", swingDir="Inward",
+             slideDir="Left"):
     """Create a _Window-based door object with the given parameters."""
     from . import object as doorsplus_object
 
@@ -425,6 +463,7 @@ def makeDoor(width=900.0, height=2100.0, operation="Single swing",
         frameDepth=frameDepth,
         swingSide=swingSide,
         swingDir=swingDir,
+        slideDir=slideDir,
     )
 
     sketch, wp = _makeDoorGeometry(spec)
@@ -617,6 +656,18 @@ class DoorsPlusTaskPanel:
         self._swingForm = swingForm
         outer.addWidget(swingBox)
 
+        # ---- Sliding ------------------------------------------------------
+        slideBox = QtGui.QGroupBox("Sliding")
+        slideForm = QtGui.QFormLayout(slideBox)
+        self.slideDir = QtGui.QComboBox()
+        self.slideDir.addItems(SLIDE_DIRS)
+        self.slideDir.setToolTip(
+            "Which way a single sliding leaf travels. The handle goes on the "
+            "opposite, free edge — the side you reach for.")
+        slideForm.addRow("Direction", self.slideDir)
+        self._slideBox = slideBox
+        outer.addWidget(slideBox)
+
         # ---- Dimensions ---------------------------------------------------
         dimBox = QtGui.QGroupBox("Dimensions")
         dimV = QtGui.QVBoxLayout(dimBox)
@@ -664,10 +715,11 @@ class DoorsPlusTaskPanel:
         hwForm = QtGui.QFormLayout(hwBox)
         self.knobHeight = self._len(KNOB_HEIGHT_DEFAULT)
         self.knobHeight.setToolTip(
-            "Height of the door knob above the door's base (about 1050 mm is "
-            "standard). The knob sits on the leaf's free edge, opposite the "
-            "hinge.")
-        hwForm.addRow("Kh · Knob height", self.knobHeight)
+            "Height of the door hardware above the door's base (about 1050 mm "
+            "is standard). It sits on the leaf's free edge, opposite the "
+            "hinge — or, for a sliding leaf, opposite its travel direction.")
+        self._hardwareLabel = QtGui.QLabel("Kh · Knob height")
+        hwForm.addRow(self._hardwareLabel, self.knobHeight)
         self._hardwareBox = hwBox
         outer.addWidget(hwBox)
 
@@ -749,7 +801,7 @@ class DoorsPlusTaskPanel:
         self.sill.valueChanged.connect(self._onSillChanged)
         self.opening.valueChanged.connect(self._onOpeningChanged)
         for c in (self.operation, self.panelStyle, self.panelPos, self.swingSide,
-                  self.swingDir, self.fireRating):
+                  self.swingDir, self.slideDir, self.fireRating):
             c.currentIndexChanged.connect(self._schedule)
         self.symbolPlan.toggled.connect(self._onSymbolToggled)
         self.symbolElev.toggled.connect(self._onSymbolToggled)
@@ -808,6 +860,7 @@ class DoorsPlusTaskPanel:
             frameDepth=self._mm(self.frameDepth),
             swingSide=self.swingSide.currentText(),
             swingDir=self.swingDir.currentText(),
+            slideDir=self.slideDir.currentText(),
             panelPos=self.panelPos.currentText(),
             knobHeight=self._mm(self.knobHeight),
             windowWidth=self._mm(self.windowWidth),
@@ -817,12 +870,17 @@ class DoorsPlusTaskPanel:
 
     def _syncRows(self):
         """Show only the rows the chosen operation and style use: swing
-        controls for hinged doors, the window's size for a glazed lite, and
-        the knob for any door with a leaf to mount it on."""
+        controls for hinged doors, a slide direction for a single sliding
+        leaf, the window's size for a glazed lite, and the hardware for any
+        door with a leaf to mount it on."""
         op = self.operation.currentText()
+        sliding = _operationIsSliding(op)
         self._swingBox.setVisible(op in ("Single swing", "Double swing"))
+        self._slideBox.setVisible(op == "Sliding (single)")
         self._windowBox.setVisible(self.panelStyle.currentText() == "Glass (window)")
         self._hardwareBox.setVisible(_operationNeedsLeaves(op))
+        self._hardwareLabel.setText(
+            "Hh · Handle height" if sliding else "Kh · Knob height")
 
     def _onOpeningChanged(self, val):
         self._openLbl.setText("%d%%" % val)
@@ -1010,6 +1068,7 @@ class DoorsPlusTaskPanel:
             self._setmm(self.frameDepth, spec.get("frameDepth", 100))
             self.swingSide.setCurrentText(spec.get("swingSide", "Left"))
             self.swingDir.setCurrentText(spec.get("swingDir", "Inward"))
+            self.slideDir.setCurrentText(_slideDirectionFor(spec))
             self.panelPos.setCurrentText(spec.get("panelPos", "Centered"))
             self._setmm(self.knobHeight, spec.get("knobHeight", KNOB_HEIGHT_DEFAULT))
             self._setmm(self.windowWidth, spec.get("windowWidth", WINDOW_WIDTH_DEFAULT))
@@ -1023,6 +1082,7 @@ class DoorsPlusTaskPanel:
             self._setmm(self.frameWidth, 70)
             self._setmm(self.panelThk, o.Frame.Value)
             self._setmm(self.frameDepth, 100)
+            self.slideDir.setCurrentText("Left")
             self._setmm(self.knobHeight, KNOB_HEIGHT_DEFAULT)
             self._setmm(self.windowWidth, WINDOW_WIDTH_DEFAULT)
             self._setmm(self.windowHeight, WINDOW_HEIGHT_DEFAULT)
@@ -1367,6 +1427,7 @@ class DoorsPlusCommand:
             frameDepth=self.frameDepth,
             swingSide="Left",
             swingDir="Inward",
+            slideDir="Left",
         )
 
         sketch, wp_list = _makeDoorGeometry(spec)

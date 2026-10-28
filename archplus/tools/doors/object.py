@@ -72,7 +72,8 @@ else:
     # \endcond
 
 # presets
-WindowPartTypes = ["Frame", "Solid panel", "Glass panel", "Louvre", "Knob"]
+WindowPartTypes = ["Frame", "Solid panel", "Glass panel", "Louvre", "Knob",
+                   "Handle"]
 WindowOpeningModes = [
     "None",
     "Arc 90",
@@ -97,25 +98,36 @@ KNOB_GRIP_RATIO = 0.75      # radius of the round grip
 KNOB_BASE_THK_RATIO = 0.16  # thickness of the base plate against the leaf
 KNOB_RADIUS_DEFAULT = 32.0  # base radius when a knob's wire is not a circle
 
+# A sliding leaf gets a vertical pull handle instead of a knob. Its sketch
+# circle is still the position/size carrier: these ratios of the circle's
+# radius size the bar, its stand-off from each leaf face, and the rods that
+# join the two bars through the leaf.
+HANDLE_BAR_RADIUS_RATIO = 0.35   # pull bar radius
+HANDLE_BAR_LENGTH_RATIO = 10.0   # pull bar length (gui.py mirrors this)
+HANDLE_STANDOFF_RATIO = 1.5      # bar axis distance out from the leaf face
+HANDLE_ROD_RADIUS_RATIO = 0.28   # through-rod radius
+
 # Part colours for a door, keyed by part type (the second WindowParts field).
 # Three greys deliberately far apart in value: the frame reads as a light
-# reveal around the leaf, and the knob reads as near-black hardware against
-# the leaf it is mounted on. A material set on the object still wins - see
-# getSolidMaterial().
+# reveal around the leaf, and the hardware (knob or handle) reads as
+# near-black against the leaf it is mounted on. A material set on the object
+# still wins - see getSolidMaterial().
 DOOR_PART_COLORS = {
     "Frame": (0.82, 0.82, 0.84, 1.0),
     "Solid panel": (0.45, 0.45, 0.47, 1.0),
     "Knob": (0.10, 0.10, 0.12, 1.0),
+    "Handle": (0.10, 0.10, 0.12, 1.0),
 }
 
 
-def knobCircle(wire):
-    """Returns (centre, base radius) of the circle that places a door knob.
+def hardwareCircle(wire):
+    """Returns (centre, base radius) of the circle that places door hardware.
 
-    The knob's wire is a circle in the base sketch: where it sits is where the
-    knob goes, and its radius is the base plate's. Anything else - a knob
-    element hand-drawn as a rectangle in the window editor - keeps the knob at
-    the centre of what was drawn, at the default radius."""
+    The hardware's wire is a circle in the base sketch: where it sits is where
+    the knob or handle goes, and its radius is the base plate's (and the
+    handle's scale). Anything else - a hardware element hand-drawn as a
+    rectangle in the window editor - keeps it at the centre of what was
+    drawn, at the default radius."""
 
     radius = KNOB_RADIUS_DEFAULT
     edges = wire.Edges
@@ -144,7 +156,7 @@ def makeKnobShape(wire, norm, thickness, depth):
 
     import Part
 
-    centre, radius = knobCircle(wire)
+    centre, radius = hardwareCircle(wire)
     unit = DraftVecUtils.scaleTo(norm, 1.0)
     near = centre.add(DraftVecUtils.scaleTo(norm, depth))
     far = near.add(DraftVecUtils.scaleTo(norm, thickness))
@@ -161,6 +173,57 @@ def makeKnobShape(wire, norm, thickness, depth):
         pieces.append(
             Part.makeSphere(grip, face.add(DraftVecUtils.scaleTo(direction, stem)))
         )
+    return pieces[0].fuse(pieces[1:])
+
+
+def makeHandleShape(wire, norm, thickness, depth, up=None):
+    """Returns the solid of a sliding door's pull handle, around `wire`.
+
+    A handle is a vertical bar on each face of the leaf, joined through it by
+    two rods so the result is one solid (colorize colours one part per solid,
+    see makeKnobShape). The sketch circle gives the bar's centre and scale:
+    its radius sets the bar's radius, length and stand-off.
+
+    `thickness` is the leaf's thickness and `depth` how far the leaf's front
+    face lies along `norm`. `up` is the leaf's vertical direction in world
+    space; when it is missing or parallel to the normal, world Z projected
+    onto the leaf plane is used instead."""
+
+    import Part
+
+    centre, radius = hardwareCircle(wire)
+    unit = DraftVecUtils.scaleTo(norm, 1.0)
+
+    if up is None:
+        up = FreeCAD.Vector(0, 0, 1)
+    # Vector.multiply() scales in place; use DraftVecUtils.scale so `unit`
+    # stays the leaf normal for the rest of the builder.
+    up = up.sub(DraftVecUtils.scale(unit, up.dot(unit)))
+    if up.Length < 1e-9:
+        up = unit.cross(FreeCAD.Vector(1, 0, 0))
+        if up.Length < 1e-9:
+            up = unit.cross(FreeCAD.Vector(0, 1, 0))
+    up = DraftVecUtils.scaleTo(up, 1.0)
+
+    near = centre.add(DraftVecUtils.scaleTo(norm, depth))
+    far = near.add(DraftVecUtils.scaleTo(norm, thickness))
+    bar_r = radius * HANDLE_BAR_RADIUS_RATIO
+    bar_len = radius * HANDLE_BAR_LENGTH_RATIO
+    standoff = radius * HANDLE_STANDOFF_RATIO
+    rod_r = radius * HANDLE_ROD_RADIUS_RATIO
+
+    pieces = []
+    # One vertical bar standing off each face.
+    for face, direction in ((near, unit.negative()), (far, unit)):
+        bar_centre = face.add(DraftVecUtils.scale(direction, standoff))
+        start = bar_centre.sub(DraftVecUtils.scale(up, bar_len / 2.0))
+        pieces.append(Part.makeCylinder(bar_r, bar_len, start, up))
+    # Two rods from the near bar to the far one, passing through the leaf.
+    for offset in (-bar_len / 2.0 + bar_r, bar_len / 2.0 - bar_r):
+        start = centre.add(DraftVecUtils.scale(up, offset))
+        start = start.add(DraftVecUtils.scale(unit, depth - standoff))
+        pieces.append(Part.makeCylinder(
+            rod_r, thickness + 2.0 * standoff, start, unit))
     return pieces[0].fuse(pieces[1:])
 
 
@@ -669,6 +732,14 @@ class _Window(ArchComponent.Component):
                         zov = DraftVecUtils.scaleTo(norm, zof)
                 if ptype == "Knob":
                     shape = makeKnobShape(ext, norm, thk, zof)
+                elif ptype == "Handle":
+                    up = None
+                    try:
+                        up = obj.Base.getGlobalPlacement().Rotation.multVec(
+                            FreeCAD.Vector(0, 1, 0))
+                    except Exception:
+                        pass
+                    shape = makeHandleShape(ext, norm, thk, zof, up)
                 else:
                     if thk:
                         exv = DraftVecUtils.scaleTo(norm, thk)

@@ -59,16 +59,16 @@ def _close(obj, z_plane, xmin, xmax, label):
 def _body_bbox(obj):
     """The bounding box of an opening's body, leaving out its hardware.
 
-    A door knob protrudes from both faces of its leaf, so the whole-shape box
-    overhangs the wall it is hosted in by design. The placement contract these
-    checks are about is where the body of the opening sits, so the knob's
-    solids are left out of the measurement."""
+    A door's hardware protrudes from both faces of its leaf, so the whole-
+    shape box overhangs the wall it is hosted in by design. The placement
+    contract these checks are about is where the body of the opening sits, so
+    the knob/handle solids are left out of the measurement."""
     parts = list(getattr(obj, "WindowParts", None) or [])
     solids = obj.Shape.Solids
     if parts and len(parts) % 5 == 0 and len(parts) == 5 * len(solids):
         box = FreeCAD.BoundBox()
         for i, solid in enumerate(solids):
-            if parts[i * 5 + 1] == "Knob":
+            if parts[i * 5 + 1] in ("Knob", "Handle"):
                 continue
             box.add(solid.BoundBox)
         if box.isValid():
