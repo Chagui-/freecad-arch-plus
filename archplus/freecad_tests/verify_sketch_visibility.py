@@ -109,6 +109,7 @@ def run():
     p.frameDepth = _Num(100.0)
     p.swingSide = _Combo("Left")
     p.swingDir = _Combo("Inward")
+    p.slideDir = _Combo("Left")
     p.panelPos = _Combo("Centered")
     p.knobHeight = _Num(1050.0)
     p.windowWidth = _Num(400.0)

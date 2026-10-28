@@ -30,7 +30,8 @@ def _spec(**over):
         operation="Single swing", panelStyle="Solid",
         width=900.0, height=2100.0, frameWidth=70.0,
         panelThk=45.0, frameDepth=100.0,
-        swingSide="Left", swingDir="Inward", panelPos="Centered",
+        swingSide="Left", swingDir="Inward", slideDir="Left",
+        panelPos="Centered",
         knobHeight=1050.0, windowWidth=400.0, windowHeight=900.0,
         windowSill=900.0,
     )
@@ -163,16 +164,19 @@ def test_glass_directly_follows_its_frame():
                 % (op, style, glass, frame, names)
 
 
-# --- knobs ----------------------------------------------------------------
-def test_every_leaf_gets_a_knob_that_follows_it():
-    # A knob carries no Edge/Mode of its own: it inherits its leaf's opening
+# --- hardware -------------------------------------------------------------
+def test_every_leaf_gets_hardware_that_follows_it():
+    # Hardware carries no Edge/Mode of its own: it inherits its leaf's opening
     # transform, exactly like the glass does, which only holds while it is the
-    # entry right after that leaf. "Opening only" has no leaf, so no knob.
+    # entry right after that leaf. "Opening only" has no leaf, so no hardware.
+    # Swing leaves get a knob, sliding leaves a pull handle.
     cases = {
         "Single swing": ["OuterFrame", "Door", "Knob"],
-        "Sliding (single)": ["OuterFrame", "Door", "Knob"],
+        "Sliding (single)": ["OuterFrame", "Door", "Handle"],
         "Double swing": ["OuterFrame", "LeftDoor", "LeftKnob",
                          "RightDoor", "RightKnob"],
+        "Sliding (double)": ["OuterFrame", "LeftDoor", "LeftHandle",
+                             "RightDoor", "RightHandle"],
         "Opening only": ["OuterFrame"],
     }
     for op, expected in cases.items():
@@ -185,13 +189,19 @@ def test_every_leaf_gets_a_knob_that_follows_it():
 
 def test_a_knob_is_typed_as_hardware_with_no_movement_of_its_own():
     # The part type is the builder's interface to the object: it decides that
-    # this part is revolved into a knob and coloured as hardware. A knob must
-    # carry no Edge/Mode either - it inherits its leaf's opening transform, so
-    # giving it one of its own would leave it behind when the leaf moves. The
-    # three types are what keeps the frame, the leaf and the knob in three
-    # different greys (object.DOOR_PART_COLORS).
+    # this part is revolved into a knob (or built as a pull handle) and
+    # coloured as hardware. Hardware must carry no Edge/Mode either - it
+    # inherits its leaf's opening transform, so giving it one of its own would
+    # leave it behind when the leaf moves. The three types are what keeps the
+    # frame, the leaf and the hardware in three different greys
+    # (object.DOOR_PART_COLORS).
     _, flat = dg._makeDoorGeometry(_spec())
     assert _types(flat) == ["Frame", "Solid panel", "Knob"]
+    wires = flat[2 * 5 + 2]
+    assert "Edge" not in wires and "Mode" not in wires, wires
+
+    _, flat = dg._makeDoorGeometry(_spec(operation="Sliding (single)"))
+    assert _types(flat) == ["Frame", "Solid panel", "Handle"]
     wires = flat[2 * 5 + 2]
     assert "Edge" not in wires and "Mode" not in wires, wires
 
@@ -217,6 +227,53 @@ def test_knob_circles_place_one_knob_per_leaf_on_its_free_edge():
             _spec(operation="Single swing", swingSide=side))
         x = _circles(sketch)[0].center.x
         assert (x < 450.0) == below, "hinge %s put the knob at %g" % (side, x)
+
+
+def _edge_mode(flat, name):
+    edge = mode = None
+    for tok in _groups(flat)[name].split(","):
+        if tok.startswith("Edge"):
+            edge = int(tok[4:])
+        elif tok.startswith("Mode"):
+            mode = int(tok[4:])
+    return edge, mode
+
+
+def test_single_sliding_direction_sets_travel_hinge_and_handle():
+    # The leaf travels toward `slideDir`, so its hinge is the trailing edge
+    # and the handle sits on the opposite, free edge. Mode 10 slides away
+    # from the hinge; the hinge edge alone would be ambiguous.
+    for direction, edge, below in (("Left", 8, False), ("Right", 6, True)):
+        sketch, flat = dg._makeDoorGeometry(
+            _spec(operation="Sliding (single)", slideDir=direction))
+        assert _edge_mode(flat, "Door") == (edge, 10), direction
+        x = _circles(sketch)[0].center.x
+        assert (x < 450.0) == below, "slide %s put the handle at %g" % (direction, x)
+        want = 70.0 + dg.HANDLE_FROM_EDGE if below else 900.0 - 70.0 - dg.HANDLE_FROM_EDGE
+        assert abs(x - want) < 1e-9
+
+
+def test_double_sliding_parts_outward_with_handles_at_the_meeting_edges():
+    # Both leaves keep Mode 10 from opposite hinges, so they travel outward to
+    # their jambs; their free edges — and handles — meet in the middle.
+    sketch, flat = dg._makeDoorGeometry(_spec(operation="Sliding (double)"))
+    assert _edge_mode(flat, "LeftDoor") == (12, 10)
+    assert _edge_mode(flat, "RightDoor") == (14, 10)
+    left, right = sorted(c.center.x for c in _circles(sketch))
+    assert left < 450.0 < right and right - left > 2 * dg.KNOB_RADIUS
+
+
+def test_handle_circle_keeps_the_bar_inside_the_leaf():
+    # The circle is the handle's centre, so it has to clear half the bar —
+    # not just its radius — at either end of the leaf.
+    for knob_h, below in ((10.0, True), (5000.0, False)):
+        sketch, _ = dg._makeDoorGeometry(
+            _spec(operation="Sliding (single)", knobHeight=knob_h))
+        y = _circles(sketch)[0].center.y
+        if below:
+            assert y - dg.HANDLE_BAR_LENGTH / 2.0 >= 0.0
+        else:
+            assert y + dg.HANDLE_BAR_LENGTH / 2.0 <= 2100.0 - 70.0
 
 
 # --- a door with a window in it -------------------------------------------
@@ -245,6 +302,22 @@ def test_an_over_large_window_stays_inside_the_leaf():
 
 
 # --- edit round-trip ------------------------------------------------------
+class _Visibility:
+    def __init__(self):
+        self.visible = None
+
+    def setVisible(self, value):
+        self.visible = bool(value)
+
+
+class _Label:
+    def __init__(self):
+        self.text = ""
+
+    def setText(self, value):
+        self.text = value
+
+
 def _panel(obj):
     p = object.__new__(dg.DoorsPlusTaskPanel)
     p.obj, p.editing, p._building, p._sketch = obj, True, True, None
@@ -252,6 +325,7 @@ def _panel(obj):
     p.width = FakeNum(); p.height = FakeNum()
     p.frameWidth = FakeNum(); p.frameDepth = FakeNum(); p.panelThk = FakeNum()
     p.swingSide = FakeCombo(); p.swingDir = FakeCombo(); p.panelPos = FakeCombo()
+    p.slideDir = FakeCombo()
     p.sill = FakeNum(); p.opening = FakeNum()
     p.knobHeight = FakeNum()
     p.windowWidth = FakeNum(); p.windowHeight = FakeNum(); p.windowSill = FakeNum()
@@ -303,6 +377,49 @@ def test_legacy_object_without_spec_falls_back():
     p = _panel(obj)
     p._loadFromObject()                   # must not raise without a stored spec
     assert p._collect()["width"] == 900.0
+    assert p._collect()["slideDir"] == "Left"
+
+
+def test_legacy_sliding_spec_derives_its_direction():
+    # Before slideDir existed, a single sliding door's travel came from
+    # swingDir: Inward slid left, Outward slid right. Editing such a door must
+    # keep it where it was, not snap it to the new default.
+    for old, want in (("Inward", "Left"), ("Outward", "Right")):
+        spec = _spec(operation="Sliding (single)", swingDir=old)
+        del spec["slideDir"]
+        p = _panel(_configured_obj(spec))
+        p._loadFromObject()
+        assert p._collect()["slideDir"] == want
+
+
+def test_panel_offers_slide_direction_only_for_single_sliding():
+    # The slide direction is meaningful only for one sliding leaf; double
+    # sliding always parts outward, and swing/opening-only have no travel.
+    p = _panel(_configured_obj(_spec()))
+    p._swingBox = _Visibility()
+    p._slideBox = _Visibility()
+    p._windowBox = _Visibility()
+    p._hardwareBox = _Visibility()
+    p._hardwareLabel = _Label()
+    p._loadFromObject()
+
+    p._syncRows()
+    assert p._swingBox.visible and not p._slideBox.visible
+    assert p._hardwareBox.visible
+    assert p._hardwareLabel.text.startswith("Kh")
+
+    p.operation.setCurrentText("Sliding (single)")
+    p._syncRows()
+    assert not p._swingBox.visible and p._slideBox.visible
+    assert p._hardwareLabel.text.startswith("Hh")
+
+    p.operation.setCurrentText("Sliding (double)")
+    p._syncRows()
+    assert not p._swingBox.visible and not p._slideBox.visible
+
+    p.operation.setCurrentText("Opening only")
+    p._syncRows()
+    assert not p._hardwareBox.visible
 
 
 def test_rebuild_hides_the_new_base_sketch():
