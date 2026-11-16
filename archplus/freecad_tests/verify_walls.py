@@ -1653,6 +1653,56 @@ def _w37_stale_claim_repair(doc):
             "volume %.0f (was %.0f)" % (seg.Shape.Volume, volume))
 
 
+def _w39_conflict_repair(doc):
+    """Repair claims settles an edge two unrelated segments claim.
+
+    The edge builds nowhere before the repair, so it has no face to pick and
+    Split / move segment cannot reach it. Repair keeps it on the first
+    claimant, making the run build again; the other segment keeps its other
+    claims and the wall ends with every edge built exactly once."""
+    sk = _line_sketch(doc, [
+        ((0, 0), (4000, 0), False),
+        ((0, 3000), (4000, 3000), False),
+    ])
+    wall = walls_object.makeWall(doc, sketch=sk)
+    first = wall.Group[0]
+    first.Fallback = False
+    first.Edges = [(sk, ("Edge1",))]
+    second = walls_object.makeSegment(wall, name="second")
+    second.Edges = [(sk, ("Edge1", "Edge2"))]
+    doc.recompute()
+    h.check("W39 the conflicted edge builds nowhere",
+            abs(first.Shape.Volume) < 1e-9
+            and abs(second.Shape.Volume
+                    - _expected_volume(300, 2800, [4000])) < 1e-3,
+            "first=%.0f second=%.0f"
+            % (first.Shape.Volume, second.Shape.Volume))
+
+    summary = walls_object.repairWallClaims(wall)
+    doc.recompute()
+    h.check("W39 the repair reports the conflict it settled",
+            summary["conflicts"] == [("Edge1", first.Label, [second.Label])],
+            repr(summary["conflicts"]))
+    h.check("W39 the edge builds on the first claimant",
+            abs(first.Shape.Volume
+                - _expected_volume(300, 2800, [4000])) < 1e-3
+            and abs(second.Shape.Volume
+                    - _expected_volume(300, 2800, [4000])) < 1e-3,
+            "first=%.0f second=%.0f"
+            % (first.Shape.Volume, second.Shape.Volume))
+
+    captured = []
+    orig = FreeCAD.Console.PrintWarning
+    FreeCAD.Console.PrintWarning = captured.append
+    try:
+        wall.Proxy._reportClaims(wall)
+    finally:
+        FreeCAD.Console.PrintWarning = orig
+    h.check("W39 no claim warning remains after the repair",
+            not any("claimed by several segments" in m for m in captured),
+            repr(captured))
+
+
 def _drawing_fingerprint(view):
     """The drawing's own geometry — what a stale view would not have.
 
@@ -1784,3 +1834,5 @@ def run():
     h.run_part("W37", _w37_stale_claim_repair, doc)
     doc = h.fresh_doc()
     h.run_part("W38", _w38_live_edit_skips_drawings, doc)
+    doc = h.fresh_doc()
+    h.run_part("W39", _w39_conflict_repair, doc)

@@ -183,6 +183,50 @@ def test_unrelated_duplicate_claim_still_builds_nowhere():
     assert any("Edge1" in w for w in warnings)
 
 
+def test_claim_conflicts_reports_only_unrelated_claims():
+    group = _node("group", ("Edge1",))
+    short = _node("short", ("Edge1",))
+    group.children.append(short)
+    other = _node("other", ("Edge1",))
+    conflicts = model.claim_conflicts([group, other], EDGES)
+    assert conflicts == {"Edge1": [group, short, other]}
+
+    # An ancestor and its descendant are not a conflict: the descendant
+    # already takes the edge from the ancestor.
+    assert model.claim_conflicts([group], EDGES) == {}
+
+
+def test_plan_conflict_repair_keeps_the_first_deepest_claimant():
+    group = _node("group", ("Edge1",))
+    short = _node("short", ("Edge1",))
+    group.children.append(short)
+    other = _node("other", ("Edge1",))
+    drops, choices, conflicts = model.plan_conflict_repair(
+        [group, other], EDGES)
+    assert choices == {"Edge1": short}
+    assert drops == {other: {"Edge1"}}
+    assert conflicts == {"Edge1": [group, short, other]}
+
+
+def test_plan_conflict_repair_honors_an_explicit_keep():
+    a = _node("a", ("Edge1",))
+    b = _node("b", ("Edge1",))
+    drops, choices, _conflicts = model.plan_conflict_repair(
+        [a, b], EDGES, keep={"Edge1": b})
+    assert choices == {"Edge1": b}
+    assert drops == {a: {"Edge1"}}
+
+
+def test_plan_conflict_repair_ignores_a_keep_that_does_not_claim():
+    a = _node("a", ("Edge1",))
+    b = _node("b", ("Edge1",))
+    outsider = _node("outsider")
+    drops, choices, _conflicts = model.plan_conflict_repair(
+        [a, b], EDGES, keep={"Edge1": outsider})
+    assert choices == {"Edge1": a}
+    assert drops == {b: {"Edge1"}}
+
+
 # --- match_edge --------------------------------------------------------------
 
 def test_match_edge_finds_nearest_polyline():
@@ -397,6 +441,18 @@ def test_repair_drops_the_duplicate_of_a_folded_claim():
         ["Edge17"], ["Edge17", "edge17"])
     assert kept == ["Edge17"]
     assert dropped == ["edge17"] and folded == []
+
+
+def test_repair_dedupes_across_the_segments_links():
+    # `Edges` stores one list per link, but the resolver sees one claim list,
+    # so the same edge in two links is a duplicate all the same.
+    seen = set()
+    kept1, dropped1, _ = model.repair_claims(
+        ["Edge1", "Edge2"], ["Edge1"], seen)
+    kept2, dropped2, _ = model.repair_claims(
+        ["Edge1", "Edge2"], ["edge1", "Edge2"], seen)
+    assert (kept1, dropped1) == (["Edge1"], [])
+    assert (kept2, dropped2) == (["Edge2"], ["edge1"])
 
 
 def test_repair_drops_a_mangled_numeric_claim():

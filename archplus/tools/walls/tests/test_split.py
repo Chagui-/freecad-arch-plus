@@ -515,3 +515,64 @@ def test_observer_skips_redirect_for_stale_selection(monkeypatch):
                         lambda root_, sub, point: (seg, [sub]))
     obs._redirect(gui, root, "Face2", (1.0, 2.0, 3.0))
     assert calls == []
+
+
+def _sketch(*names):
+    return types.SimpleNamespace(
+        Name="Sketch", Label="Sketch",
+        Shape=types.SimpleNamespace(
+            ElementMap={("e%d" % i): n for i, n in enumerate(names)}))
+
+
+def _claimed(seg):
+    return [s for _link, subs in (seg.Edges or []) for s in subs]
+
+
+def test_repair_wall_claims_settles_conflicts_and_stale_claims():
+    sk = _sketch("Edge1", "Edge2", "Edge3")
+    a = _segment("a")
+    a.Base = sk
+    a.Edges = [(sk, ("Edge1", "edge1", "Edge9"))]
+    b = _segment("b")
+    b.Base = sk
+    b.Edges = [(sk, ("Edge1", "Edge2"))]
+    root = _root(a, b)
+    root.Base = sk
+
+    summary = walls_object.repairWallClaims(root)
+
+    assert _claimed(a) == ["Edge1"]
+    assert _claimed(b) == ["Edge2"]
+    assert summary["dropped"] == [("a", "edge1"), ("a", "Edge9")]
+    assert summary["conflicts"] == [("Edge1", "a", ["b"])]
+
+
+def test_repair_wall_claims_honors_a_chosen_owner():
+    sk = _sketch("Edge1", "Edge2")
+    a = _segment("a")
+    a.Base = sk
+    a.Edges = [(sk, ("Edge1",))]
+    b = _segment("b")
+    b.Base = sk
+    b.Edges = [(sk, ("Edge1",))]
+    root = _root(a, b)
+    root.Base = sk
+
+    summary = walls_object.repairWallClaims(root, keep={"Edge1": b})
+
+    assert _claimed(a) == []
+    assert _claimed(b) == ["Edge1"]
+    assert summary["conflicts"] == [("Edge1", "b", ["a"])]
+
+
+def test_repair_segment_claims_dedupes_across_links():
+    sk = _sketch("Edge1", "Edge2")
+    seg = _segment("a")
+    seg.Base = sk
+    seg.Edges = [(sk, ("Edge1",)), (sk, ("Edge1", "Edge2"))]
+
+    dropped, folded = walls_object.repairSegmentClaims(seg)
+
+    assert dropped == ["Edge1"] and folded == []
+    assert [(link, subs) for link, subs in seg.Edges] == [
+        (sk, ("Edge1",)), (sk, ("Edge2",))]

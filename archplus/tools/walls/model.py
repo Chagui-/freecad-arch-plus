@@ -82,6 +82,85 @@ class ClaimNode:
         self.children = []
 
 
+def _label(node):
+    return getattr(node.node, "Label", node.node)
+
+
+def _claim_owners(nodes, sketch_edge_names):
+    """Map each claimed sketch edge to its claimants, and collect the claims
+    that name an edge the sketch does not have. Both stay in claim order."""
+    sketch_set = set(sketch_edge_names)
+    owners = {}
+    missing = []
+    for node, subs in _iter_claims(nodes):
+        for sub in subs:
+            if sub not in sketch_set:
+                missing.append((node, sub))
+                continue
+            owners.setdefault(sub, []).append(node)
+    return owners, missing
+
+
+def _conflicted_claims(owners, ancestors):
+    """The edges claimed by two segments that are neither ancestor nor
+    descendant of each other: those edges build nowhere."""
+    out = {}
+    for sub, ns in owners.items():
+        for i, a in enumerate(ns):
+            if any(a not in ancestors[b] and b not in ancestors[a]
+                   for b in ns[i + 1:]):
+                out[sub] = ns
+                break
+    return out
+
+
+def claim_conflicts(nodes, sketch_edge_names):
+    """{subname: [ClaimNode, ...]} for edges two unrelated segments claim.
+
+    A claim by a descendant takes the edge from its ancestor (the descendant
+    builds it), so that pair is not a conflict. Two claimants on branches
+    that are neither ancestor nor descendant of each other leave the edge
+    building nowhere, which is what `resolve_claims` warns about."""
+    owners, _missing = _claim_owners(nodes, sketch_edge_names)
+    return _conflicted_claims(owners, _ancestor_sets(nodes))
+
+
+def plan_conflict_repair(nodes, sketch_edge_names, keep=None):
+    """Choose one claimant per conflicted edge and the claims to drop.
+
+    keep: optional {subname: ClaimNode} choice. A node that does not claim
+    the edge is ignored.
+
+    The default owner is the first claimant that no other claimant descends
+    from — the deepest claimant in document order, which is the segment the
+    normal ancestor/descendant rule would let build the edge. Claims on the
+    owner's ancestors are left alone: the owner already shadows them, and
+    dropping them would lose data the user may want when the tree changes.
+
+    Returns (drops, choices, conflicts):
+      drops: {ClaimNode: set(subnames)} claims to remove from that node
+      choices: {subname: ClaimNode} the claimant that builds after the repair
+      conflicts: {subname: [ClaimNode, ...]} the conflicts found
+    """
+    owners, _missing = _claim_owners(nodes, sketch_edge_names)
+    ancestors = _ancestor_sets(nodes)
+    conflicts = _conflicted_claims(owners, ancestors)
+    drops, choices = {}, {}
+    for sub in sort_edge_names(conflicts):
+        ns = conflicts[sub]
+        owner = (keep or {}).get(sub)
+        if owner not in ns:
+            owner = next((n for n in ns
+                          if not any(n is not d and n in ancestors[d]
+                                     for d in ns)), ns[0])
+        choices[sub] = owner
+        protected = {owner} | ancestors[owner]
+        for n in ns:
+            if n not in protected:
+                drops.setdefault(n, set()).add(sub)
+    return drops, choices, conflicts
+
+
 def resolve_claims(nodes, sketch_edge_names):
     """Distribute sketch edges over a claim tree.
 
@@ -119,23 +198,19 @@ def resolve_claims(nodes, sketch_edge_names):
 
     sketch_set = set(sketch_edge_names)
 
-    owners = {}
-    for node, subs in _iter_claims(nodes):
-        for sub in subs:
-            if sub not in sketch_set:
-                warnings.append("Claim on missing edge %s ignored" % sub)
-                continue
-            owners.setdefault(sub, []).append(node)
-    ancestors = _ancestor_sets(nodes)
-    conflicted = set()
-    for sub, ns in owners.items():
-        for i, a in enumerate(ns):
-            for b in ns[i + 1:]:
-                if a not in ancestors[b] and b not in ancestors[a]:
-                    conflicted.add(sub)
-    for sub in sorted(conflicted):
+    owners, missing = _claim_owners(nodes, sketch_edge_names)
+    for node, sub in missing:
         warnings.append(
-            "Edge %s claimed by several segments; it builds nowhere" % sub)
+            "Claim on missing edge %s ignored (segment '%s')"
+            % (sub, _label(node)))
+    ancestors = _ancestor_sets(nodes)
+    conflicted = _conflicted_claims(owners, ancestors)
+    for sub in sorted(conflicted):
+        claimants = ", ".join("'%s'" % _label(n) for n in conflicted[sub])
+        warnings.append(
+            "Sketch edge %s claimed by several segments (%s); it builds "
+            "nowhere — open the wall's edit panel and click Repair claims"
+            % (sub, claimants))
 
     fallback_edges = sketch_set - set(owners) if fallback_nodes else frozenset()
     fallback_node = fallback_nodes[0] if fallback_nodes else None
@@ -145,7 +220,7 @@ def resolve_claims(nodes, sketch_edge_names):
     def assign(n):
         below = frozenset().union(*(assign(c) for c in n.children)) \
             if n.children else frozenset()
-        edges = (set(n.claimed) & sketch_set) - conflicted - below
+        edges = (set(n.claimed) & sketch_set) - set(conflicted) - below
         if n is fallback_node:
             edges |= (fallback_edges - below)
         built[n.node] = frozenset(edges)
@@ -156,7 +231,7 @@ def resolve_claims(nodes, sketch_edge_names):
     return built, warnings
 
 
-def repair_claims(sketch_edge_names, subs):
+def repair_claims(sketch_edge_names, subs, seen=None):
     """The edge subnames of `subs` the sketch can actually resolve.
 
     A claim the sketch cannot resolve builds nothing: `resolve_claims`
@@ -172,6 +247,12 @@ def repair_claims(sketch_edge_names, subs):
     up claimed once. Anything else the sketch does not have is dropped —
     it was already building nothing, so the geometry only loses the warning.
 
+    seen: optional set of canonical names already kept by earlier links of
+    the same segment. A claim list is stored per link, but the claims are
+    one list to the resolver, so a duplicate across links is still a
+    duplicate. Callers repairing a whole segment pass one set through every
+    link; the default starts a fresh one.
+
     Returns (kept, dropped, folded), all in the given order: the names to
     write back, the ones that resolve to nothing, and the (from, to) pairs
     whose spelling changed and which were kept.
@@ -180,17 +261,19 @@ def repair_claims(sketch_edge_names, subs):
     by_case = {}
     for name in names:
         by_case.setdefault(name.lower(), name)
+    seen = set() if seen is None else seen
     kept, dropped, folded = [], [], []
     for sub in subs:
         canonical = sub if sub in names else by_case.get(sub.lower())
         if canonical is None:
             dropped.append(sub)
-        elif canonical in kept:
+        elif canonical in seen:
             dropped.append(sub)
         else:
             if sub != canonical:
                 folded.append((sub, canonical))
             kept.append(canonical)
+            seen.add(canonical)
     return kept, dropped, folded
 
 

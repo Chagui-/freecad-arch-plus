@@ -128,6 +128,16 @@ class WallPlusTaskPanel:
         self.stats = QtGui.QLabel()
         self.stats.setStyleSheet("color: #2e7d32;")
         skV.addWidget(self.stats)
+        self.repair = QtGui.QPushButton("Repair claims")
+        self.repair.setToolTip(
+            "Drop claims the sketch no longer has, and settle each edge two "
+            "segments claim on the first segment in the wall order. The run "
+            "then builds again and can be moved with Split / move segment.")
+        self.repair.clicked.connect(self._repairClaims)
+        skV.addWidget(self.repair)
+        skV.addWidget(_desc("Repair keeps a conflicting edge on the first "
+                            "segment in the wall order; reassign it afterwards "
+                            "with Split / move segment."))
         outer.addWidget(skBox)
 
         bodyBox = QtGui.QGroupBox("Body & drawings")
@@ -254,6 +264,17 @@ class WallPlusTaskPanel:
                                % (len(claimed), total - len(claimed)))
         except Exception:
             self.stats.setText("")
+
+    def _repairClaims(self):
+        try:
+            summary = walls_object.repairWallClaims(self.obj)
+            _refreshLive(self.obj)
+            self._updateStats()
+            if not (summary["dropped"] or summary["folded"]
+                    or summary["conflicts"]):
+                self.stats.setText("Claims are clean")
+        except Exception as exc:
+            FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
     def _startPreview(self):
         doc = FreeCAD.ActiveDocument
@@ -580,6 +601,12 @@ class WallSegmentTaskPanel:
         clV.addWidget(_desc("Split / reassign edges with \"Split / move "
                             "segment…\" after picking wall faces in the 3D "
                             "view. Fallback and Sketch are set in the wall panel."))
+        self.repair = QtGui.QPushButton("Repair wall claims")
+        self.repair.setToolTip(
+            "Drop claims the sketch no longer has, and settle each edge two "
+            "segments claim on the first segment in the wall order.")
+        self.repair.clicked.connect(self._repairClaims)
+        clV.addWidget(self.repair)
         outer.addWidget(clBox)
 
         self._timer = QtCore.QTimer()
@@ -692,6 +719,17 @@ class WallSegmentTaskPanel:
                                % (len(mine), auto))
         except Exception:
             self.stats.setText("")
+
+    def _repairClaims(self):
+        try:
+            summary = walls_object.repairWallClaims(self.obj)
+            _refreshLive(self.obj)
+            self._updateStats()
+            if not (summary["dropped"] or summary["folded"]
+                    or summary["conflicts"]):
+                self.stats.setText("Claims are clean")
+        except Exception as exc:
+            FreeCAD.Console.PrintError("ArchPlus: %s\n" % exc)
 
     def accept(self):
         self._timer.stop()

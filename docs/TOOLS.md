@@ -233,8 +233,8 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   carries that index. The tagging is free (2 ms on a two-segment wall) and
   changes no geometry: same volume, faces, edges and every face area as an
   untagged build.
-- **Split / move segment** — the **Split / move segment…** entry lives in
-  the **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
+- **Split / move segment** — the **Split / move segment…** entry lives in the
+  **ArchPlus** toolbar, behind the drop arrow of the grouped **Walls**
   button (there is no tree or 3D context-menu entry), greyed out until a
   wall face is selected. Clicking a wall face selects the wall itself —
   FreeCAD attributes picks of claimed children to the top claim parent —
@@ -250,6 +250,15 @@ right-click → **Reposition (pick point)** to move it with the mouse.
   Splitting requires picked faces — running the command with no face picked
   prints a Report-view warning and changes nothing. Each clicked face moves
   the run nearest to the click.
+- **Repair claims** — the **Edit Wall** and **Edit Segment** panels carry a
+  **Repair claims** button. It drops claims the sketch no longer has, folds
+  case-variant spellings to the sketch's own (`edge15` → `Edge15`), removes
+  duplicates across the segment's links, and settles each edge two unrelated
+  segments claim by keeping it on the first claimant in the wall order (the
+  deepest claimant when one is nested under another). A conflicted edge
+  builds nowhere and has no face to pick, so this is the recovery path: the
+  run builds again, then **Split / move segment** can reassign it. Repair
+  reports every claim it changed in the Report view.
 - **Delete cascades** — deleting the wall (or any segment) in the GUI also
   removes its descendant segments in the same transaction, so **Ctrl+Z**
   brings everything back; the base sketch is shared with other tools and
