@@ -1,12 +1,14 @@
 {
   "schema": 1,
   "name": "Sink",
-  "description": "Drop-in sink with a mixer tap; the offset drops its rim into the worktop plane.",
+  "description": "Drop-in sink with a mixer tap and an optional left or right drainer; Bowls length is the combined bowl section and the tray takes the rest of the overall width. The offset drops its rim into the worktop plane.",
   "keywords": [
     "kitchen",
     "sink",
     "bowl",
     "basin",
+    "drainer",
+    "drip tray",
     "tap",
     "mixer",
     "sanitary",
@@ -37,9 +39,34 @@
         }
       }
     },
+    "Drainer": {
+      "type": "Choice",
+      "default": "none",
+      "label": "Drip tray",
+      "resets": [
+        "Width"
+      ],
+      "options": {
+        "none": {
+          "label": "None"
+        },
+        "left": {
+          "label": "Left"
+        },
+        "right": {
+          "label": "Right"
+        }
+      }
+    },
     "Width": {
       "type": "Length",
-      "default": "auto"
+      "default": "auto",
+      "label": "Overall width"
+    },
+    "BowlLength": {
+      "type": "Length",
+      "default": 600,
+      "label": "Bowls length"
     },
     "Depth": {
       "type": "Length",
